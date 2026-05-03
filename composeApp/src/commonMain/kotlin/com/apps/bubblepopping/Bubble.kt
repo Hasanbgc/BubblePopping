@@ -3,6 +3,8 @@ package com.apps.bubblepopping
 
 import androidx.compose.ui.graphics.Color
 
+enum class BubbleType { NORMAL, POISON, HEART }
+
 /**
  * Represents a single bubble in the game.
  *
@@ -25,6 +27,7 @@ data class Bubble(
     val phase: Float,         // sine phase offset so bubbles don't sync
     val color: Color,
     val shimmerAngle: Float,  // degrees — position of the shine highlight
+    val type: BubbleType = BubbleType.NORMAL,
 )
 
 /**

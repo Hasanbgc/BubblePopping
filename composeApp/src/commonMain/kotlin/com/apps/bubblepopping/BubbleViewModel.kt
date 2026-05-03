@@ -21,82 +21,62 @@ class BubbleGameViewModel : ViewModel() {
     // ─────────────────────────────────────────────────────────────────────────
 
     companion object {
-        /** Seconds between each new bubble spawn */
-        private const val SPAWN_INTERVAL = 0.85f
+        private const val BASE_SPAWN_INTERVAL = 0.85f
+        private const val MIN_SPAWN_INTERVAL  = 0.30f
+        private const val SPAWN_SCALE         = 0.005f   // seconds shaved per point
 
-        /** How fast a triggered breeze moves bubbles sideways (px / s) */
         private const val BREEZE_STRENGTH = 160f
+        private const val BREEZE_DECAY    = 2.0f
+        private const val MAX_DELTA       = 0.05f
 
-        /**
-         * Exponential decay multiplier applied to breezeForce every second.
-         * Higher = breeze fades faster.
-         */
-        private const val BREEZE_DECAY = 2.0f
-
-        /** Safety cap on delta (seconds) to survive app-to-background spikes */
-        private const val MAX_DELTA = 0.05f
-
-        private const val MIN_RADIUS = 22f
-        private const val MAX_RADIUS = 54f
-        private const val MIN_SPEED  = 70f
-        private const val MAX_SPEED  = 155f
+        private const val MIN_RADIUS    = 22f
+        private const val MAX_RADIUS    = 54f
+        private const val MIN_SPEED     = 70f
+        private const val BASE_MAX_SPEED = 155f
+        private const val SPEED_SCALE   = 0.8f           // px/s added per point
+        private const val MAX_SPEED_CAP = 320f
         private const val MIN_AMPLITUDE = 18f
         private const val MAX_AMPLITUDE = 62f
 
-        /**
-         * Speed multiplier applied to [PopAnimation.progress].
-         * 2.5 means each animation finishes in ~0.4 seconds.
-         */
         private const val POP_ANIM_SPEED = 2.5f
 
-        /** Watery, translucent bubble colours */
+        private const val MAX_LIVES = 5
+
+        // Spawn weights: 75% normal, 15% poison, 10% heart
+        private const val WEIGHT_NORMAL = 75
+        private const val WEIGHT_POISON = 15
+        // WEIGHT_HEART = 100 - 75 - 15 = 10
+
         val BUBBLE_COLORS = listOf(
-            Color(0xFF81D4FA),  // light blue
-            Color(0xFFB2EBF2),  // cyan
-            Color(0xFF80CBC4),  // teal
-            Color(0xFFA5D6A7),  // mint
-            Color(0xFFCE93D8),  // lavender
-            Color(0xFFF48FB1),  // pink
-            Color(0xFFFFCC80),  // peach
-            Color(0xFFE0F7FA),  // ice
+            Color(0xFF81D4FA),
+            Color(0xFFB2EBF2),
+            Color(0xFF80CBC4),
+            Color(0xFFA5D6A7),
+            Color(0xFFCE93D8),
+            Color(0xFFF48FB1),
+            Color(0xFFFFCC80),
+            Color(0xFFE0F7FA),
         )
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Exposed state  (observed by Compose)
+    // Exposed state
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** Live bubble list.  Structural changes (add/remove) notify Compose. */
-    val bubbles = mutableStateListOf<Bubble>()
+    val bubbles        = mutableStateListOf<Bubble>()
+    val popAnimations  = mutableStateListOf<PopAnimation>()
 
-    /** Short-lived pop burst animations */
-    val popAnimations = mutableStateListOf<PopAnimation>()
-
-    /**
-     * Current lateral wind force (px / s).
-     * Positive = rightward, Negative = leftward.
-     * Observed by the canvas to draw wind streak lines.
-     */
-    var breezeForce by mutableStateOf(0f)
-        private set
-
-    /** Player score — increments on each successful pop */
-    var score by mutableStateOf(0)
-        private set
-
-    /**
-     * Incremented every frame so the Canvas composable re-executes and
-     * picks up the latest (mutated) bubble positions.
-     * See MainScreen.kt for the read-pattern.
-     */
-    var frameCount by mutableStateOf(0)
-        private set
+    var breezeForce    by mutableStateOf(0f);       private set
+    var score          by mutableStateOf(0);         private set
+    var missedCount    by mutableStateOf(0);         private set
+    var isGameOver     by mutableStateOf(false);     private set
+    var frameCount     by mutableStateOf(0);         private set
 
     // ─────────────────────────────────────────────────────────────────────────
     // Private state
     // ─────────────────────────────────────────────────────────────────────────
 
-    private var spawnTimer  = 0f
+    private var spawnTimer   = 0f
     private var canvasWidth  = 400f
     private var canvasHeight = 800f
 
@@ -104,11 +84,6 @@ class BubbleGameViewModel : ViewModel() {
     // Public API
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Called once the Canvas measures itself.
-     * Must be set before the first [update] call or bubbles will spawn
-     * at wrong positions.
-     */
     fun setCanvasSize(width: Float, height: Float) {
         if (width > 0f && height > 0f) {
             canvasWidth  = width
@@ -116,14 +91,8 @@ class BubbleGameViewModel : ViewModel() {
         }
     }
 
-    /**
-     * Main game-loop tick.  Called every frame from a [withFrameNanos] loop
-     * in MainScreen.  [delta] is elapsed time in seconds (already capped).
-     *
-     * Order matters:
-     *   1. Spawn → 2. Move → 3. Cull → 4. Animate pops → 5. Decay breeze
-     */
     fun update(delta: Float) {
+        if (isGameOver) return
         val dt = delta.coerceAtMost(MAX_DELTA)
 
         spawnStep(dt)
@@ -132,16 +101,11 @@ class BubbleGameViewModel : ViewModel() {
         animatePopStep(dt)
         breezeDecayStep(dt)
 
-        // Signal Compose to redraw the canvas
         frameCount++
     }
 
-    /**
-     * Hit-test a tap/click at [offset].
-     * If it lands inside a bubble that bubble is removed and a
-     * [PopAnimation] is queued in its place.
-     */
-    fun tryPop(offset: Offset) : Boolean{
+    fun tryPop(offset: Offset): Boolean {
+        if (isGameOver) return false
         val minHitRadius = 40f
 
         val hit = bubbles.firstOrNull { bubble ->
@@ -162,17 +126,31 @@ class BubbleGameViewModel : ViewModel() {
                     color  = bubble.color,
                 )
             )
-            score++
+            when (bubble.type) {
+                BubbleType.NORMAL -> score++
+                BubbleType.POISON -> isGameOver = true
+                BubbleType.HEART  -> {
+                    if (missedCount > 0) missedCount--
+                    score++
+                }
+            }
         }
-        return hit!= null
+        return hit != null
     }
 
-    /**
-     * Trigger a breeze gust.
-     * @param direction -1f for leftward, +1f for rightward.
-     */
     fun triggerBreeze(direction: Float) {
+        if (isGameOver) return
         breezeForce = direction.coerceIn(-1f, 1f) * BREEZE_STRENGTH
+    }
+
+    fun restartGame() {
+        bubbles.clear()
+        popAnimations.clear()
+        score       = 0
+        missedCount = 0
+        isGameOver  = false
+        breezeForce = 0f
+        spawnTimer  = 0f
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -180,8 +158,10 @@ class BubbleGameViewModel : ViewModel() {
     // ─────────────────────────────────────────────────────────────────────────
 
     private fun spawnStep(dt: Float) {
+        val interval = (BASE_SPAWN_INTERVAL - score * SPAWN_SCALE)
+            .coerceAtLeast(MIN_SPAWN_INTERVAL)
         spawnTimer += dt
-        if (spawnTimer >= SPAWN_INTERVAL) {
+        if (spawnTimer >= interval) {
             spawnTimer = 0f
             bubbles.add(createBubble())
         }
@@ -189,35 +169,33 @@ class BubbleGameViewModel : ViewModel() {
 
     private fun moveStep(dt: Float) {
         for (bubble in bubbles) {
-            // Rise upward
             bubble.y -= bubble.speed * dt
-
-            // Breeze pushes the oscillation centre sideways
             bubble.baseX += breezeForce * dt
-
-            // Sine-wave lateral position relative to baseX.
-            // Using y as the sine input means the wave shape is spatial,
-            // not time-based — the bubble traces a curve as it rises.
             bubble.x = bubble.baseX +
                     sin(bubble.y * 0.05f + bubble.phase) * bubble.amplitude
         }
     }
 
     private fun cullStep() {
-        // Remove bubbles that have fully exited through the top
-        bubbles.removeAll { it.y + it.radius < 0f }
+        val escaped = bubbles.filter { it.y + it.radius < 0f }
+        for (bubble in escaped) {
+            if (bubble.type == BubbleType.NORMAL) {
+                missedCount++
+                if (missedCount >= MAX_LIVES) {
+                    isGameOver = true
+                }
+            }
+        }
+        bubbles.removeAll(escaped.toSet())
     }
 
     private fun animatePopStep(dt: Float) {
-        for (anim in popAnimations) {
-            anim.progress += dt * POP_ANIM_SPEED
-        }
+        for (anim in popAnimations) anim.progress += dt * POP_ANIM_SPEED
         popAnimations.removeAll { it.progress >= 1f }
     }
 
     private fun breezeDecayStep(dt: Float) {
         if (abs(breezeForce) > 0.5f) {
-            // Exponential decay: force halves every (1/BREEZE_DECAY) seconds
             breezeForce *= (1f - dt * BREEZE_DECAY)
         } else {
             breezeForce = 0f
@@ -227,17 +205,28 @@ class BubbleGameViewModel : ViewModel() {
     private fun createBubble(): Bubble {
         val radius = Random.nextFloat() * (MAX_RADIUS - MIN_RADIUS) + MIN_RADIUS
         val startX = Random.nextFloat() * canvasWidth
+        val maxSpeed = (BASE_MAX_SPEED + score * SPEED_SCALE).coerceAtMost(MAX_SPEED_CAP)
+        val type = rollBubbleType()
         return Bubble(
             id           = Random.nextLong().toString(),
             x            = startX,
-            y            = canvasHeight + radius,       // just below the bottom edge
+            y            = canvasHeight + radius,
             radius       = radius,
-            speed        = Random.nextFloat() * (MAX_SPEED - MIN_SPEED) + MIN_SPEED,
+            speed        = Random.nextFloat() * (maxSpeed - MIN_SPEED) + MIN_SPEED,
             amplitude    = Random.nextFloat() * (MAX_AMPLITUDE - MIN_AMPLITUDE) + MIN_AMPLITUDE,
             baseX        = startX,
             phase        = Random.nextFloat() * (2f * PI.toFloat()),
             color        = BUBBLE_COLORS[Random.nextInt(BUBBLE_COLORS.size)],
             shimmerAngle = Random.nextFloat() * 360f,
+            type         = type,
         )
+    }
+
+    private fun rollBubbleType(): BubbleType {
+        return when (Random.nextInt(100)) {
+            in 0 until WEIGHT_NORMAL -> BubbleType.NORMAL
+            in WEIGHT_NORMAL until WEIGHT_NORMAL + WEIGHT_POISON -> BubbleType.POISON
+            else -> BubbleType.HEART
+        }
     }
 }
