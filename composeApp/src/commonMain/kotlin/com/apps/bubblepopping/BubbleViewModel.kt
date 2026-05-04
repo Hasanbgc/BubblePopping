@@ -9,6 +9,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
@@ -72,27 +74,43 @@ class BubbleGameViewModel : ViewModel() {
     var isGameOver     by mutableStateOf(false);     private set
     var frameCount     by mutableStateOf(0);         private set
 
+    var _isPaused = MutableStateFlow(false)
+    val isPaused  = _isPaused.asStateFlow()
+
+
+
     // ─────────────────────────────────────────────────────────────────────────
     // Private state
     // ─────────────────────────────────────────────────────────────────────────
 
-    private var spawnTimer   = 0f
-    private var canvasWidth  = 400f
-    private var canvasHeight = 800f
+    private var spawnTimer      = 0f
+    private var canvasWidth     = 400f
+    private var canvasHeight    = 800f
+    private var canvasTopOffset = 0f   // px below which bubbles are in the active game area
 
     // ─────────────────────────────────────────────────────────────────────────
     // Public API
     // ─────────────────────────────────────────────────────────────────────────
 
-    fun setCanvasSize(width: Float, height: Float) {
+    /** Update screen dimensions and the Y-offset where the game area begins (below HUD). */
+    fun setCanvasBounds(width: Float, height: Float, topOffset: Float = 0f) {
         if (width > 0f && height > 0f) {
-            canvasWidth  = width
-            canvasHeight = height
+            canvasWidth     = width
+            canvasHeight    = height
+            canvasTopOffset = topOffset
         }
     }
 
+    fun togglePause() {
+       // if (!isGameOver) {
+            _isPaused.value = !_isPaused.value
+
+        println("isPaused: ${_isPaused.value}")
+       // }
+    }
+
     fun update(delta: Float) {
-        if (isGameOver) return
+        if (isGameOver || _isPaused.value) return
         val dt = delta.coerceAtMost(MAX_DELTA)
 
         spawnStep(dt)
@@ -105,7 +123,7 @@ class BubbleGameViewModel : ViewModel() {
     }
 
     fun tryPop(offset: Offset): Boolean {
-        if (isGameOver) return false
+        if (isGameOver || isPaused.value) return false
         val minHitRadius = 40f
 
         val hit = bubbles.firstOrNull { bubble ->
@@ -149,6 +167,7 @@ class BubbleGameViewModel : ViewModel() {
         score       = 0
         missedCount = 0
         isGameOver  = false
+        _isPaused.value  = false
         breezeForce = 0f
         spawnTimer  = 0f
     }
@@ -177,7 +196,8 @@ class BubbleGameViewModel : ViewModel() {
     }
 
     private fun cullStep() {
-        val escaped = bubbles.filter { it.y + it.radius < 0f }
+        // Cull bubbles that have risen above the game area (below the HUD, not absolute 0).
+        val escaped = bubbles.filter { it.y + it.radius < canvasTopOffset }
         for (bubble in escaped) {
             if (bubble.type == BubbleType.NORMAL) {
                 missedCount++
