@@ -1,4 +1,4 @@
-package com.apps.bubblepopping
+package com.apps.bubblepopping.view.play.component
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -179,7 +179,7 @@ private fun DrawScope.drawBubbleIcon(bubble: Bubble, icon: ImageBitmap) {
 
 fun DrawScope.drawBubble(bubble: Bubble)                            = drawSoapBubble(bubble, NORMAL_SCHEME)
 fun DrawScope.drawPoisonBubble(bubble: Bubble, icon: ImageBitmap)  { drawSoapBubble(bubble, POISON_SCHEME); drawBubbleIcon(bubble, icon) }
-fun DrawScope.drawHeartBubble(bubble: Bubble,  icon: ImageBitmap)  { drawSoapBubble(bubble, HEART_SCHEME);  drawBubbleIcon(bubble, icon) }
+fun DrawScope.drawHeartBubble(bubble: Bubble, icon: ImageBitmap)  { drawSoapBubble(bubble, HEART_SCHEME);  drawBubbleIcon(bubble, icon) }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pop animation

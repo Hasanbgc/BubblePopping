@@ -1,4 +1,4 @@
-package com.apps.bubblepopping
+package com.apps.bubblepopping.view
 
 
 
@@ -9,6 +9,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
+import com.apps.bubblepopping.view.home.Difficulty
+import com.apps.bubblepopping.view.play.component.Bubble
+import com.apps.bubblepopping.view.play.component.BubbleType
+import com.apps.bubblepopping.view.play.component.PopAnimation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlin.math.PI
@@ -60,6 +64,14 @@ class BubbleGameViewModel : ViewModel() {
             Color(0xFFE0F7FA),
         )
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Difficulty-adjusted values — start at MEDIUM (1× multiplier)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private var adjustedSpawnInterval = BASE_SPAWN_INTERVAL
+    private var adjustedBaseMaxSpeed  = BASE_MAX_SPEED
+    private var adjustedMaxSpeedCap   = MAX_SPEED_CAP
 
     // ─────────────────────────────────────────────────────────────────────────
     // Exposed state
@@ -124,7 +136,7 @@ class BubbleGameViewModel : ViewModel() {
 
     fun tryPop(offset: Offset): Boolean {
         if (isGameOver || isPaused.value) return false
-        val minHitRadius = 40f
+        val minHitRadius = 50f
 
         val hit = bubbles.firstOrNull { bubble ->
             val dx        = offset.x - bubble.x
@@ -137,11 +149,11 @@ class BubbleGameViewModel : ViewModel() {
             bubbles.remove(bubble)
             popAnimations.add(
                 PopAnimation(
-                    id     = "${bubble.id}_pop",
-                    x      = bubble.x,
-                    y      = bubble.y,
+                    id = "${bubble.id}_pop",
+                    x = bubble.x,
+                    y = bubble.y,
                     radius = bubble.radius,
-                    color  = bubble.color,
+                    color = bubble.color,
                 )
             )
             when (bubble.type) {
@@ -161,6 +173,13 @@ class BubbleGameViewModel : ViewModel() {
         breezeForce = direction.coerceIn(-1f, 1f) * BREEZE_STRENGTH
     }
 
+    fun applyDifficulty(difficulty: Difficulty) {
+        adjustedSpawnInterval = BASE_SPAWN_INTERVAL * difficulty.spawnIntervalMultiplier
+        adjustedBaseMaxSpeed  = BASE_MAX_SPEED * difficulty.speedMultiplier
+        adjustedMaxSpeedCap   = MAX_SPEED_CAP * difficulty.maxSpeedCapMultiplier
+        restartGame()
+    }
+
     fun restartGame() {
         bubbles.clear()
         popAnimations.clear()
@@ -177,7 +196,7 @@ class BubbleGameViewModel : ViewModel() {
     // ─────────────────────────────────────────────────────────────────────────
 
     private fun spawnStep(dt: Float) {
-        val interval = (BASE_SPAWN_INTERVAL - score * SPAWN_SCALE)
+        val interval = (adjustedSpawnInterval - score * SPAWN_SCALE)
             .coerceAtLeast(MIN_SPAWN_INTERVAL)
         spawnTimer += dt
         if (spawnTimer >= interval) {
@@ -225,20 +244,20 @@ class BubbleGameViewModel : ViewModel() {
     private fun createBubble(): Bubble {
         val radius = Random.nextFloat() * (MAX_RADIUS - MIN_RADIUS) + MIN_RADIUS
         val startX = Random.nextFloat() * canvasWidth
-        val maxSpeed = (BASE_MAX_SPEED + score * SPEED_SCALE).coerceAtMost(MAX_SPEED_CAP)
+        val maxSpeed = (adjustedBaseMaxSpeed + score * SPEED_SCALE).coerceAtMost(adjustedMaxSpeedCap)
         val type = rollBubbleType()
         return Bubble(
-            id           = Random.nextLong().toString(),
-            x            = startX,
-            y            = canvasHeight + radius,
-            radius       = radius,
-            speed        = Random.nextFloat() * (maxSpeed - MIN_SPEED) + MIN_SPEED,
-            amplitude    = Random.nextFloat() * (MAX_AMPLITUDE - MIN_AMPLITUDE) + MIN_AMPLITUDE,
-            baseX        = startX,
-            phase        = Random.nextFloat() * (2f * PI.toFloat()),
-            color        = BUBBLE_COLORS[Random.nextInt(BUBBLE_COLORS.size)],
+            id = Random.nextLong().toString(),
+            x = startX,
+            y = canvasHeight + radius,
+            radius = radius,
+            speed = Random.nextFloat() * (maxSpeed - MIN_SPEED) + MIN_SPEED,
+            amplitude = Random.nextFloat() * (MAX_AMPLITUDE - MIN_AMPLITUDE) + MIN_AMPLITUDE,
+            baseX = startX,
+            phase = Random.nextFloat() * (2f * PI.toFloat()),
+            color = BUBBLE_COLORS[Random.nextInt(BUBBLE_COLORS.size)],
             shimmerAngle = Random.nextFloat() * 360f,
-            type         = type,
+            type = type,
         )
     }
 

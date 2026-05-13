@@ -1,4 +1,4 @@
-package com.apps.bubblepopping
+package com.apps.androidapp
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -16,6 +17,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.apps.bubblepopping.HapticFeedback
+import com.apps.bubblepopping.navigation.NavGraph
+import com.apps.bubblepopping.view.App
+import com.apps.bubblepopping.view.leaderboard.LeaderboardDialog
+import com.apps.bubblepopping.view.leaderboard.LeaderboardEntry
+import com.apps.bubblepopping.view.leaderboard.LeaderboardItem
+import com.apps.bubblepopping.view.play.component.GameHud
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,7 +37,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val hapticFeedback = HapticFeedback(this)
-            App(hapticFeedback)
+            //App(hapticFeedback)
+            NavGraph(hapticFeedback)
         }
     }
 }
@@ -56,11 +65,11 @@ private fun GameHudPlayingPreview() {
                 .padding(top = 8.dp),
         ) {
             GameHud(
-                score            = 42,
-                lives            = 3,
-                isPaused         = false,
+                score = 42,
+                lives = 3,
+                isPaused = false,
                 onPlayPauseClick = {},
-                onRankingClick   = {},
+                onRankingClick = {},
             )
         }
     }
@@ -77,11 +86,11 @@ private fun GameHudPausedPreview() {
                 .padding(top = 8.dp),
         ) {
             GameHud(
-                score            = 42,
-                lives            = 1,
-                isPaused         = true,
+                score = 42,
+                lives = 1,
+                isPaused = true,
                 onPlayPauseClick = {},
-                onRankingClick   = {},
+                onRankingClick = {},
             )
         }
     }
@@ -93,7 +102,7 @@ private fun LeaderboardDialogPreview() {
     MaterialTheme {
         LeaderboardDialog(
             currentScore = 55,
-            onDismiss    = {},
+            onDismiss = {},
         )
     }
 }
@@ -102,15 +111,22 @@ private fun LeaderboardDialogPreview() {
 @Composable
 private fun LeaderboardItemsPreview() {
     MaterialTheme {
-        androidx.compose.foundation.layout.Column(
+        Column(
             modifier = Modifier
                 .background(Color(0xFF08172A))
                 .padding(8.dp),
         ) {
             LeaderboardItem(LeaderboardEntry(rank = 1, name = "BubbleMaster", score = 312))
-            LeaderboardItem(LeaderboardEntry(rank = 2, name = "PopKing",      score = 285))
-            LeaderboardItem(LeaderboardEntry(rank = 3, name = "BurstQueen",   score = 261))
-            LeaderboardItem(LeaderboardEntry(rank = 9, name = "You",          score = 55, isCurrentUser = true))
+            LeaderboardItem(LeaderboardEntry(rank = 2, name = "PopKing", score = 285))
+            LeaderboardItem(LeaderboardEntry(rank = 3, name = "BurstQueen", score = 261))
+            LeaderboardItem(
+                LeaderboardEntry(
+                    rank = 9,
+                    name = "You",
+                    score = 55,
+                    isCurrentUser = true
+                )
+            )
         }
     }
 }

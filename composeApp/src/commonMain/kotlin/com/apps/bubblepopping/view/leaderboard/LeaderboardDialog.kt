@@ -1,6 +1,4 @@
-
-
-package com.apps.bubblepopping
+package com.apps.bubblepopping.view.leaderboard
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween

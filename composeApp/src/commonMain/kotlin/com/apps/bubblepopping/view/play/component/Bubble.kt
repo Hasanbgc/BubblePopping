@@ -1,4 +1,4 @@
-package com.apps.bubblepopping
+package com.apps.bubblepopping.view.play.component
 
 
 import androidx.compose.ui.graphics.Color

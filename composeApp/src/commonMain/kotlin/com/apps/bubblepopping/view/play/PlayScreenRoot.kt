@@ -1,4 +1,4 @@
-package com.apps.bubblepopping
+package com.apps.bubblepopping.view.play
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -22,7 +22,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -46,20 +45,55 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import bubblepopping.composeapp.generated.resources.Res
-import bubblepopping.composeapp.generated.resources.heart
-import bubblepopping.composeapp.generated.resources.skull
+import com.apps.bubblepopping.HapticFeedback
+import com.apps.bubblepopping.Res
+import com.apps.bubblepopping.SoundManager
+import com.apps.bubblepopping.createSoundManager
+import com.apps.bubblepopping.heart
+import com.apps.bubblepopping.skull
+import com.apps.bubblepopping.view.BubbleGameViewModel
+import com.apps.bubblepopping.view.home.Difficulty
+import com.apps.bubblepopping.view.leaderboard.LeaderboardDialog
+import com.apps.bubblepopping.view.play.component.BubbleType
+import com.apps.bubblepopping.view.play.component.GameHud
+import com.apps.bubblepopping.view.play.component.HUD_CONTENT_HEIGHT
+import com.apps.bubblepopping.view.play.component.drawBreezeLines
+import com.apps.bubblepopping.view.play.component.drawBubble
+import com.apps.bubblepopping.view.play.component.drawHeartBubble
+import com.apps.bubblepopping.view.play.component.drawPoisonBubble
+import com.apps.bubblepopping.view.play.component.drawPopAnimation
 import org.jetbrains.compose.resources.painterResource
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BubblePoppingScreen
 // ─────────────────────────────────────────────────────────────────────────────
-
 @Composable
-fun BubblePoppingScreen(
+fun PlayScreenRoot(
+    difficulty: Difficulty = Difficulty.EASY,
     viewModel: BubbleGameViewModel = viewModel(),
     hapticFeedback: HapticFeedback,
+    onBack: (() -> Unit)? = null,
+    onNavigateToRanking: (() -> Unit)? = null,
 ) {
+    BubblePoppingScreen(
+        difficulty = difficulty,
+        viewModel = viewModel,
+        hapticFeedback = hapticFeedback,
+        onBack = onBack,
+        onNavigateToRanking = onNavigateToRanking,
+    )
+}
+@Composable
+fun BubblePoppingScreen(
+    difficulty: Difficulty,
+    viewModel: BubbleGameViewModel = viewModel(),
+    hapticFeedback: HapticFeedback,
+    onBack: (() -> Unit)? = null,
+    onNavigateToRanking: (() -> Unit)? = null,
+) {
+    LaunchedEffect(difficulty) { viewModel.applyDifficulty(difficulty) }
+
+
     var elapsedTime by remember { mutableStateOf(0f) }
     var showLeaderboard by remember { mutableStateOf(false) }
 
@@ -193,15 +227,15 @@ fun BubblePoppingScreen(
         // ── HUD — drawn last, always on top ──────────────────────────────────
         // Manages its own statusBarsPadding; no external top padding needed.
         GameHud(
-            score            = viewModel.score,
-            lives            = 5 - viewModel.missedCount,
-            isPaused         = isPaused,
+            score = viewModel.score,
+            lives = 5 - viewModel.missedCount,
+            isPaused = isPaused,
             onPlayPauseClick = {
                 viewModel.togglePause()
                 println("paused clicked")
             },
-            onRankingClick   = { showLeaderboard = true },
-            modifier         = Modifier.align(Alignment.TopStart),
+            onRankingClick = { showLeaderboard = true },
+            modifier = Modifier.align(Alignment.TopStart),
         )
 
         if (viewModel.isGameOver) {
@@ -215,7 +249,7 @@ fun BubblePoppingScreen(
         if (showLeaderboard) {
             LeaderboardDialog(
                 currentScore = viewModel.score,
-                onDismiss    = { showLeaderboard = false },
+                onDismiss = { showLeaderboard = false },
             )
         }
     }
