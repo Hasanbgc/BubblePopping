@@ -4,14 +4,17 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -30,13 +33,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Data model
@@ -55,8 +57,7 @@ enum class LeaderboardTab { LOCAL, GLOBAL }
 // Game-themed color tokens — mirrors the dark blue game palette
 // ─────────────────────────────────────────────────────────────────────────────
 
-private val DialogBg       = Color(0xFF08172A)
-private val DialogSurface  = Color(0xFF0D2240)
+private val ScreenSurface  = Color(0xFF0D2240)
 private val Accent         = Color(0xFF29B6F6)
 private val MedalGold      = Color(0xFFFFD700)
 private val MedalSilver    = Color(0xFFCCCCCC)
@@ -85,7 +86,7 @@ private fun buildEntries(
     baseline: List<Pair<String, Int>>,
     currentScore: Int,
 ): List<LeaderboardEntry> =
-    (baseline + ("You" to currentScore))
+    (if (currentScore > 0) baseline + ("You" to currentScore) else baseline)
         .sortedByDescending { (_, score) -> score }
         .mapIndexed { i, (name, score) ->
             LeaderboardEntry(
@@ -97,24 +98,16 @@ private fun buildEntries(
         }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LeaderboardDialog
+// LeaderboardScreenRoot
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Full-screen leaderboard dialog with personal score, LOCAL/GLOBAL tabs,
- * and an animated ranked list highlighting the current user.
- *
- * @param currentScore Score from the current (or most recent) session.
- * @param onDismiss    Called when the user taps outside or the close button.
- */
 @Composable
-fun LeaderboardDialog(
-    currentScore: Int,
-    onDismiss: () -> Unit,
+fun LeaderboardScreenRoot(
+    currentScore: Int = 0,
+    onBack: () -> Unit,
 ) {
     var activeTab by remember { mutableStateOf(LeaderboardTab.LOCAL) }
 
-    // Recompute list whenever the tab or the user's score changes.
     val entries = remember(activeTab, currentScore) {
         when (activeTab) {
             LeaderboardTab.LOCAL  -> buildEntries(localBaseline,  currentScore)
@@ -122,48 +115,66 @@ fun LeaderboardDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties       = DialogProperties(usePlatformDefaultWidth = false),
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF050E1A),
+                        Color(0xFF0A1E35),
+                        Color(0xFF0E2F4F),
+                        Color(0xFF144B6E),
+                    )
+                )
+            )
     ) {
-        Surface(
-            shape          = RoundedCornerShape(24.dp),
-            color          = DialogBg,
-            contentColor   = Color.White,
-            tonalElevation = 0.dp,
-            modifier       = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
         ) {
-            Column {
-                DialogHeader(onDismiss = onDismiss)
+            ScreenHeader(onBack = onBack)
+
+            if (currentScore > 0) {
                 PersonalScore(score = currentScore)
                 Spacer(Modifier.height(4.dp))
-                TabSelector(
-                    activeTab     = activeTab,
-                    onTabSelected = { activeTab = it },
-                )
-                Spacer(Modifier.height(8.dp))
-                LeaderboardList(entries = entries)
-                Spacer(Modifier.height(12.dp))
             }
+
+            TabSelector(
+                activeTab     = activeTab,
+                onTabSelected = { activeTab = it },
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            LeaderboardList(
+                entries  = entries,
+                modifier = Modifier.weight(1f),
+            )
+
+            Spacer(Modifier.height(12.dp))
         }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dialog sections
+// Screen sections
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun DialogHeader(onDismiss: () -> Unit) {
+private fun ScreenHeader(onBack: () -> Unit) {
     Row(
         modifier              = Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 8.dp, top = 18.dp, bottom = 4.dp),
+            .padding(start = 4.dp, end = 20.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment     = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
+        IconButton(onClick = onBack) {
+            Text(text = "←", fontSize = 22.sp, color = Color.White)
+        }
         Row(
             verticalAlignment     = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -173,18 +184,17 @@ private fun DialogHeader(onDismiss: () -> Unit) {
                 text       = "Leaderboard",
                 fontSize   = 22.sp,
                 fontWeight = FontWeight.Bold,
+                color      = Color.White,
             )
         }
-        IconButton(onClick = onDismiss) {
-            Text(text = "✕", fontSize = 16.sp, color = SubtleWhite)
-        }
+        Spacer(Modifier.width(48.dp))
     }
 }
 
 @Composable
 private fun PersonalScore(score: Int) {
     Surface(
-        color    = DialogSurface,
+        color    = ScreenSurface,
         shape    = RoundedCornerShape(14.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -197,7 +207,7 @@ private fun PersonalScore(score: Int) {
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    text       = "Your Best Score",
+                    text       = "Your Score",
                     fontSize   = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color      = SubtleWhite,
@@ -228,8 +238,8 @@ private fun TabSelector(
     ) {
         LeaderboardTab.entries.forEach { tab ->
             Tab(
-                selected             = activeTab == tab,
-                onClick              = { onTabSelected(tab) },
+                selected               = activeTab == tab,
+                onClick                = { onTabSelected(tab) },
                 selectedContentColor   = Accent,
                 unselectedContentColor = SubtleWhite,
                 text = {
@@ -244,10 +254,10 @@ private fun TabSelector(
 }
 
 @Composable
-private fun LeaderboardList(entries: List<LeaderboardEntry>) {
+private fun LeaderboardList(entries: List<LeaderboardEntry>, modifier: Modifier = Modifier) {
     LazyColumn(
-        modifier            = Modifier.heightIn(max = 340.dp),
-        contentPadding      = PaddingValues(horizontal = 12.dp),
+        modifier            = modifier,
+        contentPadding      = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         items(items = entries, key = { it.rank }) { entry ->
@@ -260,13 +270,8 @@ private fun LeaderboardList(entries: List<LeaderboardEntry>) {
 // LeaderboardItem
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Single leaderboard row. Top-3 rows show medal emojis and rank-specific
- * colors. The current user's row fades in a highlight background.
- */
 @Composable
 fun LeaderboardItem(entry: LeaderboardEntry) {
-    // Animate the highlight background so the user's row pops in smoothly.
     val bgColor by animateColorAsState(
         targetValue   = if (entry.isCurrentUser) UserHighlight else Color.Transparent,
         animationSpec = tween(durationMillis = 400),
@@ -276,9 +281,9 @@ fun LeaderboardItem(entry: LeaderboardEntry) {
     val rankEmoji = when (entry.rank) { 1 -> "🥇"; 2 -> "🥈"; 3 -> "🥉"; else -> null }
     val rankColor = when (entry.rank) { 1 -> MedalGold; 2 -> MedalSilver; 3 -> MedalBronze; else -> SubtleWhite }
     val nameColor = when {
-        entry.rank in 1..3   -> rankColor
-        entry.isCurrentUser  -> Accent
-        else                 -> Color.White
+        entry.rank in 1..3  -> rankColor
+        entry.isCurrentUser -> Accent
+        else                -> Color.White
     }
 
     Row(
@@ -290,7 +295,6 @@ fun LeaderboardItem(entry: LeaderboardEntry) {
         verticalAlignment     = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        // ── Rank badge + name ───────────────────────────────────────────────
         Row(
             verticalAlignment     = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -319,7 +323,6 @@ fun LeaderboardItem(entry: LeaderboardEntry) {
             )
         }
 
-        // ── Score ───────────────────────────────────────────────────────────
         Text(
             text       = entry.score.toString(),
             fontSize   = 16.sp,

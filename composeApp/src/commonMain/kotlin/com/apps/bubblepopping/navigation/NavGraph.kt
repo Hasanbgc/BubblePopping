@@ -1,5 +1,12 @@
 package com.apps.bubblepopping.navigation
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -12,6 +19,7 @@ import androidx.navigation3.ui.NavDisplay
 import androidx.savedstate.serialization.SavedStateConfiguration
 import com.apps.bubblepopping.HapticFeedback
 import com.apps.bubblepopping.view.home.HomeScreenRoot
+import com.apps.bubblepopping.view.leaderboard.LeaderboardScreenRoot
 import com.apps.bubblepopping.view.play.PlayScreenRoot
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
@@ -23,6 +31,7 @@ val config = SavedStateConfiguration {
         polymorphic(NavKey::class) {
             subclass(Routes.Home::class)
             subclass(Routes.Play::class)
+            subclass(Routes.Ranking::class)
         }
     }
 }
@@ -50,7 +59,10 @@ fun NavGraph(hapticFeedback: HapticFeedback) {
                     },
                     onNavigateToPlay = {
                         backStack.add(Routes.Play(difficulty = it))
-                    }
+                    },
+                    onNavigateToLeaderboard = {
+                        backStack.add(Routes.Ranking)
+                    },
                 )
             }
             entry<Routes.Play> { args ->
@@ -60,9 +72,16 @@ fun NavGraph(hapticFeedback: HapticFeedback) {
                     onBack = {
                         backStack.removeLastOrNull()
                     },
-                    onNavigateToRanking = {
-                        backStack.add(Routes.Ranking)
-                    }
+                    onHome = {
+                        backStack.removeLastOrNull()
+                    },
+                )
+            }
+            entry<Routes.Ranking> {
+                LeaderboardScreenRoot(
+                    onBack = {
+                        backStack.removeLastOrNull()
+                    },
                 )
             }
         }

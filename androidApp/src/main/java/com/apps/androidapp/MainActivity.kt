@@ -19,10 +19,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.apps.bubblepopping.HapticFeedback
 import com.apps.bubblepopping.navigation.NavGraph
-import com.apps.bubblepopping.view.App
-import com.apps.bubblepopping.view.leaderboard.LeaderboardDialog
 import com.apps.bubblepopping.view.leaderboard.LeaderboardEntry
 import com.apps.bubblepopping.view.leaderboard.LeaderboardItem
+import com.apps.bubblepopping.view.leaderboard.LeaderboardScreenRoot
 import com.apps.bubblepopping.view.play.component.GameHud
 
 class MainActivity : ComponentActivity() {
@@ -51,7 +50,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppAndroidPreview() {
     val hapticFeedback = HapticFeedback(LocalContext.current)
-    App(hapticFeedback)
+    //App(hapticFeedback)
 }
 
 @Preview(name = "Game HUD — playing", showBackground = true, backgroundColor = 0xFF0A1E35)
@@ -69,7 +68,6 @@ private fun GameHudPlayingPreview() {
                 lives = 3,
                 isPaused = false,
                 onPlayPauseClick = {},
-                onRankingClick = {},
             )
         }
     }
@@ -90,7 +88,6 @@ private fun GameHudPausedPreview() {
                 lives = 1,
                 isPaused = true,
                 onPlayPauseClick = {},
-                onRankingClick = {},
             )
         }
     }
@@ -100,10 +97,7 @@ private fun GameHudPausedPreview() {
 @Composable
 private fun LeaderboardDialogPreview() {
     MaterialTheme {
-        LeaderboardDialog(
-            currentScore = 55,
-            onDismiss = {},
-        )
+        LeaderboardScreenRoot( currentScore = 55){}
     }
 }
 

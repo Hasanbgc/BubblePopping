@@ -65,7 +65,6 @@ fun GameHud(
     lives: Int,
     isPaused: Boolean,
     onPlayPauseClick: () -> Unit,
-    onRankingClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -97,13 +96,7 @@ fun GameHud(
             ) {
                 LivesView(lives = lives)
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    PlayPauseButton(isPaused = isPaused, onClick = onPlayPauseClick)
-                    RankingButton(onClick = onRankingClick)
-                }
+                PlayPauseButton(isPaused = isPaused, onClick = onPlayPauseClick)
             }
 
             // Center Score (true center)

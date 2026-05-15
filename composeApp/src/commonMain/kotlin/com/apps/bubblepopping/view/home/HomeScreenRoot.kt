@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -54,7 +55,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.apps.bubblepopping.view.home.Difficulty
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.PI
@@ -69,26 +69,34 @@ import kotlin.random.Random
 fun HomeScreenRoot(
     onBack: (() -> Unit)? = null,
     onNavigateToPlay: (Difficulty) -> Unit,
+    onNavigateToLeaderboard: () -> Unit,
 ) {
     HomeScreen(
-        onNavigateToPlay = onNavigateToPlay
+        onNavigateToPlay = onNavigateToPlay,
+        onNavigateToLeaderboard = onNavigateToLeaderboard,
     )
-   /* BackHandler{
-        onBack?.invoke()
-    }*/
 }
 
 @Composable
-fun HomeScreen(onNavigateToPlay: (Difficulty) -> Unit){
-    Scaffold(){
+fun HomeScreen(
+    onNavigateToPlay: (Difficulty) -> Unit,
+    onNavigateToLeaderboard: () -> Unit,
+) {
+    Scaffold() {
         Box(modifier = Modifier.fillMaxSize()) {
-            DifficultyScreen(onDifficultySelected = onNavigateToPlay)
+            DifficultyScreen(
+                onDifficultySelected = onNavigateToPlay,
+                onNavigateToLeaderboard = onNavigateToLeaderboard,
+            )
         }
     }
 }
 
 @Composable
-fun DifficultyScreen(onDifficultySelected: (Difficulty) -> Unit) {
+fun DifficultyScreen(
+    onDifficultySelected: (Difficulty) -> Unit,
+    onNavigateToLeaderboard: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     var selectedDifficulty by remember { mutableStateOf<Difficulty?>(null) }
 
@@ -107,6 +115,16 @@ fun DifficultyScreen(onDifficultySelected: (Difficulty) -> Unit) {
             )
     ) {
         BackgroundBubbles()
+
+        IconButton(
+            onClick  = onNavigateToLeaderboard,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(top = 8.dp, end = 12.dp),
+        ) {
+            Text(text = "🏆", fontSize = 24.sp)
+        }
 
         Column(
             modifier = Modifier
@@ -130,7 +148,7 @@ fun DifficultyScreen(onDifficultySelected: (Difficulty) -> Unit) {
                     DifficultyButton(
                         difficulty = difficulty,
                         isSelected = selectedDifficulty == difficulty,
-                        onClick    = {
+                        onClick = {
                             if (selectedDifficulty == null) {
                                 selectedDifficulty = difficulty
                                 scope.launch {
@@ -147,9 +165,9 @@ fun DifficultyScreen(onDifficultySelected: (Difficulty) -> Unit) {
             Spacer(Modifier.weight(0.7f))
 
             Text(
-                text      = "Tap to select and start",
-                color     = Color.White.copy(alpha = 0.22f),
-                fontSize  = 12.sp,
+                text = "Tap to select and start",
+                color = Color.White.copy(alpha = 0.22f),
+                fontSize = 12.sp,
                 letterSpacing = 1.sp,
                 textAlign = TextAlign.Center,
             )
@@ -170,32 +188,32 @@ private fun DifficultyTitle() {
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
-            text          = "SELECT",
-            color         = Color.White.copy(alpha = 0.50f),
-            fontSize      = 13.sp,
-            fontWeight    = FontWeight.Medium,
+            text = "SELECT",
+            color = Color.White.copy(alpha = 0.50f),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
             letterSpacing = 8.sp,
         )
         Text(
-            text          = "DIFFICULTY",
-            color         = Color.White,
-            fontSize      = 38.sp,
-            fontWeight    = FontWeight.ExtraBold,
+            text = "DIFFICULTY",
+            color = Color.White,
+            fontSize = 38.sp,
+            fontWeight = FontWeight.ExtraBold,
             letterSpacing = 3.sp,
-            style         = TextStyle(
+            style = TextStyle(
                 shadow = Shadow(
-                    color      = Color(0xFF29B6F6).copy(alpha = 0.75f),
-                    offset     = Offset(0f, 0f),
+                    color = Color(0xFF29B6F6).copy(alpha = 0.75f),
+                    offset = Offset(0f, 0f),
                     blurRadius = 28f,
                 )
             ),
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text          = "Choose your challenge",
-            color         = Color.White.copy(alpha = 0.38f),
-            fontSize      = 14.sp,
-            fontWeight    = FontWeight.Normal,
+            text = "Choose your challenge",
+            color = Color.White.copy(alpha = 0.38f),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Normal,
             letterSpacing = 0.5.sp,
         )
     }
@@ -216,46 +234,46 @@ private fun DifficultyButton(
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val scale by animateFloatAsState(
-        targetValue   = if (isPressed || isSelected) 0.97f else 1f,
+        targetValue = if (isPressed || isSelected) 0.97f else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness    = Spring.StiffnessHigh,
+            stiffness = Spring.StiffnessHigh,
         ),
         label = "btnScale",
     )
 
     val staticGlowAlpha by animateFloatAsState(
-        targetValue   = if (isPressed) 0.80f else 0.38f,
+        targetValue = if (isPressed) 0.80f else 0.38f,
         animationSpec = tween(220),
-        label         = "staticGlow",
+        label = "staticGlow",
     )
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse_${difficulty.name}")
     val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue  = 0.42f,
-        targetValue   = 0.75f,
+        initialValue = 0.42f,
+        targetValue = 0.75f,
         animationSpec = infiniteRepeatable(
-            animation  = tween(900, easing = EaseInOutSine),
+            animation = tween(900, easing = EaseInOutSine),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "pulse",
     )
 
-    val glowAlpha  = if (isSelected) pulseAlpha else staticGlowAlpha
-    val glowColor  = difficulty.glowColor
+    val glowAlpha = if (isSelected) pulseAlpha else staticGlowAlpha
+    val glowColor = difficulty.glowColor
 
     Box(
         modifier = modifier
             .scale(scale)
             .drawBehind {
                 repeat(5) { layer ->
-                    val expand     = (layer + 1) * 5f
+                    val expand = (layer + 1) * 5f
                     val layerAlpha = glowAlpha * (1f - layer * 0.18f) * 0.28f
                     if (layerAlpha > 0f) {
                         drawRoundRect(
-                            color        = glowColor.copy(alpha = layerAlpha),
-                            topLeft      = Offset(-expand, -expand),
-                            size         = Size(size.width + expand * 2f, size.height + expand * 2f),
+                            color = glowColor.copy(alpha = layerAlpha),
+                            topLeft = Offset(-expand, -expand),
+                            size = Size(size.width + expand * 2f, size.height + expand * 2f),
                             cornerRadius = CornerRadius(24.dp.toPx() + expand),
                         )
                     }
@@ -270,13 +288,13 @@ private fun DifficultyButton(
                         difficulty.gradientStart.copy(alpha = 0.85f),
                     ),
                     start = Offset(0f, 0f),
-                    end   = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
+                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
                 )
             )
             .clickable(
                 interactionSource = interactionSource,
-                indication        = null,
-                onClick           = onClick,
+                indication = null,
+                onClick = onClick,
             )
     ) {
         // Subtle white inner border
@@ -285,33 +303,33 @@ private fun DifficultyButton(
                 .matchParentSize()
                 .drawBehind {
                     drawRoundRect(
-                        color        = Color.White.copy(alpha = 0.14f),
-                        style        = Stroke(width = 1.dp.toPx()),
+                        color = Color.White.copy(alpha = 0.14f),
+                        style = Stroke(width = 1.dp.toPx()),
                         cornerRadius = CornerRadius(20.dp.toPx()),
                     )
                 }
         )
 
         Row(
-            modifier              = Modifier
+            modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp, vertical = 22.dp),
-            verticalAlignment     = Alignment.CenterVertically,
+            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column {
                 Text(
-                    text          = difficulty.label,
-                    color         = Color.White,
-                    fontSize      = 22.sp,
-                    fontWeight    = FontWeight.Bold,
+                    text = difficulty.label,
+                    color = Color.White,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
                     letterSpacing = 0.5.sp,
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    text      = difficulty.description,
-                    color     = Color.White.copy(alpha = 0.68f),
-                    fontSize  = 13.sp,
+                    text = difficulty.description,
+                    color = Color.White.copy(alpha = 0.68f),
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Normal,
                 )
             }
@@ -328,9 +346,9 @@ private fun DifficultyButton(
 @Composable
 private fun DifficultyDots(difficulty: Difficulty, isSelected: Boolean) {
     val filled = when (difficulty) {
-        Difficulty.EASY   -> 1
+        Difficulty.EASY -> 1
         Difficulty.MEDIUM -> 2
-        Difficulty.HARD   -> 3
+        Difficulty.HARD -> 3
     }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         repeat(3) { index ->
@@ -375,13 +393,13 @@ private fun BackgroundBubbles() {
         )
         List(14) { i ->
             BgBubble(
-                startX    = rng.nextFloat(),
-                startY    = rng.nextFloat(),
-                radius    = 8f + rng.nextFloat() * 36f,
-                speed     = 0.012f + rng.nextFloat() * 0.024f,
+                startX = rng.nextFloat(),
+                startY = rng.nextFloat(),
+                radius = 8f + rng.nextFloat() * 36f,
+                speed = 0.012f + rng.nextFloat() * 0.024f,
                 amplitude = 0.018f + rng.nextFloat() * 0.030f,
-                phase     = rng.nextFloat() * 2f * PI.toFloat(),
-                color     = palette[i % palette.size],
+                phase = rng.nextFloat() * 2f * PI.toFloat(),
+                color = palette[i % palette.size],
             )
         }
     }
@@ -401,25 +419,25 @@ private fun BackgroundBubbles() {
 
     Canvas(modifier = Modifier.fillMaxSize()) {
         for (bubble in bubbles) {
-            val rawY  = bubble.startY - bubble.speed * time
+            val rawY = bubble.startY - bubble.speed * time
             val normY = ((rawY % 1f) + 1f) % 1f
             val normX = bubble.startX + bubble.amplitude * sin(normY * 7f + bubble.phase)
-            val cx    = normX.coerceIn(0f, 1f) * size.width
-            val cy    = normY * size.height
-            val r     = bubble.radius
+            val cx = normX.coerceIn(0f, 1f) * size.width
+            val cy = normY * size.height
+            val r = bubble.radius
 
             drawCircle(
-                color  = bubble.color.copy(alpha = 0.04f),
+                color = bubble.color.copy(alpha = 0.04f),
                 radius = r * 1.8f,
                 center = Offset(cx, cy),
             )
             drawCircle(
-                color  = bubble.color.copy(alpha = 0.07f),
+                color = bubble.color.copy(alpha = 0.07f),
                 radius = r,
                 center = Offset(cx, cy),
             )
             drawCircle(
-                color  = Color.White.copy(alpha = 0.05f),
+                color = Color.White.copy(alpha = 0.05f),
                 radius = r * 0.35f,
                 center = Offset(cx - r * 0.22f, cy - r * 0.28f),
             )

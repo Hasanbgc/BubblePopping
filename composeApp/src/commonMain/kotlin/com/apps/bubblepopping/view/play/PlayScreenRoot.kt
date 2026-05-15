@@ -53,7 +53,6 @@ import com.apps.bubblepopping.heart
 import com.apps.bubblepopping.skull
 import com.apps.bubblepopping.view.BubbleGameViewModel
 import com.apps.bubblepopping.view.home.Difficulty
-import com.apps.bubblepopping.view.leaderboard.LeaderboardDialog
 import com.apps.bubblepopping.view.play.component.BubbleType
 import com.apps.bubblepopping.view.play.component.GameHud
 import com.apps.bubblepopping.view.play.component.HUD_CONTENT_HEIGHT
@@ -73,14 +72,14 @@ fun PlayScreenRoot(
     viewModel: BubbleGameViewModel = viewModel(),
     hapticFeedback: HapticFeedback,
     onBack: (() -> Unit)? = null,
-    onNavigateToRanking: (() -> Unit)? = null,
+    onHome: (() -> Unit)? = null,
 ) {
     BubblePoppingScreen(
         difficulty = difficulty,
         viewModel = viewModel,
         hapticFeedback = hapticFeedback,
         onBack = onBack,
-        onNavigateToRanking = onNavigateToRanking,
+        onHome = onHome,
     )
 }
 @Composable
@@ -89,13 +88,12 @@ fun BubblePoppingScreen(
     viewModel: BubbleGameViewModel = viewModel(),
     hapticFeedback: HapticFeedback,
     onBack: (() -> Unit)? = null,
-    onNavigateToRanking: (() -> Unit)? = null,
+    onHome: (() -> Unit)? = null,
 ) {
     LaunchedEffect(difficulty) { viewModel.applyDifficulty(difficulty) }
 
 
     var elapsedTime by remember { mutableStateOf(0f) }
-    var showLeaderboard by remember { mutableStateOf(false) }
 
     val heartBitmap = rememberIconBitmap(painterResource(Res.drawable.heart))
     val skullBitmap = rememberIconBitmap(painterResource(Res.drawable.skull))
@@ -234,7 +232,6 @@ fun BubblePoppingScreen(
                 viewModel.togglePause()
                 println("paused clicked")
             },
-            onRankingClick = { showLeaderboard = true },
             modifier = Modifier.align(Alignment.TopStart),
         )
 
@@ -242,16 +239,11 @@ fun BubblePoppingScreen(
             GameOverOverlay(
                 score     = viewModel.score,
                 onRestart = { viewModel.restartGame() },
+                onHome    = onHome,
                 modifier  = Modifier.fillMaxSize(),
             )
         }
 
-        if (showLeaderboard) {
-            LeaderboardDialog(
-                currentScore = viewModel.score,
-                onDismiss = { showLeaderboard = false },
-            )
-        }
     }
 }
 
@@ -313,6 +305,7 @@ private fun PauseOverlay(
 private fun GameOverOverlay(
     score: Int,
     onRestart: () -> Unit,
+    onHome: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -354,6 +347,19 @@ private fun GameOverOverlay(
                 modifier = Modifier.height(52.dp),
             ) {
                 Text(text = "Play Again", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            }
+            if (onHome != null) {
+                Button(
+                    onClick  = onHome,
+                    shape    = RoundedCornerShape(50),
+                    colors   = ButtonDefaults.buttonColors(
+                        containerColor = Color.White.copy(alpha = 0.12f),
+                        contentColor   = Color.White,
+                    ),
+                    modifier = Modifier.height(52.dp),
+                ) {
+                    Text(text = "Home", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                }
             }
         }
     }
