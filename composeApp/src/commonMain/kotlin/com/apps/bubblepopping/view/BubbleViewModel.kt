@@ -35,8 +35,10 @@ class BubbleGameViewModel : ViewModel() {
         private const val BREEZE_DECAY    = 2.0f
         private const val MAX_DELTA       = 0.05f
 
-        private const val MIN_RADIUS    = 22f
-        private const val MAX_RADIUS    = 54f
+        private const val MIN_RADIUS    = 30f
+        private const val MAX_RADIUS    = 68f
+        private const val RADIUS_SMALL  = 43f   // < this → 1 pt
+        private const val RADIUS_MEDIUM = 56f   // < this → 3 pt, else 5 pt
         private const val MIN_SPEED     = 70f
         private const val BASE_MAX_SPEED = 155f
         private const val SPEED_SCALE   = 0.8f           // px/s added per point
@@ -136,7 +138,7 @@ class BubbleGameViewModel : ViewModel() {
 
     fun tryPop(offset: Offset): Boolean {
         if (isGameOver || isPaused.value) return false
-        val minHitRadius = 50f
+        val minHitRadius = 68f
 
         val hit = bubbles.firstOrNull { bubble ->
             val dx        = offset.x - bubble.x
@@ -157,11 +159,11 @@ class BubbleGameViewModel : ViewModel() {
                 )
             )
             when (bubble.type) {
-                BubbleType.NORMAL -> score++
+                BubbleType.NORMAL -> score += scoreForRadius(bubble.radius)
                 BubbleType.POISON -> isGameOver = true
                 BubbleType.HEART  -> {
                     if (missedCount > 0) missedCount--
-                    score++
+                    score += scoreForRadius(bubble.radius)
                 }
             }
         }
@@ -239,6 +241,12 @@ class BubbleGameViewModel : ViewModel() {
         } else {
             breezeForce = 0f
         }
+    }
+
+    private fun scoreForRadius(radius: Float): Int = when {
+        radius < RADIUS_SMALL  -> 1
+        radius < RADIUS_MEDIUM -> 3
+        else                   -> 5
     }
 
     private fun createBubble(): Bubble {
