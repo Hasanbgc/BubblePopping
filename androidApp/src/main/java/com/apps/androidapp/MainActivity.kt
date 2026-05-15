@@ -97,7 +97,7 @@ private fun GameHudPausedPreview() {
 @Composable
 private fun LeaderboardDialogPreview() {
     MaterialTheme {
-        LeaderboardScreenRoot( currentScore = 55){}
+        LeaderboardScreenRoot {}
     }
 }
 
@@ -110,15 +110,17 @@ private fun LeaderboardItemsPreview() {
                 .background(Color(0xFF08172A))
                 .padding(8.dp),
         ) {
-            LeaderboardItem(LeaderboardEntry(rank = 1, name = "BubbleMaster", score = 312))
-            LeaderboardItem(LeaderboardEntry(rank = 2, name = "PopKing", score = 285))
-            LeaderboardItem(LeaderboardEntry(rank = 3, name = "BurstQueen", score = 261))
+            LeaderboardItem(LeaderboardEntry(rank = 1, name = "BubbleMaster", easyScore = 212, mediumScore = 312, hardScore = 156))
+            LeaderboardItem(LeaderboardEntry(rank = 2, name = "PopKing",      easyScore = 185, mediumScore = 285, hardScore = 198))
+            LeaderboardItem(LeaderboardEntry(rank = 3, name = "BurstQueen",   easyScore = 161, mediumScore = 261, hardScore = null))
             LeaderboardItem(
                 LeaderboardEntry(
-                    rank = 9,
-                    name = "You",
-                    score = 55,
-                    isCurrentUser = true
+                    rank          = 9,
+                    name          = "You",
+                    easyScore     = 55,
+                    mediumScore   = null,
+                    hardScore     = null,
+                    isCurrentUser = true,
                 )
             )
         }
