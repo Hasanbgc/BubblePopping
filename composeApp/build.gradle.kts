@@ -56,6 +56,9 @@ kotlin {
 
             // Serialization
             implementation(libs.kotlinx.serialization.json)
+
+            //coil
+            implementation(libs.coil.compose)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

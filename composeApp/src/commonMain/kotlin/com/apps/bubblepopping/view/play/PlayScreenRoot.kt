@@ -1,6 +1,7 @@
 package com.apps.bubblepopping.view.play
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -38,6 +39,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
@@ -48,8 +50,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apps.bubblepopping.HapticFeedback
 import com.apps.bubblepopping.Res
 import com.apps.bubblepopping.SoundManager
+import com.apps.bubblepopping.bg
 import com.apps.bubblepopping.createSoundManager
 import com.apps.bubblepopping.heart
+import com.apps.bubblepopping.play_screen_bg
 import com.apps.bubblepopping.skull
 import com.apps.bubblepopping.view.BubbleGameViewModel
 import com.apps.bubblepopping.view.home.Difficulty
@@ -138,112 +142,120 @@ fun BubblePoppingScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF050E1A),
-                        Color(0xFF0A1E35),
-                        Color(0xFF0E2F4F),
-                        Color(0xFF144B6E),
-                    )
-                )
-            )
-    ) {
-        // Establish state dependency so the Canvas recomposes every frame even
-        // when bubble positions mutate in-place (not observed individually).
-        val frameCount = viewModel.frameCount
-
-        // ── Game canvas ──────────────────────────────────────────────────────
-        // Full-screen so the background gradient is always seamless.
-        // Touch events use requireUnconsumed = true (the default), so taps the
-        // HUD consumed at the Initial pass never trigger a bubble pop here.
-        Canvas(
+    Box(modifier = Modifier.fillMaxSize()){
+        Image(
+            painter = painterResource(Res.drawable.play_screen_bg),
+            contentDescription = "background_image",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            val down = awaitFirstDown() // requireUnconsumed = true
-                            val popped = viewModel.tryPop(down.position)
-                            if (popped) {
-                                hapticFeedback.popVibration()
-                                soundManager?.playPop()
-                                down.consume()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.Black.copy(0.2f),
+
+                        )
+                    )
+                )
+        )
+        {
+            // Establish state dependency so the Canvas recomposes every frame even
+            // when bubble positions mutate in-place (not observed individually).
+            val frameCount = viewModel.frameCount
+
+            // ── Game canvas ──────────────────────────────────────────────────────
+            // Full-screen so the background gradient is always seamless.
+            // Touch events use requireUnconsumed = true (the default), so taps the
+            // HUD consumed at the Initial pass never trigger a bubble pop here.
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val down = awaitFirstDown() // requireUnconsumed = true
+                                val popped = viewModel.tryPop(down.position)
+                                if (popped) {
+                                    hapticFeedback.popVibration()
+                                    soundManager?.playPop()
+                                    down.consume()
+                                }
                             }
                         }
                     }
+            )  {
+                viewModel.setCanvasBounds(
+                    width     = size.width,
+                    height    = size.height,
+                    topOffset = topOffsetPx,
+                )
+
+                drawBreezeLines(viewModel.breezeForce, elapsedTime)
+
+                for (bubble in viewModel.bubbles) {
+                    when (bubble.type) {
+                        BubbleType.NORMAL -> drawBubble(bubble)
+                        BubbleType.POISON -> drawPoisonBubble(bubble, skullBitmap)
+                        BubbleType.HEART  -> drawHeartBubble(bubble, heartBitmap)
+                    }
                 }
-        )  {
-            viewModel.setCanvasBounds(
-                width     = size.width,
-                height    = size.height,
-                topOffset = topOffsetPx,
-            )
 
-            drawBreezeLines(viewModel.breezeForce, elapsedTime)
-
-            for (bubble in viewModel.bubbles) {
-                when (bubble.type) {
-                    BubbleType.NORMAL -> drawBubble(bubble)
-                    BubbleType.POISON -> drawPoisonBubble(bubble, skullBitmap)
-                    BubbleType.HEART  -> drawHeartBubble(bubble, heartBitmap)
+                for (anim in viewModel.popAnimations) {
+                    drawPopAnimation(anim)
                 }
             }
 
-            for (anim in viewModel.popAnimations) {
-                drawPopAnimation(anim)
+            // ── Pause overlay ────────────────────────────────────────────────────
+            // Sits above the canvas but below HUD and controls so both remain
+            // interactive. Tapping the dim layer also resumes the game.
+            if (isPaused && !viewModel.isGameOver) {
+                PauseOverlay(
+                    score    = viewModel.score,
+                    onResume = { viewModel.togglePause() },
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
-        }
 
-        // ── Pause overlay ────────────────────────────────────────────────────
-        // Sits above the canvas but below HUD and controls so both remain
-        // interactive. Tapping the dim layer also resumes the game.
-        if (isPaused && !viewModel.isGameOver) {
-            PauseOverlay(
-                score    = viewModel.score,
-                onResume = { viewModel.togglePause() },
-                modifier = Modifier.fillMaxSize(),
+            // ── Breeze controls ──────────────────────────────────────────────────
+            // navigationBarsPadding() keeps buttons above the gesture bar on all
+            // device configurations (3-button nav, gesture nav, etc.).
+            BreezeControls(
+                onBreezeLeft  = { viewModel.triggerBreeze(-1f) },
+                onBreezeRight = { viewModel.triggerBreeze(+1f) },
+                breezeForce   = viewModel.breezeForce,
+                modifier      = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 20.dp),
             )
-        }
 
-        // ── Breeze controls ──────────────────────────────────────────────────
-        // navigationBarsPadding() keeps buttons above the gesture bar on all
-        // device configurations (3-button nav, gesture nav, etc.).
-        BreezeControls(
-            onBreezeLeft  = { viewModel.triggerBreeze(-1f) },
-            onBreezeRight = { viewModel.triggerBreeze(+1f) },
-            breezeForce   = viewModel.breezeForce,
-            modifier      = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = 20.dp),
-        )
-
-        // ── HUD — drawn last, always on top ──────────────────────────────────
-        // Manages its own statusBarsPadding; no external top padding needed.
-        GameHud(
-            score = viewModel.score,
-            lives = 5 - viewModel.missedCount,
-            isPaused = isPaused,
-            onPlayPauseClick = {
-                viewModel.togglePause()
-                println("paused clicked")
-            },
-            modifier = Modifier.align(Alignment.TopStart),
-        )
-
-        if (viewModel.isGameOver) {
-            GameOverOverlay(
-                score     = viewModel.score,
-                onRestart = { viewModel.restartGame() },
-                onHome    = onHome,
-                modifier  = Modifier.fillMaxSize(),
+            // ── HUD — drawn last, always on top ──────────────────────────────────
+            // Manages its own statusBarsPadding; no external top padding needed.
+            GameHud(
+                score = viewModel.score,
+                lives = 5 - viewModel.missedCount,
+                isPaused = isPaused,
+                onPlayPauseClick = {
+                    viewModel.togglePause()
+                    println("paused clicked")
+                },
+                modifier = Modifier.align(Alignment.TopStart),
             )
-        }
 
+            if (viewModel.isGameOver) {
+                GameOverOverlay(
+                    score     = viewModel.score,
+                    onRestart = { viewModel.restartGame() },
+                    onHome    = onHome,
+                    modifier  = Modifier.fillMaxSize(),
+                )
+            }
+
+        }
     }
 }
 
