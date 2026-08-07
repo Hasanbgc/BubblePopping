@@ -89,9 +89,24 @@ The UI is fully built using **Jetpack Compose**, while game logic is managed thr
 
 # 📸 Screenshots
 
-Home
-![Home Screen](screenshot/home_screen.jpeg)
-
+<p align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <b>Home Screen</b><br>
+        <img src="screenshot/home_screen.jpeg" width="220"/>
+      </td>
+      <td align="center">
+        <b>Game Play</b><br>
+        <img src="screenshot/game_play_screen.jpeg" width="220"/>
+      </td>
+      <td align="center">
+        <b>Game Over</b><br>
+        <img src="screenshot/gameover_screen.jpeg" width="220"/>
+      </td>
+    </tr>
+  </table>
+</p>
 ---
 
 # 🤝 Contributing
