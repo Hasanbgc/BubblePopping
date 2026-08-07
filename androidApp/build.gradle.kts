@@ -5,13 +5,11 @@ plugins {
 
 android {
     namespace = "com.apps.androidapp"
-    compileSdk {
-        version = release(37)
-    }
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 24
-        targetSdk = libs.versions.android.targetSdk.get().toInt()
+        targetSdk = 36
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
