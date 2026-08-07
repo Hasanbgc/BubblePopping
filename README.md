@@ -93,6 +93,10 @@ The UI is fully built using **Jetpack Compose**, while game logic is managed thr
   <table>
     <tr>
       <td align="center">
+        <b>Game Play</b><br>
+        <img src="screenshot/bubble_popping_gameplay.gif" width="220"/>
+      </td>
+      <td align="center">
         <b>Home Screen</b><br>
         <img src="screenshot/home_screen.jpeg" width="220"/>
       </td>
