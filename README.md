@@ -89,7 +89,8 @@ The UI is fully built using **Jetpack Compose**, while game logic is managed thr
 
 # 📸 Screenshots
 
-> Screenshots coming soon.
+Home
+![](screenshots/home_screen.jpeg)
 
 ---
 
