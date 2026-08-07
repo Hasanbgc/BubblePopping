@@ -36,7 +36,6 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val hapticFeedback = HapticFeedback(this)
-            //App(hapticFeedback)
             NavGraph(hapticFeedback)
         }
     }
@@ -50,7 +49,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppAndroidPreview() {
     val hapticFeedback = HapticFeedback(LocalContext.current)
-    //App(hapticFeedback)
+    NavGraph(hapticFeedback)
 }
 
 @Preview(name = "Game HUD — playing", showBackground = true, backgroundColor = 0xFF0A1E35)

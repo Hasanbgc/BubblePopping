@@ -35,6 +35,7 @@ kotlin {
     sourceSets {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
+            implementation(libs.compose.uiTooling)
             implementation(libs.androidx.activity.compose)
         }
         commonMain.dependencies {
@@ -55,6 +56,9 @@ kotlin {
 
             // Serialization
             implementation(libs.kotlinx.serialization.json)
+
+            //coil
+            implementation(libs.coil.compose)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

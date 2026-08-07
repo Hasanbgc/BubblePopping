@@ -43,3 +43,4 @@ data class PopAnimation(
     val color: Color,
     var progress: Float = 0f,
 )
+
