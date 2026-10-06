@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
@@ -109,8 +110,7 @@ fun BubblePoppingScreen(
         try {
             val bytes = Res.readBytes("files/pop_3.mp3")
             value = createSoundManager(bytes)
-        } catch (e: Exception) {
-            println("Failed to load sound: ${e.message}")
+        } catch (_: Exception) {
         }
     }
 
@@ -174,6 +174,13 @@ fun BubblePoppingScreen(
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
+                    .onSizeChanged { intSize ->
+                        viewModel.setCanvasBounds(
+                            width     = intSize.width.toFloat(),
+                            height    = intSize.height.toFloat(),
+                            topOffset = topOffsetPx,
+                        )
+                    }
                     .pointerInput(Unit) {
                         awaitPointerEventScope {
                             while (true) {
@@ -188,12 +195,6 @@ fun BubblePoppingScreen(
                         }
                     }
             )  {
-                viewModel.setCanvasBounds(
-                    width     = size.width,
-                    height    = size.height,
-                    topOffset = topOffsetPx,
-                )
-
                 drawBreezeLines(viewModel.breezeForce, elapsedTime)
 
                 for (bubble in viewModel.bubbles) {
@@ -241,7 +242,6 @@ fun BubblePoppingScreen(
                 isPaused = isPaused,
                 onPlayPauseClick = {
                     viewModel.togglePause()
-                    println("paused clicked")
                 },
                 modifier = Modifier.align(Alignment.TopStart),
             )

@@ -88,7 +88,7 @@ class BubbleGameViewModel : ViewModel() {
     var isGameOver     by mutableStateOf(false);     private set
     var frameCount     by mutableStateOf(0);         private set
 
-    var _isPaused = MutableStateFlow(false)
+    private val _isPaused = MutableStateFlow(false)
     val isPaused  = _isPaused.asStateFlow()
 
 
@@ -116,11 +116,9 @@ class BubbleGameViewModel : ViewModel() {
     }
 
     fun togglePause() {
-       // if (!isGameOver) {
+        if (!isGameOver) {
             _isPaused.value = !_isPaused.value
-
-        println("isPaused: ${_isPaused.value}")
-       // }
+        }
     }
 
     fun update(delta: Float) {

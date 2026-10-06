@@ -185,31 +185,6 @@ fun ScoreView(
 // PlayPauseButton
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
-// RankingButton
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-fun RankingButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    IconButton(
-        onClick  = onClick,
-        modifier = modifier.size(40.dp),
-    ) {
-        Text(
-            text     = "🏆",
-            fontSize = 20.sp,
-            color    = Color.White,
-        )
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PlayPauseButton
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
  * Toggle button with a [Crossfade] dissolve between "▶" (play) and "⏸" (pause).
  * A [MutableInteractionSource]-driven bouncy scale animates on press.
@@ -233,9 +208,7 @@ fun PlayPauseButton(
     )
 
     IconButton(
-        onClick           = {
-            println("pause icon click")
-            onClick.invoke() },
+        onClick           = onClick,
         enabled = true,
         interactionSource = interactionSource,
         modifier          = modifier
@@ -251,7 +224,7 @@ fun PlayPauseButton(
             label         = "play_pause_icon",
         ) { paused ->
             Text(
-                text     = if (isPaused) "▶" else "⏸",
+                text     = if (paused) "▶" else "⏸",
                 fontSize = 20.sp,
                 color    = Color.White,
             )

@@ -163,7 +163,7 @@ fun CloseButton(
     ) {
         Image(
             painter = painterResource(Res.drawable.ic_close),
-            contentDescription = "Profile",
+            contentDescription = "Close",
             modifier = Modifier.matchParentSize().clickable {
                 onBackPress()
             },

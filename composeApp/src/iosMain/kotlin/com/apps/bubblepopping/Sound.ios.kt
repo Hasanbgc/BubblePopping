@@ -27,5 +27,9 @@ actual fun createSoundManager(audioData: ByteArray): SoundManager {
             player.currentTime = 0.0
             player.play()
         }
-    )
+    ).also {
+        it.onDispose = {
+            player.stop()
+        }
+    }
 }

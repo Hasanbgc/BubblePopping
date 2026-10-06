@@ -149,19 +149,24 @@ private fun DrawScope.drawSoapBubble(bubble: Bubble, scheme: BubbleScheme) {
     drawArc(color = scheme.crescentColor.copy(alpha = 0.95f), startAngle = crescentStart + crescentSweep * 0.3f, sweepAngle = crescentSweep * 0.4f,       useCenter = false, topLeft = crescentRect, size = crescentSz, style = Stroke(width = crescentStroke * 0.5f, cap = StrokeCap.Round))
 
     // 6. Sparkle dots
-    data class Sparkle(val angleDeg: Float, val sz: Float, val alpha: Float)
-    listOf(
-        Sparkle(rot - 35f,  r * 0.072f, 0.95f),
-        Sparkle(rot + 75f,  r * 0.046f, 0.85f),
-        Sparkle(rot + 200f, r * 0.030f, 0.72f),
-    ).forEach { sp ->
-        val aRad = sp.angleDeg * PI.toFloat() / 180f
-        drawCircle(
-            color  = scheme.sparkleColor.copy(alpha = sp.alpha),
-            radius = sp.sz,
-            center = Offset(cx + r * cos(aRad), cy + r * sin(aRad)),
-        )
-    }
+    val aRad1 = (rot - 35f) * PI.toFloat() / 180f
+    drawCircle(
+        color  = scheme.sparkleColor.copy(alpha = 0.95f),
+        radius = r * 0.072f,
+        center = Offset(cx + r * cos(aRad1), cy + r * sin(aRad1)),
+    )
+    val aRad2 = (rot + 75f) * PI.toFloat() / 180f
+    drawCircle(
+        color  = scheme.sparkleColor.copy(alpha = 0.85f),
+        radius = r * 0.046f,
+        center = Offset(cx + r * cos(aRad2), cy + r * sin(aRad2)),
+    )
+    val aRad3 = (rot + 200f) * PI.toFloat() / 180f
+    drawCircle(
+        color  = scheme.sparkleColor.copy(alpha = 0.72f),
+        radius = r * 0.030f,
+        center = Offset(cx + r * cos(aRad3), cy + r * sin(aRad3)),
+    )
 }
 
 private fun DrawScope.drawBubbleIcon(bubble: Bubble, icon: ImageBitmap) {

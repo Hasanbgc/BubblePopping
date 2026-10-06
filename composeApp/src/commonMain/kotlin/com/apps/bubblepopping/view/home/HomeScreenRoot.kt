@@ -39,7 +39,6 @@ import kotlin.math.absoluteValue
 
 @Composable
 fun HomeScreenRoot(
-    onBack: (() -> Unit)? = null,
     onNavigateToPlay: (Difficulty) -> Unit,
     onNavigateToLeaderboard: () -> Unit,
 ) {
@@ -54,11 +53,11 @@ fun HomeScreen(
     onNavigateToPlay: (Difficulty) -> Unit,
     onNavigateToLeaderboard: () -> Unit,
 ) {
-    Scaffold(
-    ) {
+    Scaffold { innerPadding ->
         HomeContent(
             onDifficultySelected = onNavigateToPlay,
             onNavigateToLeaderboard = onNavigateToLeaderboard,
+            modifier = Modifier.padding(innerPadding)
         )
     }
 }
@@ -67,6 +66,7 @@ fun HomeScreen(
 fun HomeContent(
     onDifficultySelected: (Difficulty) -> Unit,
     onNavigateToLeaderboard: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val pagerState = rememberPagerState(
         initialPage = 1,
