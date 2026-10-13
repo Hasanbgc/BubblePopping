@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.shadow.Shadow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -167,6 +168,27 @@ fun CloseButton(
             modifier = Modifier.matchParentSize().clickable {
                 onBackPress()
             },
+        )
+    }
+}
+
+@Preview
+@Composable
+fun BubbleTopAppBarPreview() {
+    MaterialTheme {
+        BubbleTopAppBar(
+            onBackPress = {}
+        )
+    }
+}
+
+@Preview
+@Composable
+fun BubbleTopAppBarWithTitlePreview() {
+    MaterialTheme {
+        BubbleTopAppBar(
+            title = "Settings",
+            onBackPress = {}
         )
     }
 }
