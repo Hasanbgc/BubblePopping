@@ -1,79 +1,64 @@
 package com.apps.bubblepopping.view
 
-
-
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.apps.bubblepopping.data.ProgressRepository
+import com.apps.bubblepopping.data.prefs.GameSettings
+import com.apps.bubblepopping.data.prefs.SettingsRepository
+import com.apps.bubblepopping.game.BubbleSize
+import com.apps.bubblepopping.game.ComboTracker
+import com.apps.bubblepopping.game.GameEvent
+import com.apps.bubblepopping.game.GameOverReason
+import com.apps.bubblepopping.game.GameRules
+import com.apps.bubblepopping.game.SpawnConfig
 import com.apps.bubblepopping.view.home.Difficulty
 import com.apps.bubblepopping.view.play.component.Bubble
 import com.apps.bubblepopping.view.play.component.BubbleType
+import com.apps.bubblepopping.view.play.component.FloatingText
 import com.apps.bubblepopping.view.play.component.PopAnimation
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
-class BubbleGameViewModel : ViewModel() {
+/**
+ * Runs one Endless round at [difficulty].
+ *
+ * Pass a [seed] for a deterministic round (same seed → same bubbles), e.g. the
+ * daily challenge or tests. [spawn] defaults to the difficulty's preset.
+ */
+class BubbleGameViewModel(
+    val difficulty: Difficulty,
+    private val progressRepository: ProgressRepository,
+    settingsRepository: SettingsRepository,
+    private val spawn: SpawnConfig = difficulty.spawn,
+    private val seed: Long? = null,
+) : ViewModel() {
 
     // ─────────────────────────────────────────────────────────────────────────
     // Constants
     // ─────────────────────────────────────────────────────────────────────────
 
     companion object {
-        private const val BASE_SPAWN_INTERVAL = 0.85f
-        private const val MIN_SPAWN_INTERVAL  = 0.30f
-        private const val SPAWN_SCALE         = 0.005f   // seconds shaved per point
-
-        private const val BREEZE_STRENGTH = 160f
-        private const val BREEZE_DECAY    = 2.0f
-        private const val MAX_DELTA       = 0.05f
-
-        private const val MIN_RADIUS    = 30f
-        private const val MAX_RADIUS    = 68f
-        private const val RADIUS_SMALL  = 43f   // < this → 1 pt
-        private const val RADIUS_MEDIUM = 56f   // < this → 3 pt, else 5 pt
-        private const val MIN_SPEED     = 70f
-        private const val BASE_MAX_SPEED = 155f
-        private const val SPEED_SCALE   = 0.8f           // px/s added per point
-        private const val MAX_SPEED_CAP = 320f
-        private const val MIN_AMPLITUDE = 18f
-        private const val MAX_AMPLITUDE = 62f
-
-        private const val POP_ANIM_SPEED = 2.5f
-
-        private const val MAX_LIVES = 5
-
-        // Spawn weights: 75% normal, 15% poison, 10% heart
-        private const val WEIGHT_NORMAL = 75
-        private const val WEIGHT_POISON = 15
-        // WEIGHT_HEART = 100 - 75 - 15 = 10
-
-        val BUBBLE_COLORS = listOf(
-            Color(0xFF81D4FA),
-            Color(0xFFB2EBF2),
-            Color(0xFF80CBC4),
-            Color(0xFFA5D6A7),
-            Color(0xFFCE93D8),
-            Color(0xFFF48FB1),
-            Color(0xFFFFCC80),
-            Color(0xFFE0F7FA),
-        )
+        /** Breeze below this strength snaps to zero. */
+        private const val BREEZE_CUTOFF = 0.003f
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Difficulty-adjusted values — start at MEDIUM (1× multiplier)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    private var adjustedSpawnInterval = BASE_SPAWN_INTERVAL
-    private var adjustedBaseMaxSpeed  = BASE_MAX_SPEED
-    private var adjustedMaxSpeedCap   = MAX_SPEED_CAP
 
     // ─────────────────────────────────────────────────────────────────────────
     // Exposed state
@@ -81,37 +66,84 @@ class BubbleGameViewModel : ViewModel() {
 
     val bubbles        = mutableStateListOf<Bubble>()
     val popAnimations  = mutableStateListOf<PopAnimation>()
+    val floatingTexts  = mutableStateListOf<FloatingText>()
 
-    var breezeForce    by mutableStateOf(0f);       private set
+    /** Current breeze, from -1 (full left) to +1 (full right). */
+    var breeze         by mutableStateOf(0f);       private set
     var score          by mutableStateOf(0);         private set
     var missedCount    by mutableStateOf(0);         private set
     var isGameOver     by mutableStateOf(false);     private set
+    /** Increments every simulated game frame (not while paused, frozen or over). */
     var frameCount     by mutableStateOf(0);         private set
+    /** Increments every frame effects animate — also after game over, so bursts finish. */
+    var effectFrame    by mutableStateOf(0);         private set
+    /** True when the round that just ended beat the saved best score. */
+    var isNewBest      by mutableStateOf(false);     private set
+
+    /** Current combo count; 0 when no combo is running. */
+    var combo          by mutableStateOf(0);         private set
+    /** Fraction of the combo window left, 1 → 0. Drives the HUD combo meter. */
+    var comboTimeLeft  by mutableStateOf(0f);        private set
+    /** Screen-shake translation in pixels; [Offset.Zero] when not shaking. */
+    var shakeOffset    by mutableStateOf(Offset.Zero); private set
+
+    val livesLeft: Int get() = GameRules.MAX_LIVES - missedCount
+    val comboMultiplier: Int get() = ComboTracker.multiplierFor(combo)
 
     private val _isPaused = MutableStateFlow(false)
     val isPaused  = _isPaused.asStateFlow()
 
+    private val _events = MutableSharedFlow<GameEvent>(
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    /** Everything that happens during the round — see [GameEvent]. */
+    val events: SharedFlow<GameEvent> = _events.asSharedFlow()
 
+    /** Saved best score for [difficulty], or null if never played. */
+    val bestScore: StateFlow<Int?> = progressRepository.bestEndlessScore(difficulty)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val settings: StateFlow<GameSettings> = settingsRepository.settings
+        .stateIn(viewModelScope, SharingStarted.Eagerly, GameSettings())
 
     // ─────────────────────────────────────────────────────────────────────────
     // Private state
     // ─────────────────────────────────────────────────────────────────────────
 
+    private val comboTracker    = ComboTracker()
+    private var random          = newRandom()
     private var spawnTimer      = 0f
+    private var playTime        = 0f
+    private var lastTickSec     = 0
+    private var bubblesPopped   = 0
+    private var nextEffectId    = 0L
     private var canvasWidth     = 400f
     private var canvasHeight    = 800f
     private var canvasTopOffset = 0f   // px below which bubbles are in the active game area
+    private var density         = 1f
+
+    // Effects run on real time, separate from game time.
+    private var hitStopLeft     = 0f
+    private var shakeTimeLeft   = 0f
+    private var shakeDuration   = 0f
+    private var shakeStrengthPx = 0f
+    private var shakeClock      = 0f
 
     // ─────────────────────────────────────────────────────────────────────────
     // Public API
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** Update screen dimensions and the Y-offset where the game area begins (below HUD). */
-    fun setCanvasBounds(width: Float, height: Float, topOffset: Float = 0f) {
-        if (width > 0f && height > 0f) {
+    /**
+     * Update screen dimensions, the Y-offset where the game area begins (below
+     * the HUD), and the screen density used to convert dp sizes to pixels.
+     */
+    fun setCanvasBounds(width: Float, height: Float, topOffset: Float = 0f, density: Float = 1f) {
+        if (width > 0f && height > 0f && density > 0f) {
             canvasWidth     = width
             canvasHeight    = height
             canvasTopOffset = topOffset
+            this.density    = density
         }
     }
 
@@ -121,22 +153,31 @@ class BubbleGameViewModel : ViewModel() {
         }
     }
 
+    /** Advance one frame. Call every frame, including after game over (effects keep animating). */
     fun update(delta: Float) {
-        if (isGameOver || _isPaused.value) return
-        val dt = delta.coerceAtMost(MAX_DELTA)
+        if (_isPaused.value) return
+        val dt = delta.coerceAtMost(GameRules.MAX_DELTA)
+
+        effectsStep(dt)
+        if (isGameOver) return
+        if (hitStopLeft > 0f) {
+            hitStopLeft -= dt
+            return
+        }
 
         spawnStep(dt)
         moveStep(dt)
         cullStep()
-        animatePopStep(dt)
         breezeDecayStep(dt)
+        tickStep(dt)
+        comboStep()
 
         frameCount++
     }
 
     fun tryPop(offset: Offset): Boolean {
         if (isGameOver || isPaused.value) return false
-        val minHitRadius = 68f
+        val minHitRadius = GameRules.MIN_HIT_RADIUS_DP * density
 
         val hit = bubbles.firstOrNull { bubble ->
             val dx        = offset.x - bubble.x
@@ -144,60 +185,165 @@ class BubbleGameViewModel : ViewModel() {
             val hitRadius = bubble.radius.coerceAtLeast(minHitRadius)
             (dx * dx + dy * dy) <= (hitRadius * hitRadius)
         }
+        emit(GameEvent.Tapped(hit = hit != null))
 
         hit?.let { bubble ->
             bubbles.remove(bubble)
-            popAnimations.add(
-                PopAnimation(
-                    id = "${bubble.id}_pop",
-                    x = bubble.x,
-                    y = bubble.y,
-                    radius = bubble.radius,
-                    color = bubble.color,
-                )
-            )
-            when (bubble.type) {
-                BubbleType.NORMAL -> score += scoreForRadius(bubble.radius)
-                BubbleType.POISON -> isGameOver = true
-                BubbleType.HEART  -> {
-                    if (missedCount > 0) missedCount--
-                    score += scoreForRadius(bubble.radius)
-                }
-            }
+            bubblesPopped++
+            if (bubble.type == BubbleType.POISON) popPoison(bubble) else popScoring(bubble)
         }
         return hit != null
     }
 
+    /** Push all bubbles sideways. [direction] is -1 (left) to +1 (right). */
     fun triggerBreeze(direction: Float) {
         if (isGameOver) return
-        breezeForce = direction.coerceIn(-1f, 1f) * BREEZE_STRENGTH
-    }
-
-    fun applyDifficulty(difficulty: Difficulty) {
-        adjustedSpawnInterval = BASE_SPAWN_INTERVAL * difficulty.spawnIntervalMultiplier
-        adjustedBaseMaxSpeed  = BASE_MAX_SPEED * difficulty.speedMultiplier
-        adjustedMaxSpeedCap   = MAX_SPEED_CAP * difficulty.maxSpeedCapMultiplier
-        restartGame()
+        breeze = direction.coerceIn(-1f, 1f)
     }
 
     fun restartGame() {
         bubbles.clear()
         popAnimations.clear()
-        score       = 0
-        missedCount = 0
-        isGameOver  = false
-        _isPaused.value  = false
-        breezeForce = 0f
-        spawnTimer  = 0f
+        floatingTexts.clear()
+        comboTracker.reset()
+        score         = 0
+        missedCount   = 0
+        isGameOver    = false
+        isNewBest     = false
+        _isPaused.value = false
+        breeze        = 0f
+        combo         = 0
+        comboTimeLeft = 0f
+        shakeOffset   = Offset.Zero
+        spawnTimer    = 0f
+        playTime      = 0f
+        lastTickSec   = 0
+        bubblesPopped = 0
+        hitStopLeft   = 0f
+        shakeTimeLeft = 0f
+        random        = newRandom()
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Popping
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** Normal and heart bubbles: extend the combo and score with its multiplier. */
+    private fun popScoring(bubble: Bubble) {
+        val previous   = comboTracker.combo
+        val newCombo   = comboTracker.onPop(playTime)
+        val multiplier = ComboTracker.multiplierFor(newCombo)
+        val points     = bubble.size.points * multiplier
+
+        if (bubble.type == BubbleType.HEART && missedCount > 0) missedCount--
+        score += points
+        syncComboState()
+
+        val intensity = 1f + minOf(newCombo, GameRules.MAX_BURST_COMBO) * GameRules.BURST_GROWTH_PER_COMBO
+        addPopAnimation(bubble, intensity)
+        floatingTexts.add(
+            FloatingText(
+                id = "text_${nextEffectId++}",
+                text = if (multiplier > 1) "+$points ×$multiplier" else "+$points",
+                x = bubble.x,
+                y = bubble.y - bubble.radius,
+                color = if (bubble.type == BubbleType.HEART) HeartPopupColor else ScorePopupColor,
+            )
+        )
+        ComboTracker.milestoneText(newCombo)?.let { text ->
+            floatingTexts.add(
+                FloatingText(
+                    id = "text_${nextEffectId++}",
+                    text = text,
+                    x = bubble.x,
+                    y = bubble.y - bubble.radius - GameRules.MILESTONE_TEXT_OFFSET_DP * density,
+                    color = ComboColor,
+                    isMilestone = true,
+                )
+            )
+            hitStopLeft = GameRules.HIT_STOP_SECONDS
+            startShake(GameRules.SHAKE_MILESTONE_DP, GameRules.SHAKE_MILESTONE_SECONDS)
+        }
+        if (bubble.size == BubbleSize.LARGE) {
+            startShake(GameRules.SHAKE_LARGE_POP_DP, GameRules.SHAKE_LARGE_POP_SECONDS)
+        }
+
+        emit(GameEvent.Popped(bubble, points, newCombo))
+        emit(GameEvent.ComboChanged(newCombo, previous))
+    }
+
+    private fun popPoison(bubble: Bubble) {
+        breakCombo()
+        addPopAnimation(bubble, intensity = 1f)
+        startShake(GameRules.SHAKE_POISON_DP, GameRules.SHAKE_POISON_SECONDS)
+        emit(GameEvent.Popped(bubble, points = 0, combo = 0))
+        endGame(GameOverReason.POISON)
+    }
+
+    private fun addPopAnimation(bubble: Bubble, intensity: Float) {
+        popAnimations.add(
+            PopAnimation(
+                id = "${bubble.id}_pop",
+                x = bubble.x,
+                y = bubble.y,
+                radius = bubble.radius,
+                color = bubble.color,
+                intensity = intensity,
+            )
+        )
+    }
+
+    private fun breakCombo() {
+        val broken = comboTracker.breakCombo()
+        if (broken > 0) {
+            syncComboState()
+            emit(GameEvent.ComboChanged(combo = 0, previous = broken, broken = true))
+        }
+    }
+
+    private fun syncComboState() {
+        combo = comboTracker.combo
+        comboTimeLeft = comboTracker.timeLeftFraction(playTime)
+    }
+
+    private fun startShake(strengthDp: Float, seconds: Float) {
+        val strengthPx = strengthDp * density
+        val currentPx = if (shakeDuration > 0f) shakeStrengthPx * shakeTimeLeft / shakeDuration else 0f
+        if (strengthPx < currentPx) return   // a stronger shake is already running
+        shakeStrengthPx = strengthPx
+        shakeDuration   = seconds
+        shakeTimeLeft   = seconds
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Private step functions
     // ─────────────────────────────────────────────────────────────────────────
 
+    private fun effectsStep(dt: Float) {
+        for (anim in popAnimations) anim.progress += dt * GameRules.POP_ANIM_SPEED
+        popAnimations.removeAll { it.progress >= 1f }
+
+        for (text in floatingTexts) {
+            val speed = if (text.isMilestone) GameRules.MILESTONE_TEXT_SPEED else GameRules.FLOATING_TEXT_SPEED
+            text.progress += dt * speed
+        }
+        floatingTexts.removeAll { it.progress >= 1f }
+
+        if (shakeTimeLeft > 0f) {
+            shakeTimeLeft = (shakeTimeLeft - dt).coerceAtLeast(0f)
+            shakeClock += dt
+            val strength = shakeStrengthPx * shakeTimeLeft / shakeDuration
+            shakeOffset = Offset(sin(shakeClock * 90f) * strength, cos(shakeClock * 73f) * strength)
+        } else if (shakeOffset != Offset.Zero) {
+            shakeOffset = Offset.Zero
+        }
+
+        effectFrame++
+    }
+
     private fun spawnStep(dt: Float) {
-        val interval = (adjustedSpawnInterval - score * SPAWN_SCALE)
-            .coerceAtLeast(MIN_SPAWN_INTERVAL)
+        val interval = (spawn.spawnInterval - score * spawn.spawnRampPerPoint)
+            .coerceAtLeast(spawn.minSpawnInterval)
         spawnTimer += dt
         if (spawnTimer >= interval) {
             spawnTimer = 0f
@@ -206,72 +352,102 @@ class BubbleGameViewModel : ViewModel() {
     }
 
     private fun moveStep(dt: Float) {
+        val breezeVelocity = breeze * GameRules.BREEZE_SPEED * canvasWidth
         for (bubble in bubbles) {
             bubble.y -= bubble.speed * dt
-            bubble.baseX += breezeForce * dt
+            bubble.baseX += breezeVelocity * dt
             bubble.x = bubble.baseX +
-                    sin(bubble.y * 0.05f + bubble.phase) * bubble.amplitude
+                    sin(bubble.y / density * GameRules.WOBBLE_FREQUENCY + bubble.phase) * bubble.amplitude
         }
     }
 
     private fun cullStep() {
         // Cull bubbles that have risen above the game area (below the HUD, not absolute 0).
         val escaped = bubbles.filter { it.y + it.radius < canvasTopOffset }
-        for (bubble in escaped) {
-            if (bubble.type == BubbleType.NORMAL) {
-                missedCount++
-                if (missedCount >= MAX_LIVES) {
-                    isGameOver = true
-                }
-            }
-        }
+        if (escaped.isEmpty()) return
         bubbles.removeAll(escaped.toSet())
-    }
-
-    private fun animatePopStep(dt: Float) {
-        for (anim in popAnimations) anim.progress += dt * POP_ANIM_SPEED
-        popAnimations.removeAll { it.progress >= 1f }
+        for (bubble in escaped) {
+            val lifeLost = bubble.type == BubbleType.NORMAL
+            if (lifeLost) {
+                missedCount++
+                breakCombo()
+            }
+            emit(GameEvent.Missed(bubble, lifeLost))
+        }
+        if (missedCount >= GameRules.MAX_LIVES) endGame(GameOverReason.OUT_OF_LIVES)
     }
 
     private fun breezeDecayStep(dt: Float) {
-        if (abs(breezeForce) > 0.5f) {
-            breezeForce *= (1f - dt * BREEZE_DECAY)
-        } else {
-            breezeForce = 0f
+        breeze = if (abs(breeze) > BREEZE_CUTOFF) breeze * (1f - dt * GameRules.BREEZE_DECAY) else 0f
+    }
+
+    private fun tickStep(dt: Float) {
+        playTime += dt
+        val seconds = playTime.toInt()
+        if (seconds > lastTickSec) {
+            lastTickSec = seconds
+            emit(GameEvent.Tick(seconds))
         }
     }
 
-    private fun scoreForRadius(radius: Float): Int = when {
-        radius < RADIUS_SMALL  -> 1
-        radius < RADIUS_MEDIUM -> 3
-        else                   -> 5
+    private fun comboStep() {
+        val previous = comboTracker.combo
+        if (comboTracker.expireIfStale(playTime)) emit(GameEvent.ComboChanged(combo = 0, previous = previous))
+        syncComboState()
     }
 
+    private fun endGame(reason: GameOverReason) {
+        if (isGameOver) return
+        isGameOver = true
+        isNewBest  = score > 0 && score > (bestScore.value ?: 0)
+        emit(GameEvent.GameOver(reason, score, isNewBest))
+
+        val finalScore = score
+        val popped = bubblesPopped
+        val bestCombo = comboTracker.best
+        viewModelScope.launch {
+            progressRepository.recordEndlessGame(difficulty, finalScore, popped, bestCombo)
+        }
+    }
+
+    private fun emit(event: GameEvent) {
+        _events.tryEmit(event)
+    }
+
+    private fun newRandom(): Random = seed?.let { Random(it) } ?: Random.Default
+
     private fun createBubble(): Bubble {
-        val radius = Random.nextFloat() * (MAX_RADIUS - MIN_RADIUS) + MIN_RADIUS
-        val startX = Random.nextFloat() * canvasWidth
-        val maxSpeed = (adjustedBaseMaxSpeed + score * SPEED_SCALE).coerceAtMost(adjustedMaxSpeedCap)
+        val radiusDp = random.nextFloat() * (GameRules.MAX_RADIUS_DP - GameRules.MIN_RADIUS_DP) +
+                GameRules.MIN_RADIUS_DP
+        val radius   = radiusDp * density
+        val startX   = random.nextFloat() * canvasWidth
+        val maxSpeed = (spawn.maxSpeed + score * spawn.speedRampPerPoint).coerceAtMost(spawn.maxSpeedCap)
+        val speed    = (random.nextFloat() * (maxSpeed - spawn.minSpeed) + spawn.minSpeed) * canvasHeight
+        val amplitudeDp = random.nextFloat() * (GameRules.MAX_AMPLITUDE_DP - GameRules.MIN_AMPLITUDE_DP) +
+                GameRules.MIN_AMPLITUDE_DP
         val type = rollBubbleType()
         return Bubble(
-            id = Random.nextLong().toString(),
+            id = random.nextLong().toString(),
             x = startX,
             y = canvasHeight + radius,
             radius = radius,
-            speed = Random.nextFloat() * (maxSpeed - MIN_SPEED) + MIN_SPEED,
-            amplitude = Random.nextFloat() * (MAX_AMPLITUDE - MIN_AMPLITUDE) + MIN_AMPLITUDE,
+            size = GameRules.sizeForRadius(radiusDp),
+            speed = speed,
+            amplitude = amplitudeDp * density,
             baseX = startX,
-            phase = Random.nextFloat() * (2f * PI.toFloat()),
-            color = BUBBLE_COLORS[Random.nextInt(BUBBLE_COLORS.size)],
-            shimmerAngle = Random.nextFloat() * 360f,
+            phase = random.nextFloat() * (2f * PI.toFloat()),
+            color = BubbleColors[random.nextInt(BubbleColors.size)],
+            shimmerAngle = random.nextFloat() * 360f,
             type = type,
         )
     }
 
     private fun rollBubbleType(): BubbleType {
-        return when (Random.nextInt(100)) {
-            in 0 until WEIGHT_NORMAL -> BubbleType.NORMAL
-            in WEIGHT_NORMAL until WEIGHT_NORMAL + WEIGHT_POISON -> BubbleType.POISON
-            else -> BubbleType.HEART
+        var roll = random.nextInt(spawn.typeWeights.values.sum())
+        for ((type, weight) in spawn.typeWeights) {
+            if (roll < weight) return type
+            roll -= weight
         }
+        error("unreachable: roll exceeded total weight")
     }
 }

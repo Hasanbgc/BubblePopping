@@ -3,9 +3,9 @@ package com.apps.bubblepopping
 import android.media.AudioAttributes
 import android.media.SoundPool
 import java.io.File
-import java.io.FileOutputStream
+import java.util.concurrent.ConcurrentHashMap
 
-actual fun createSoundManager(audioData: ByteArray): SoundManager {
+actual fun createSoundManager(samples: List<ByteArray>): SoundManager {
     val attributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_GAME)
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -15,30 +15,26 @@ actual fun createSoundManager(audioData: ByteArray): SoundManager {
         .setMaxStreams(8)
         .setAudioAttributes(attributes)
         .build()
-    // SoundPool.load() needs a file path or FD, so write bytes to a temp file
-    val tempFile = File.createTempFile("pop_sound", ".mp3")
-    FileOutputStream(tempFile).use { it.write(audioData) }
 
-    var soundId  = -1
-    var isLoaded = false
-
-    soundPool.setOnLoadCompleteListener { _, _, status ->
-        if (status == 0) {
-            isLoaded = true
-        }
-        try { tempFile.delete() } catch(_: Exception) {}
+    // SoundPool loads from a file, so each sample is written to a temp file
+    // that is deleted once loading finishes.
+    val loaded = ConcurrentHashMap.newKeySet<Int>()
+    val pendingFiles = ConcurrentHashMap<Int, File>()
+    soundPool.setOnLoadCompleteListener { _, soundId, status ->
+        if (status == 0) loaded += soundId
+        pendingFiles.remove(soundId)?.delete()
     }
 
-    // Use FileDescriptor for reliable loading
-    val fis = java.io.FileInputStream(tempFile)
-    soundId = soundPool.load(fis.fd, 0, audioData.size.toLong(), 1)
-    fis.close() 
+    val soundIds = samples.mapIndexed { index, bytes ->
+        val file = File.createTempFile("sound_$index", ".mp3").apply { writeBytes(bytes) }
+        soundPool.load(file.absolutePath, 1).also { pendingFiles[it] = file }
+    }
 
     return SoundManager(
-        trigger = {
-            if (isLoaded) {
-                soundPool.play(soundId, 1f, 1f, 1, 0, 1f)
-            }
-        }
+        sampleCount = samples.size,
+        player = { sample, rate ->
+            val soundId = soundIds[sample]
+            if (soundId in loaded) soundPool.play(soundId, 1f, 1f, 1, 0, rate)
+        },
     ).also { it.onDispose = { soundPool.release() } }
 }

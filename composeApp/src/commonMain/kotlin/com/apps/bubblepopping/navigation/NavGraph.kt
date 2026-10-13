@@ -3,6 +3,7 @@ package com.apps.bubblepopping.navigation
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
@@ -11,9 +12,12 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import androidx.savedstate.serialization.SavedStateConfiguration
 import com.apps.bubblepopping.HapticFeedback
+import com.apps.bubblepopping.data.AppContainer
+import com.apps.bubblepopping.view.BubbleGameViewModel
 import com.apps.bubblepopping.view.home.HomeScreenRoot
 import com.apps.bubblepopping.view.leaderboard.LeaderboardScreenRoot
 import com.apps.bubblepopping.view.play.PlayScreenRoot
+import com.apps.bubblepopping.view.profile.ProfileScreenRoot
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
@@ -25,12 +29,13 @@ val config = SavedStateConfiguration {
             subclass(Routes.Home::class)
             subclass(Routes.Play::class)
             subclass(Routes.Ranking::class)
+            subclass(Routes.Profile::class)
         }
     }
 }
 
 @Composable
-fun NavGraph(hapticFeedback: HapticFeedback) {
+fun NavGraph(container: AppContainer, hapticFeedback: HapticFeedback) {
 
     val backStack = rememberNavBackStack(config, Routes.Home)
 
@@ -53,11 +58,21 @@ fun NavGraph(hapticFeedback: HapticFeedback) {
                     onNavigateToLeaderboard = {
                         backStack.add(Routes.Ranking)
                     },
+                    onNavigateToProfile = {
+                        backStack.add(Routes.Profile)
+                    },
                 )
             }
             entry<Routes.Play> { args ->
                 PlayScreenRoot(
-                    difficulty = args.difficulty,
+                    // Scoped to this back-stack entry: survives rotation, cleared on leaving.
+                    viewModel = viewModel {
+                        BubbleGameViewModel(
+                            difficulty = args.difficulty,
+                            progressRepository = container.progressRepository,
+                            settingsRepository = container.settingsRepository,
+                        )
+                    },
                     hapticFeedback = hapticFeedback,
                     onBack = {
                         backStack.removeLastOrNull()
@@ -69,6 +84,14 @@ fun NavGraph(hapticFeedback: HapticFeedback) {
             }
             entry<Routes.Ranking> {
                 LeaderboardScreenRoot(
+                    onBack = {
+                        backStack.removeLastOrNull()
+                    },
+                )
+            }
+            entry<Routes.Profile> {
+                ProfileScreenRoot(
+                    progressRepository = container.progressRepository,
                     onBack = {
                         backStack.removeLastOrNull()
                     },

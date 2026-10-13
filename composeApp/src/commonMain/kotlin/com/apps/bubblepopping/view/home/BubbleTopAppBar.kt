@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -30,17 +32,24 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.apps.bubblepopping.Res
-import com.apps.bubblepopping.ic_arrow
+import com.apps.bubblepopping.ic_avatar
 import com.apps.bubblepopping.ic_close
 import org.jetbrains.compose.resources.painterResource
 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+/**
+ * Without a [title]: profile picture on the left (empty [profileUrl] shows the
+ * default avatar). With a [title]: back button and title. The close button is
+ * shown only when [onClose] is set.
+ */
 fun BubbleTopAppBar(
-    profileUrl:String = "",
+    profileUrl: String = "",
     title: String = "",
-    onBackPress: () -> Unit,
+    onBackPress: () -> Unit = {},
+    onProfileClick: () -> Unit = {},
+    onClose: (() -> Unit)? = null,
 ) {
     CenterAlignedTopAppBar(
         modifier = Modifier.padding(horizontal = 16.dp),
@@ -54,20 +63,19 @@ fun BubbleTopAppBar(
         },
         navigationIcon = {
             if (title.isEmpty()) {
-                ProfileButton(profileUrl,onProfileClick = {})
+                ProfileButton(profileUrl, onProfileClick = onProfileClick)
             } else {
                 BackButton { onBackPress.invoke() }
             }
         },
         actions = {
-            if (title.isEmpty()) {
-                CloseButton {
-                    onBackPress.invoke()
-                }
+            if (onClose != null) {
+                CloseButton(onBackPress = onClose)
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = Color.Transparent,
+            titleContentColor = Color.White,
         )
     )
 
@@ -95,7 +103,8 @@ fun BackButton(
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            painter = painterResource(Res.drawable.ic_arrow),
+            // AutoMirrored: points right in right-to-left languages.
+            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
             contentDescription = "Back",
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -127,8 +136,13 @@ fun ProfileButton(
             .clip(RoundedCornerShape(100.dp)),
         contentAlignment = Alignment.Center
     ) {
+        val defaultAvatar = painterResource(Res.drawable.ic_avatar)
         AsyncImage(
-            model = imageUrl,
+            // A null model shows the fallback; a failed download shows the error painter.
+            model = imageUrl.ifEmpty { null },
+            placeholder = defaultAvatar,
+            error = defaultAvatar,
+            fallback = defaultAvatar,
             contentDescription = "Profile",
             modifier = Modifier
                 .size(48.dp)

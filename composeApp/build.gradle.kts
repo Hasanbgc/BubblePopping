@@ -5,6 +5,8 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.androidxRoom)
 }
 
 compose.resources {
@@ -20,6 +22,8 @@ kotlin {
         minSdk = libs.versions.android.minSdk.get().toInt()
         @Suppress("UnstableApiUsage")
         androidResources.enable = true
+
+        withHostTestBuilder {}
     }
 
     listOf(
@@ -43,6 +47,7 @@ kotlin {
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
+            implementation(libs.compose.material.icons.core)
             implementation(libs.compose.ui)
             //implementation(libs.compose.components.resources)
             implementation(libs.compose.uiToolingPreview)
@@ -59,9 +64,25 @@ kotlin {
 
             //coil
             implementation(libs.coil.compose)
+
+            // Persistence
+            implementation(libs.androidx.room.runtime)
+            implementation(libs.androidx.sqlite.bundled)
+            implementation(libs.androidx.datastore.preferences)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
+}
+
+room {
+    schemaDirectory("$projectDir/schemas")
+}
+
+dependencies {
+    add("kspAndroid", libs.androidx.room.compiler)
+    add("kspIosArm64", libs.androidx.room.compiler)
+    add("kspIosSimulatorArm64", libs.androidx.room.compiler)
 }

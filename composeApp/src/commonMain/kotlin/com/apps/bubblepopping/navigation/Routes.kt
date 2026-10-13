@@ -14,4 +14,7 @@ sealed class Routes: NavKey{
 
     @Serializable
     object Ranking: Routes()
+
+    @Serializable
+    object Profile: Routes()
 }

@@ -17,7 +17,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,10 +40,12 @@ import kotlin.math.absoluteValue
 fun HomeScreenRoot(
     onNavigateToPlay: (Difficulty) -> Unit,
     onNavigateToLeaderboard: () -> Unit,
+    onNavigateToProfile: () -> Unit,
 ) {
     HomeScreen(
         onNavigateToPlay = onNavigateToPlay,
         onNavigateToLeaderboard = onNavigateToLeaderboard,
+        onNavigateToProfile = onNavigateToProfile,
     )
 }
 
@@ -52,20 +53,22 @@ fun HomeScreenRoot(
 fun HomeScreen(
     onNavigateToPlay: (Difficulty) -> Unit,
     onNavigateToLeaderboard: () -> Unit,
+    onNavigateToProfile: () -> Unit,
 ) {
-    Scaffold { innerPadding ->
-        HomeContent(
-            onDifficultySelected = onNavigateToPlay,
-            onNavigateToLeaderboard = onNavigateToLeaderboard,
-            modifier = Modifier.padding(innerPadding)
-        )
-    }
+    // No Scaffold: the background image is drawn edge-to-edge and HomeContent
+    // applies the status/navigation bar insets itself.
+    HomeContent(
+        onDifficultySelected = onNavigateToPlay,
+        onNavigateToLeaderboard = onNavigateToLeaderboard,
+        onProfileClick = onNavigateToProfile,
+    )
 }
 
 @Composable
 fun HomeContent(
     onDifficultySelected: (Difficulty) -> Unit,
     onNavigateToLeaderboard: () -> Unit,
+    onProfileClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val pagerState = rememberPagerState(
@@ -79,7 +82,7 @@ fun HomeContent(
     )
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
     ) {
         Image(
@@ -89,10 +92,9 @@ fun HomeContent(
             modifier = Modifier.fillMaxSize()
         )
         Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+            // Empty profileUrl → default avatar until Google/Facebook sign-in exists.
             BubbleTopAppBar(
-                profileUrl = "https://i.pravatar.cc/300",
-                title = "",
-                onBackPress = {}
+                onProfileClick = onProfileClick,
             )
 
             Column(
@@ -185,7 +187,7 @@ fun HomeContent(
 fun DifficultyCardPreview() {
     MaterialTheme {
         HomeContent(
-            {}, {}
+            {}, {}, {}
         )
     }
 }

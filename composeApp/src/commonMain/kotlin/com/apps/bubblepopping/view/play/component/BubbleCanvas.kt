@@ -9,10 +9,18 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.apps.bubblepopping.view.NearMissColor
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -190,15 +198,17 @@ fun DrawScope.drawHeartBubble(bubble: Bubble, icon: ImageBitmap)  { drawSoapBubb
 // Pop animation
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Bursts scale with [PopAnimation.intensity]: higher combos → wider, thicker bursts. */
 fun DrawScope.drawPopAnimation(anim: PopAnimation) {
     val p      = anim.progress
+    val k      = anim.intensity
     val alpha  = (1f - p).coerceIn(0f, 1f)
     val center = Offset(anim.x, anim.y)
 
-    val ringR    = anim.radius * (1f + p * 3f)
+    val ringR    = anim.radius * (1f + p * 3f * k)
     val ringRect = Offset(anim.x - ringR, anim.y - ringR)
     val ringSize = Size(ringR * 2f, ringR * 2f)
-    val strokeW  = (3f * (1f - p) + 0.5f).dp.toPx()
+    val strokeW  = ((3f * (1f - p) + 0.5f) * k).dp.toPx()
 
     val popStops = listOf(
         Color(0xFFFF80CE), Color(0xFF80D8FF), Color(0xFF69F0AE),
@@ -222,8 +232,8 @@ fun DrawScope.drawPopAnimation(anim: PopAnimation) {
         Color(0xFFFFFF8D), Color(0xFFEA80FC), Color(0xFFFF6E40),
         Color(0xFF80DEEA), Color(0xFFFFAB40),
     )
-    val spread    = anim.radius * (1.5f + p * 3.5f)
-    val dotRadius = (anim.radius * 0.12f * (1f - p * 0.7f)).coerceAtLeast(0f)
+    val spread    = anim.radius * (1.5f + p * 3.5f * k)
+    val dotRadius = (anim.radius * 0.12f * k * (1f - p * 0.7f)).coerceAtLeast(0f)
     for (i in 0 until 8) {
         val angle = (i.toFloat() / 8f) * 2f * PI.toFloat()
         drawCircle(
@@ -243,17 +253,70 @@ fun DrawScope.drawPopAnimation(anim: PopAnimation) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Near-miss warning
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Pulsing red ring around a bubble that is about to escape.
+ * [time] drives the pulse (seconds).
+ */
+fun DrawScope.drawNearMissWarning(bubble: Bubble, time: Float) {
+    val pulse = 0.5f + 0.5f * sin(time * 12f)
+    drawCircle(
+        color  = NearMissColor.copy(alpha = 0.35f + 0.45f * pulse),
+        radius = bubble.radius + (2f + 2f * pulse).dp.toPx(),
+        center = Offset(bubble.x, bubble.y),
+        style  = Stroke(width = 2.5f.dp.toPx()),
+    )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Floating texts
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Draws a floating score / milestone text centred on its position: pops in,
+ * rises, then fades out over its lifetime.
+ */
+fun DrawScope.drawFloatingText(text: FloatingText, measurer: TextMeasurer, fontFamily: FontFamily) {
+    val p = text.progress
+    val popIn = (p / 0.15f).coerceIn(0f, 1f)                  // scale up over the first 15%
+    val alpha = if (p < 0.6f) 1f else (1f - (p - 0.6f) / 0.4f) // fade over the last 40%
+    val baseSize = if (text.isMilestone) 30f else 18f
+    val rise = (if (text.isMilestone) 24f else 48f).dp.toPx() * p
+
+    val layout = measurer.measure(
+        text = text.text,
+        style = TextStyle(
+            color = text.color.copy(alpha = alpha.coerceIn(0f, 1f)),
+            fontSize = (baseSize * (0.6f + 0.4f * popIn)).sp,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = fontFamily,
+            shadow = Shadow(color = Color.Black.copy(alpha = 0.5f * alpha), blurRadius = 6f),
+        ),
+    )
+    drawText(
+        textLayoutResult = layout,
+        topLeft = Offset(
+            text.x - layout.size.width / 2f,
+            text.y - rise - layout.size.height / 2f,
+        ),
+    )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Breeze lines
 // ─────────────────────────────────────────────────────────────────────────────
 
-fun DrawScope.drawBreezeLines(breezeForce: Float, time: Float) {
-    if (abs(breezeForce) < 4f) return
-    val normalised  = (abs(breezeForce) / 160f).coerceIn(0f, 1f)
+/** [breeze] is the normalised breeze strength, -1 (full left) to +1 (full right). */
+fun DrawScope.drawBreezeLines(breeze: Float, time: Float) {
+    if (abs(breeze) < 0.025f) return
+    val normalised  = abs(breeze).coerceIn(0f, 1f)
     val lineAlpha   = normalised * 0.30f
-    val goingRight  = breezeForce > 0f
+    val goingRight  = breeze > 0f
     val sign        = if (goingRight) 1f else -1f
     val lineLength  = size.width * 0.10f
-    val scrollSpeed = abs(breezeForce) * 0.8f
+    val scrollSpeed = normalised * size.width * 0.12f
     val vertStep    = size.height / 8f
     for (i in 1..7) {
         val y      = vertStep * i + (i % 3 - 1) * 12f

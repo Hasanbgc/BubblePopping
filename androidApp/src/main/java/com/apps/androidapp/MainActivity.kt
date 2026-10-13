@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.apps.bubblepopping.HapticFeedback
+import com.apps.bubblepopping.data.appContainer
 import com.apps.bubblepopping.navigation.NavGraph
 import com.apps.bubblepopping.view.leaderboard.LeaderboardEntry
 import com.apps.bubblepopping.view.leaderboard.LeaderboardItem
@@ -34,9 +36,10 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
 
+        val container = appContainer(applicationContext)
         setContent {
-            val hapticFeedback = HapticFeedback(this)
-            NavGraph(hapticFeedback)
+            val hapticFeedback = remember { HapticFeedback(this) }
+            NavGraph(container, hapticFeedback)
         }
     }
 }
@@ -48,8 +51,8 @@ class MainActivity : ComponentActivity() {
 @Preview
 @Composable
 fun AppAndroidPreview() {
-    val hapticFeedback = HapticFeedback(LocalContext.current)
-    NavGraph(hapticFeedback)
+    val context = LocalContext.current
+    NavGraph(appContainer(context), remember { HapticFeedback(context) })
 }
 
 @Preview(name = "Game HUD — playing", showBackground = true, backgroundColor = 0xFF0A1E35)

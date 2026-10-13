@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -27,8 +28,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -36,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apps.bubblepopping.Res
 import com.apps.bubblepopping.heart
+import com.apps.bubblepopping.view.ComboColor
 import org.jetbrains.compose.resources.painterResource
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,6 +73,8 @@ fun GameHud(
     isPaused: Boolean,
     onPlayPauseClick: () -> Unit,
     modifier: Modifier = Modifier,
+    comboTimeLeft: Float = 0f,
+    comboMultiplier: Int = 1,
 ) {
     Box(
         modifier = modifier
@@ -102,6 +111,8 @@ fun GameHud(
             // Center Score (true center)
             ScoreView(
                 score = score,
+                comboTimeLeft = comboTimeLeft,
+                comboMultiplier = comboMultiplier,
                 modifier = Modifier.align(Alignment.Center)
             )
         }
@@ -149,11 +160,16 @@ fun LivesView(
 /**
  * Centered score display. The number spring-animates toward [score] on each
  * increment, giving a satisfying count-up feel.
+ *
+ * While a combo runs, a gold ring around the score drains as [comboTimeLeft]
+ * goes 1 → 0, and the active multiplier ("×3") shows beside it.
  */
 @Composable
 fun ScoreView(
     score: Int,
     modifier: Modifier = Modifier,
+    comboTimeLeft: Float = 0f,
+    comboMultiplier: Int = 1,
 ) {
     val displayed by animateIntAsState(
         targetValue   = score,
@@ -161,25 +177,56 @@ fun ScoreView(
         label         = "score",
     )
 
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier            = modifier,
-    ) {
-        Text(
-            text          = "SCORE",
-            color         = Color.White.copy(alpha = 0.45f),
-            fontSize      = 10.sp,
-            fontWeight    = FontWeight.Medium,
-            letterSpacing = 4.sp,
-        )
-        Text(
-            text       = displayed.toString(),
-            color      = Color.White,
-            fontSize   = 28.sp,
-            fontWeight = FontWeight.Light,
-        )
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier            = Modifier.drawBehind {
+                if (comboTimeLeft <= 0f) return@drawBehind
+                val radius  = COMBO_RING_RADIUS.toPx()
+                val stroke  = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+                val topLeft = Offset(center.x - radius, center.y - radius)
+                val ringSize = Size(radius * 2f, radius * 2f)
+                drawCircle(ComboColor.copy(alpha = 0.15f), radius, center, style = stroke)
+                drawArc(
+                    color      = ComboColor,
+                    startAngle = -90f,
+                    sweepAngle = 360f * comboTimeLeft,
+                    useCenter  = false,
+                    topLeft    = topLeft,
+                    size       = ringSize,
+                    style      = stroke,
+                )
+            },
+        ) {
+            Text(
+                text          = "SCORE",
+                color         = Color.White.copy(alpha = 0.45f),
+                fontSize      = 10.sp,
+                fontWeight    = FontWeight.Medium,
+                letterSpacing = 4.sp,
+            )
+            Text(
+                text       = displayed.toString(),
+                color      = Color.White,
+                fontSize   = 28.sp,
+                fontWeight = FontWeight.Light,
+            )
+        }
+        if (comboMultiplier > 1 && comboTimeLeft > 0f) {
+            Text(
+                text       = "×$comboMultiplier",
+                color      = ComboColor,
+                fontSize   = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier   = Modifier
+                    .align(Alignment.Center)
+                    .offset(x = COMBO_RING_RADIUS + 16.dp),
+            )
+        }
     }
 }
+
+private val COMBO_RING_RADIUS = 30.dp
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PlayPauseButton

@@ -37,6 +37,8 @@ import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -47,17 +49,25 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
 import com.apps.bubblepopping.HapticFeedback
 import com.apps.bubblepopping.Res
-import com.apps.bubblepopping.SoundManager
-import com.apps.bubblepopping.bg
+import com.apps.bubblepopping.GameSounds
 import com.apps.bubblepopping.createSoundManager
+import com.apps.bubblepopping.game.BubbleSize
+import com.apps.bubblepopping.game.GameEvent
+import com.apps.bubblepopping.game.GameOverReason
+import com.apps.bubblepopping.game.GameRules
+import com.apps.bubblepopping.view.BalooFontFamily
+import com.apps.bubblepopping.view.play.component.drawFloatingText
+import com.apps.bubblepopping.view.play.component.drawNearMissWarning
+import kotlinx.coroutines.launch
 import com.apps.bubblepopping.heart
 import com.apps.bubblepopping.play_screen_bg
 import com.apps.bubblepopping.skull
 import com.apps.bubblepopping.view.BubbleGameViewModel
-import com.apps.bubblepopping.view.home.Difficulty
 import com.apps.bubblepopping.view.play.component.BubbleType
 import com.apps.bubblepopping.view.play.component.GameHud
 import com.apps.bubblepopping.view.play.component.HUD_CONTENT_HEIGHT
@@ -68,19 +78,23 @@ import com.apps.bubblepopping.view.play.component.drawPoisonBubble
 import com.apps.bubblepopping.view.play.component.drawPopAnimation
 import org.jetbrains.compose.resources.painterResource
 
+/** Pop sounds; one is picked at random per pop. */
+private val POP_SAMPLES = listOf("files/pop_1.mp3", "files/pop_2.mp3", "files/pop_3.mp3")
+
+/** Breaking a combo this long or longer plays the combo-break sound. */
+private const val COMBO_BREAK_SOUND_MIN = 3
+
 // ─────────────────────────────────────────────────────────────────────────────
 // BubblePoppingScreen
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
 fun PlayScreenRoot(
-    difficulty: Difficulty = Difficulty.EASY,
-    viewModel: BubbleGameViewModel = viewModel(),
+    viewModel: BubbleGameViewModel,
     hapticFeedback: HapticFeedback,
     onBack: (() -> Unit)? = null,
     onHome: (() -> Unit)? = null,
 ) {
     BubblePoppingScreen(
-        difficulty = difficulty,
         viewModel = viewModel,
         hapticFeedback = hapticFeedback,
         onBack = onBack,
@@ -89,14 +103,13 @@ fun PlayScreenRoot(
 }
 @Composable
 fun BubblePoppingScreen(
-    difficulty: Difficulty,
-    viewModel: BubbleGameViewModel = viewModel(),
+    viewModel: BubbleGameViewModel,
     hapticFeedback: HapticFeedback,
     onBack: (() -> Unit)? = null,
     onHome: (() -> Unit)? = null,
 ) {
-    LaunchedEffect(difficulty) { viewModel.applyDifficulty(difficulty) }
-
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val bestScore by viewModel.bestScore.collectAsStateWithLifecycle()
 
     var elapsedTime by remember { mutableStateOf(0f) }
 
@@ -105,18 +118,68 @@ fun BubblePoppingScreen(
 
     val isPaused by viewModel.isPaused.collectAsStateWithLifecycle()
 
+    // ── System back ──────────────────────────────────────────────────────────
+    // Playing → pause. Paused → leave. After game over the handler is disabled,
+    // so back falls through to the navigation and leaves straight away.
+    NavigationBackHandler(
+        state = rememberNavigationEventState(NavigationEventInfo.None),
+        isBackEnabled = !viewModel.isGameOver,
+        onBackCompleted = {
+            if (isPaused) onBack?.invoke() else viewModel.togglePause()
+        },
+    )
 
-    val soundManager by produceState<SoundManager?>(initialValue = null) {
+    val gameSounds by produceState<GameSounds?>(initialValue = null) {
         try {
-            val bytes = Res.readBytes("files/pop_3.mp3")
-            value = createSoundManager(bytes)
+            val samples = POP_SAMPLES.map { Res.readBytes(it) }
+            value = GameSounds(createSoundManager(samples))
         } catch (_: Exception) {
+            // Missing or unreadable audio: play silently rather than crash.
         }
     }
 
     DisposableEffect(Unit) {
-        onDispose { soundManager?.dispose() }
+        onDispose { gameSounds?.dispose() }
     }
+
+    // ── Sound & haptics ──────────────────────────────────────────────────────
+    // Driven by game events so feedback matches exactly what the game decided.
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            val sounds  = gameSounds.takeIf { settings.soundEnabled }
+            val haptics = hapticFeedback.takeIf { settings.hapticsEnabled }
+            when (event) {
+                is GameEvent.Popped -> when (event.bubble.type) {
+                    BubbleType.NORMAL -> {
+                        sounds?.pop(event.combo)
+                        if (event.bubble.size == BubbleSize.SMALL) haptics?.light() else haptics?.medium()
+                    }
+                    BubbleType.HEART -> {
+                        sounds?.heart()
+                        haptics?.medium()
+                    }
+                    BubbleType.POISON -> {
+                        sounds?.poison()
+                        haptics?.heavy()
+                    }
+                }
+                is GameEvent.ComboChanged -> {
+                    if (event.broken && event.previous >= COMBO_BREAK_SOUND_MIN) sounds?.comboBreak()
+                }
+                is GameEvent.GameOver -> {
+                    if (event.reason == GameOverReason.OUT_OF_LIVES) haptics?.heavy()
+                    if (event.isNewBest) {
+                        haptics?.success()
+                        sounds?.let { launch { it.newBest() } }
+                    }
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    val textMeasurer = rememberTextMeasurer()
+    val fontFamily   = BalooFontFamily()
 
     // ── Game-area top offset from live WindowInsets ──────────────────────────
     // Tells the ViewModel the Y boundary at which bubbles should be culled
@@ -136,8 +199,10 @@ fun BubblePoppingScreen(
                 lastFrameNanos = frameNanos
                 if (!viewModel.isGameOver && !viewModel.isPaused.value) {
                     elapsedTime += delta
-                    viewModel.update(delta)
                 }
+                // Always called: the ViewModel ignores pause itself, and keeps
+                // effects (bursts, floating text, shake) animating after game over.
+                viewModel.update(delta)
             }
         }
     }
@@ -165,7 +230,8 @@ fun BubblePoppingScreen(
         {
             // Establish state dependency so the Canvas recomposes every frame even
             // when bubble positions mutate in-place (not observed individually).
-            val frameCount = viewModel.frameCount
+            // effectFrame also ticks after game over, so bursts and texts finish.
+            val effectFrame = viewModel.effectFrame
 
             // ── Game canvas ──────────────────────────────────────────────────────
             // Full-screen so the background gradient is always seamless.
@@ -174,32 +240,39 @@ fun BubblePoppingScreen(
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
+                    // Screen shake moves only the play field, not the HUD or buttons.
+                    .graphicsLayer {
+                        translationX = viewModel.shakeOffset.x
+                        translationY = viewModel.shakeOffset.y
+                    }
                     .onSizeChanged { intSize ->
                         viewModel.setCanvasBounds(
                             width     = intSize.width.toFloat(),
                             height    = intSize.height.toFloat(),
                             topOffset = topOffsetPx,
+                            density   = density.density,
                         )
                     }
                     .pointerInput(Unit) {
                         awaitPointerEventScope {
                             while (true) {
                                 val down = awaitFirstDown() // requireUnconsumed = true
-                                val popped = viewModel.tryPop(down.position)
-                                if (popped) {
-                                    hapticFeedback.popVibration()
-                                    soundManager?.playPop()
-                                    down.consume()
-                                }
+                                // Sound and haptics follow from the Popped event.
+                                if (viewModel.tryPop(down.position)) down.consume()
                             }
                         }
                     }
             )  {
-                drawBreezeLines(viewModel.breezeForce, elapsedTime)
+                drawBreezeLines(viewModel.breeze, elapsedTime)
 
+                // Normal bubbles this close to the top pulse red — they're about to cost a life.
+                val dangerY = topOffsetPx + (size.height - topOffsetPx) * GameRules.NEAR_MISS_ZONE
                 for (bubble in viewModel.bubbles) {
                     when (bubble.type) {
-                        BubbleType.NORMAL -> drawBubble(bubble)
+                        BubbleType.NORMAL -> {
+                            drawBubble(bubble)
+                            if (bubble.y - bubble.radius < dangerY) drawNearMissWarning(bubble, elapsedTime)
+                        }
                         BubbleType.POISON -> drawPoisonBubble(bubble, skullBitmap)
                         BubbleType.HEART  -> drawHeartBubble(bubble, heartBitmap)
                     }
@@ -207,6 +280,10 @@ fun BubblePoppingScreen(
 
                 for (anim in viewModel.popAnimations) {
                     drawPopAnimation(anim)
+                }
+
+                for (text in viewModel.floatingTexts) {
+                    drawFloatingText(text, textMeasurer, fontFamily)
                 }
             }
 
@@ -217,6 +294,7 @@ fun BubblePoppingScreen(
                 PauseOverlay(
                     score    = viewModel.score,
                     onResume = { viewModel.togglePause() },
+                    onQuit   = onBack,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -227,7 +305,7 @@ fun BubblePoppingScreen(
             BreezeControls(
                 onBreezeLeft  = { viewModel.triggerBreeze(-1f) },
                 onBreezeRight = { viewModel.triggerBreeze(+1f) },
-                breezeForce   = viewModel.breezeForce,
+                breeze        = viewModel.breeze,
                 modifier      = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
@@ -238,17 +316,21 @@ fun BubblePoppingScreen(
             // Manages its own statusBarsPadding; no external top padding needed.
             GameHud(
                 score = viewModel.score,
-                lives = 5 - viewModel.missedCount,
+                lives = viewModel.livesLeft,
                 isPaused = isPaused,
                 onPlayPauseClick = {
                     viewModel.togglePause()
                 },
                 modifier = Modifier.align(Alignment.TopStart),
+                comboTimeLeft = viewModel.comboTimeLeft,
+                comboMultiplier = viewModel.comboMultiplier,
             )
 
             if (viewModel.isGameOver) {
                 GameOverOverlay(
                     score     = viewModel.score,
+                    bestScore = bestScore,
+                    isNewBest = viewModel.isNewBest,
                     onRestart = { viewModel.restartGame() },
                     onHome    = onHome,
                     modifier  = Modifier.fillMaxSize(),
@@ -267,6 +349,7 @@ fun BubblePoppingScreen(
 private fun PauseOverlay(
     score: Int,
     onResume: () -> Unit,
+    onQuit: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -305,6 +388,21 @@ private fun PauseOverlay(
                 color    = Color.White.copy(alpha = 0.40f),
                 fontSize = 13.sp,
             )
+            // iOS has no system back button, so quitting mid-round needs a button.
+            if (onQuit != null) {
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick  = onQuit,
+                    shape    = RoundedCornerShape(50),
+                    colors   = ButtonDefaults.buttonColors(
+                        containerColor = Color.White.copy(alpha = 0.12f),
+                        contentColor   = Color.White,
+                    ),
+                    modifier = Modifier.height(46.dp),
+                ) {
+                    Text(text = "Quit", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                }
+            }
         }
     }
 }
@@ -316,6 +414,8 @@ private fun PauseOverlay(
 @Composable
 private fun GameOverOverlay(
     score: Int,
+    bestScore: Int?,
+    isNewBest: Boolean,
     onRestart: () -> Unit,
     onHome: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -348,6 +448,23 @@ private fun GameOverOverlay(
                 fontSize   = 56.sp,
                 fontWeight = FontWeight.Light,
             )
+            if (isNewBest) {
+                Text(
+                    text          = "NEW BEST!",
+                    color         = Color(0xFFFFD700),
+                    fontSize      = 18.sp,
+                    fontWeight    = FontWeight.Bold,
+                    letterSpacing = 3.sp,
+                )
+            } else if (bestScore != null) {
+                Text(
+                    text          = "BEST  $bestScore",
+                    color         = Color.White.copy(alpha = 0.60f),
+                    fontSize      = 14.sp,
+                    fontWeight    = FontWeight.Medium,
+                    letterSpacing = 2.sp,
+                )
+            }
             Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick  = onRestart,
@@ -385,7 +502,7 @@ private fun GameOverOverlay(
 private fun BreezeControls(
     onBreezeLeft: () -> Unit,
     onBreezeRight: () -> Unit,
-    breezeForce: Float,
+    breeze: Float,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -393,8 +510,8 @@ private fun BreezeControls(
         verticalAlignment     = Alignment.CenterVertically,
         modifier              = modifier,
     ) {
-        BreezeButton(label = "← Wind", onClick = onBreezeLeft,  isActive = breezeForce < -5f)
-        BreezeButton(label = "Wind →", onClick = onBreezeRight, isActive = breezeForce > +5f)
+        BreezeButton(label = "← Wind", onClick = onBreezeLeft,  isActive = breeze < -0.03f)
+        BreezeButton(label = "Wind →", onClick = onBreezeRight, isActive = breeze > +0.03f)
     }
 }
 
