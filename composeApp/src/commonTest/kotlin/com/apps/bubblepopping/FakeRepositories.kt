@@ -18,12 +18,16 @@ data class RecordedGame(
     val bestCombo: Int,
 )
 
+data class RecordedStage(val stageId: Int, val stars: Int, val score: Int)
+
 class FakeProgressRepository(best: Int? = null) : ProgressRepository {
     val bestScore = MutableStateFlow(best)
+    val stages = MutableStateFlow<Map<Int, StageProgress>>(emptyMap())
     val recordedGames = mutableListOf<RecordedGame>()
+    val recordedStages = mutableListOf<RecordedStage>()
 
     override fun bestEndlessScore(difficulty: Difficulty): Flow<Int?> = bestScore
-    override fun stageProgress(): Flow<Map<Int, StageProgress>> = flowOf(emptyMap())
+    override fun stageProgress(): Flow<Map<Int, StageProgress>> = stages
     override fun stats(): Flow<PlayerStats> = flowOf(PlayerStats())
 
     override suspend fun recordEndlessGame(
@@ -35,7 +39,23 @@ class FakeProgressRepository(best: Int? = null) : ProgressRepository {
         recordedGames += RecordedGame(difficulty, score, bubblesPopped, bestCombo)
     }
 
-    override suspend fun recordStageResult(stageId: Int, stars: Int, score: Int) = Unit
+    override suspend fun recordStageGame(
+        stageId: Int,
+        stars: Int,
+        score: Int,
+        bubblesPopped: Int,
+        bestCombo: Int,
+    ) {
+        recordedStages += RecordedStage(stageId, stars, score)
+        if (stars > 0) {
+            val previous = stages.value[stageId]
+            stages.value = stages.value + (stageId to StageProgress(
+                stageId = stageId,
+                stars = maxOf(stars, previous?.stars ?: 0),
+                bestScore = maxOf(score, previous?.bestScore ?: 0),
+            ))
+        }
+    }
 }
 
 class FakeSettingsRepository : SettingsRepository {
@@ -49,4 +69,7 @@ class FakeSettingsRepository : SettingsRepository {
 
     override suspend fun setHapticsEnabled(enabled: Boolean) =
         settings.update { it.copy(hapticsEnabled = enabled) }
+
+    override suspend fun setWindButtonsEnabled(enabled: Boolean) =
+        settings.update { it.copy(windButtonsEnabled = enabled) }
 }

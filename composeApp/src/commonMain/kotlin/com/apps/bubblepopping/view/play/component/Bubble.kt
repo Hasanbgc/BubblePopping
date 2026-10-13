@@ -3,8 +3,26 @@ package com.apps.bubblepopping.view.play.component
 
 import androidx.compose.ui.graphics.Color
 import com.apps.bubblepopping.game.BubbleSize
+import com.apps.bubblepopping.game.GameRules
+import com.apps.bubblepopping.stage.BossConfig
 
-enum class BubbleType { NORMAL, POISON, HEART }
+enum class BubbleType {
+    NORMAL,
+    /** Popping it ends the round (unless a shield is up). */
+    POISON,
+    /** Gives back a lost life. */
+    HEART,
+    /** Small, fast and rare; worth 25 points. */
+    GOLDEN,
+    /** Slows every bubble for a few seconds. */
+    FREEZE,
+    /** Pops everything around it — skulls too. Bombs caught in the blast explode as well. */
+    BOMB,
+    /** Bursts into three small bubbles. */
+    SPLITTER,
+    /** Absorbs the next skull pop. */
+    SHIELD,
+}
 
 /**
  * Represents a single bubble in the game.
@@ -63,5 +81,44 @@ data class FloatingText(
     val color: Color,
     val isMilestone: Boolean = false,
     var progress: Float = 0f,
+)
+
+/**
+ * One copy of a boss on screen (a splitting boss has several). Positions are
+ * mutated every frame by the ViewModel, like [Bubble]'s.
+ *
+ * It shrinks from [fullRadius] towards [GameRules.BOSS_MIN_SCALE] of it as [hp] drops.
+ */
+class BossBubble(
+    val id: String,
+    val config: BossConfig,
+    /** 0 for the original boss, 1 for its first split copies, and so on. */
+    val generation: Int,
+    val maxHp: Int,
+    val fullRadius: Float,
+    /** Offsets this copy's movement so split copies don't overlap. */
+    val motionPhase: Float,
+    var x: Float,
+    var y: Float,
+) {
+    var hp: Int = maxHp
+    /** Seconds left of the white hit flash and wobble. */
+    var hitFlash: Float = 0f
+
+    val hpFraction: Float get() = hp.toFloat() / maxHp
+    val radius: Float get() = fullRadius * (GameRules.BOSS_MIN_SCALE + (1f - GameRules.BOSS_MIN_SCALE) * hpFraction)
+}
+
+/** A confetti scrap from a boss defeat; falls and spins until [life] runs out. */
+class Confetti(
+    var x: Float,
+    var y: Float,
+    var vx: Float,
+    var vy: Float,
+    val color: Color,
+    val size: Float,
+    var rotation: Float,
+    val spin: Float,
+    var life: Float,
 )
 

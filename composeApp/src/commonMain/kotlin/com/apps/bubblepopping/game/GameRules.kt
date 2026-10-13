@@ -1,5 +1,8 @@
 package com.apps.bubblepopping.game
 
+import com.apps.bubblepopping.view.play.component.Bubble
+import com.apps.bubblepopping.view.play.component.BubbleType
+
 /** Size class of a bubble — decides its points. */
 enum class BubbleSize(val points: Int) {
     SMALL(1),
@@ -30,8 +33,11 @@ object GameRules {
     /** Sideways wobble frequency, in radians per dp risen. */
     const val WOBBLE_FREQUENCY = 0.1375f
 
-    /** Full-strength breeze speed, in canvas widths per second. */
-    const val BREEZE_SPEED = 0.148f
+    /**
+     * Full-strength breeze speed, in canvas widths per second. Strong enough
+     * that a gust can blow a skull off the screen; other bubbles stop at the edges.
+     */
+    const val BREEZE_SPEED = 0.45f
     /** Fraction of breeze strength lost per second. */
     const val BREEZE_DECAY = 2.0f
 
@@ -65,9 +71,83 @@ object GameRules {
     /** Normal bubbles in this top fraction of the play area pulse red. */
     const val NEAR_MISS_ZONE = 0.15f
 
+    // ── Special bubbles ─────────────────────────────────────────────────────
+
+    const val GOLDEN_POINTS = 25
+    /** Freeze, splitter and shield bubbles. */
+    const val POWER_UP_POINTS = 3
+    const val BOMB_POINTS = 5
+
+    /** Golden bubbles rise this much faster than normal ones. */
+    const val GOLDEN_SPEED_MULTIPLIER = 1.5f
+
+    /** Bubbles move at this fraction of their speed while frozen. */
+    const val FREEZE_SLOWDOWN = 0.4f
+    const val FREEZE_SECONDS = 3f
+
+    /** A bomb pops every bubble whose edge is within this distance of its centre. */
+    const val BOMB_RADIUS_DP = 95f
+    const val SHAKE_BOMB_DP = 5f
+    const val SHAKE_BOMB_SECONDS = 0.3f
+
+    /** A splitter bursts into this many small bubbles, spread sideways by [SPLIT_SPREAD_DP]. */
+    const val SPLIT_COUNT = 3
+    const val SPLIT_SPREAD_DP = 30f
+
+    /** Breeze strength above which skulls can be blown off the side of the screen. */
+    const val WIND_SAVE_MIN_BREEZE = 0.05f
+    /** A horizontal swipe across this fraction of the screen gives full-strength wind. */
+    const val FULL_WIND_SWIPE_FRACTION = 0.3f
+
+    // ── Bosses ──────────────────────────────────────────────────────────────
+
+    const val BOSS_RADIUS_DP = 70f
+    /** A boss shrinks to this fraction of its size as its HP runs out. */
+    const val BOSS_MIN_SCALE = 0.65f
+    /** Each split copy is this fraction of its parent's size. */
+    const val BOSS_SPLIT_SCALE = 0.55f
+    const val BOSS_SPLIT_COUNT = 3
+
+    /** Points per hit (× combo multiplier), and for the final blow. */
+    const val BOSS_HIT_POINTS = 2
+    const val BOSS_DEFEAT_POINTS = 100
+    /** Damage a bomb blast deals to each boss it reaches. */
+    const val BOMB_BOSS_DAMAGE = 3
+
+    /** Movement speed by phase: above ⅔ HP, above ⅓, below ⅓. */
+    val BOSS_PHASE_SPEED = listOf(1f, 1.4f, 1.8f)
+    /** Boss centre sits this far down the play area, bobbing by [BOSS_BOB_DP]. */
+    const val BOSS_HEIGHT_FRACTION = 0.32f
+    const val BOSS_BOB_DP = 24f
+
+    const val SKULL_EVERY_HITS = 3
+    const val STING_EVERY_HITS = 5
+    const val STING_SECONDS = 1f
+    const val NEBULA_BOMB_COUNT = 4
+
+    const val BOSS_HIT_FLASH_SECONDS = 0.15f
+    const val SHAKE_BOSS_HIT_DP = 1.5f
+    const val SHAKE_BOSS_HIT_SECONDS = 0.08f
+    const val SHAKE_BOSS_DEFEAT_DP = 7f
+    const val SHAKE_BOSS_DEFEAT_SECONDS = 0.5f
+
+    /** After the final blow the game runs in slow motion this long before the stage ends. */
+    const val BOSS_CELEBRATION_SECONDS = 1.5f
+    const val CELEBRATION_SLOWMO = 0.25f
+    const val CONFETTI_COUNT = 90
+
     fun sizeForRadius(radiusDp: Float): BubbleSize = when {
         radiusDp < SMALL_RADIUS_DP -> BubbleSize.SMALL
         radiusDp < MEDIUM_RADIUS_DP -> BubbleSize.MEDIUM
         else -> BubbleSize.LARGE
+    }
+
+    /** Points for popping [bubble] before the combo multiplier. */
+    fun basePoints(bubble: Bubble): Int = when (bubble.type) {
+        BubbleType.NORMAL, BubbleType.HEART -> bubble.size.points
+        BubbleType.GOLDEN -> GOLDEN_POINTS
+        BubbleType.FREEZE, BubbleType.SPLITTER, BubbleType.SHIELD -> POWER_UP_POINTS
+        BubbleType.BOMB -> BOMB_POINTS
+        BubbleType.POISON -> 0
     }
 }

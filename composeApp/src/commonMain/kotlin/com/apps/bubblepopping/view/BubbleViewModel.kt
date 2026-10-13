@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.apps.bubblepopping.data.ProgressRepository
@@ -13,10 +14,19 @@ import com.apps.bubblepopping.data.prefs.SettingsRepository
 import com.apps.bubblepopping.game.BubbleSize
 import com.apps.bubblepopping.game.ComboTracker
 import com.apps.bubblepopping.game.GameEvent
+import com.apps.bubblepopping.game.GameMode
 import com.apps.bubblepopping.game.GameOverReason
 import com.apps.bubblepopping.game.GameRules
+import com.apps.bubblepopping.game.ObjectiveTracker
 import com.apps.bubblepopping.game.SpawnConfig
-import com.apps.bubblepopping.view.home.Difficulty
+import com.apps.bubblepopping.stage.BossGimmick
+import com.apps.bubblepopping.stage.ObjectiveProgress
+import com.apps.bubblepopping.view.play.component.BossBubble
+import com.apps.bubblepopping.view.play.component.Confetti
+import com.apps.bubblepopping.stage.StageCatalog
+import com.apps.bubblepopping.stage.StageConfig
+import com.apps.bubblepopping.stage.StageResult
+import com.apps.bubblepopping.stage.World
 import com.apps.bubblepopping.view.play.component.Bubble
 import com.apps.bubblepopping.view.play.component.BubbleType
 import com.apps.bubblepopping.view.play.component.FloatingText
@@ -29,26 +39,31 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.random.Random
 
 /**
- * Runs one Endless round at [difficulty].
+ * Runs one round: Endless at a difficulty, or a stage with objectives.
  *
- * Pass a [seed] for a deterministic round (same seed → same bubbles), e.g. the
- * daily challenge or tests. [spawn] defaults to the difficulty's preset.
+ * [stage] defaults to the catalog entry for a [GameMode.Stage]; tests can pass
+ * their own. [spawn] defaults to the stage's or difficulty's preset. Pass a
+ * [seed] for a deterministic round (same seed → same bubbles).
  */
 class BubbleGameViewModel(
-    val difficulty: Difficulty,
+    val mode: GameMode,
     private val progressRepository: ProgressRepository,
     settingsRepository: SettingsRepository,
-    private val spawn: SpawnConfig = difficulty.spawn,
-    private val seed: Long? = null,
+    val stage: StageConfig? = (mode as? GameMode.Stage)?.let { StageCatalog.stage(it.stageId) },
+    private val spawn: SpawnConfig = stage?.spawn ?: (mode as GameMode.Endless).difficulty.spawn,
+    private val seed: Long? = stage?.seed,
 ) : ViewModel() {
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -58,6 +73,20 @@ class BubbleGameViewModel(
     companion object {
         /** Breeze below this strength snaps to zero. */
         private const val BREEZE_CUTOFF = 0.003f
+        /** Bomb blasts draw a much bigger burst than a normal pop. */
+        private const val BLAST_INTENSITY = 3f
+        private const val BOSS_POP_INTENSITY = 2.5f
+        /** Thrown skulls appear this far above the boss's edge. */
+        private const val SKULL_GAP_DP = 16f
+        private const val BOMB_DROP_SPACING_DP = 40f
+        /** How quickly bosses catch up with their movement path (per second). */
+        private const val BOSS_FOLLOW_RATE = 6f
+
+        private const val CONFETTI_MIN_SPEED_DP = 150f
+        private const val CONFETTI_EXTRA_SPEED_DP = 450f
+        private const val CONFETTI_LIFT_DP = 250f
+        private const val CONFETTI_GRAVITY_DP = 700f
+        private const val CONFETTI_DRAG = 1.2f
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -67,6 +96,9 @@ class BubbleGameViewModel(
     val bubbles        = mutableStateListOf<Bubble>()
     val popAnimations  = mutableStateListOf<PopAnimation>()
     val floatingTexts  = mutableStateListOf<FloatingText>()
+    /** Boss stages: every boss copy on screen (several once a boss splits). */
+    val bosses         = mutableStateListOf<BossBubble>()
+    val confetti       = mutableStateListOf<Confetti>()
 
     /** Current breeze, from -1 (full left) to +1 (full right). */
     var breeze         by mutableStateOf(0f);       private set
@@ -87,7 +119,24 @@ class BubbleGameViewModel(
     /** Screen-shake translation in pixels; [Offset.Zero] when not shaking. */
     var shakeOffset    by mutableStateOf(Offset.Zero); private set
 
-    val livesLeft: Int get() = GameRules.MAX_LIVES - missedCount
+    /** Stage only: live progress of every objective, main goal first. */
+    var objectives     by mutableStateOf<List<ObjectiveProgress>>(emptyList()); private set
+    /** Stage only: whole seconds left on the timer; null when the round is untimed. */
+    var timeLeftSec    by mutableStateOf(stage?.durationSec); private set
+    /** Stage only: set when the stage ends. */
+    var stageResult    by mutableStateOf<StageResult?>(null); private set
+
+    /** True while a shield is ready to absorb the next skull pop. */
+    var shieldActive   by mutableStateOf(false);     private set
+    /** Seconds of freeze left; bubbles move slowly while above 0. */
+    var freezeTimeLeft by mutableStateOf(0f);        private set
+    /** Seconds the player's taps are disabled after a boss sting. */
+    var tapLockLeft    by mutableStateOf(0f);        private set
+
+    /** Theme for backgrounds and bubble colours. Endless uses the first world. */
+    val world: World = stage?.world ?: World.SKY
+    val maxLives: Int = stage?.lives ?: GameRules.MAX_LIVES
+    val livesLeft: Int get() = maxLives - missedCount
     val comboMultiplier: Int get() = ComboTracker.multiplierFor(combo)
 
     private val _isPaused = MutableStateFlow(false)
@@ -100,9 +149,11 @@ class BubbleGameViewModel(
     /** Everything that happens during the round — see [GameEvent]. */
     val events: SharedFlow<GameEvent> = _events.asSharedFlow()
 
-    /** Saved best score for [difficulty], or null if never played. */
-    val bestScore: StateFlow<Int?> = progressRepository.bestEndlessScore(difficulty)
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    /** Saved best score for this difficulty or stage, or null if never played / cleared. */
+    val bestScore: StateFlow<Int?> = when (mode) {
+        is GameMode.Endless -> progressRepository.bestEndlessScore(mode.difficulty)
+        is GameMode.Stage -> progressRepository.stageProgress().map { it[mode.stageId]?.bestScore }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val settings: StateFlow<GameSettings> = settingsRepository.settings
         .stateIn(viewModelScope, SharingStarted.Eagerly, GameSettings())
@@ -112,6 +163,7 @@ class BubbleGameViewModel(
     // ─────────────────────────────────────────────────────────────────────────
 
     private val comboTracker    = ComboTracker()
+    private var objectiveTracker = stage?.let { ObjectiveTracker() }
     private var random          = newRandom()
     private var spawnTimer      = 0f
     private var playTime        = 0f
@@ -122,6 +174,17 @@ class BubbleGameViewModel(
     private var canvasHeight    = 800f
     private var canvasTopOffset = 0f   // px below which bubbles are in the active game area
     private var density         = 1f
+
+    // Boss state
+    private var bossSpawned     = false
+    private var bossClock       = 0f
+    private var bossTapHits     = 0
+    private var bossDamageDealt = 0
+    private var bossBombsDropped = false
+    /** Slow-motion seconds left after the final blow; the stage ends when it runs out. */
+    private var celebrationLeft = 0f
+    /** Cosmetic randomness (confetti) — kept apart so it never changes a seeded round. */
+    private val effectRandom    = Random.Default
 
     // Effects run on real time, separate from game time.
     private var hitStopLeft     = 0f
@@ -165,40 +228,83 @@ class BubbleGameViewModel(
             return
         }
 
-        spawnStep(dt)
-        moveStep(dt)
+        // Freeze and the boss-defeat slow motion slow the bubbles (and spawning), not the clock.
+        var bubbleDt = if (freezeTimeLeft > 0f) dt * GameRules.FREEZE_SLOWDOWN else dt
+        if (celebrationLeft > 0f) {
+            bubbleDt *= GameRules.CELEBRATION_SLOWMO
+            celebrationLeft = (celebrationLeft - dt).coerceAtLeast(0f)
+        }
+        freezeTimeLeft = (freezeTimeLeft - dt).coerceAtLeast(0f)
+        tapLockLeft = (tapLockLeft - dt).coerceAtLeast(0f)
+
+        spawnBossIfNeeded()
+        bossStep(bubbleDt)
+        spawnStep(bubbleDt)
+        moveStep(bubbleDt)
+        windSaveStep()
         cullStep()
         breezeDecayStep(dt)
         tickStep(dt)
         comboStep()
+        timerStep()
+        checkStageEnd()
 
         frameCount++
     }
 
+    /**
+     * Pops the bubble under [offset], if any. A press that hits nothing is not
+     * a miss yet — it may become a swipe; call [onMissedTap] if it doesn't.
+     */
     fun tryPop(offset: Offset): Boolean {
-        if (isGameOver || isPaused.value) return false
+        if (isGameOver || isPaused.value || tapLockLeft > 0f) return false
         val minHitRadius = GameRules.MIN_HIT_RADIUS_DP * density
 
+        // Bubbles first: they're drawn over the boss, so a skull in front of it gets popped.
         val hit = bubbles.firstOrNull { bubble ->
             val dx        = offset.x - bubble.x
             val dy        = offset.y - bubble.y
             val hitRadius = bubble.radius.coerceAtLeast(minHitRadius)
             (dx * dx + dy * dy) <= (hitRadius * hitRadius)
         }
-        emit(GameEvent.Tapped(hit = hit != null))
-
-        hit?.let { bubble ->
-            bubbles.remove(bubble)
+        if (hit != null) {
+            emit(GameEvent.Tapped(hit = true))
+            bubbles.remove(hit)
             bubblesPopped++
-            if (bubble.type == BubbleType.POISON) popPoison(bubble) else popScoring(bubble)
+            if (hit.type == BubbleType.POISON) popPoison(hit) else popScoring(hit)
+            checkStageEnd()
+            return true
         }
-        return hit != null
+
+        val boss = bosses.lastOrNull { hypot(offset.x - it.x, offset.y - it.y) <= it.radius } ?: return false
+        emit(GameEvent.Tapped(hit = true))
+        hitBossByTap(boss)
+        checkStageEnd()
+        return true
+    }
+
+    /** A tap that hit no bubble and wasn't a swipe. Taps blocked by a sting don't count. */
+    fun onMissedTap() {
+        if (isGameOver || isPaused.value || tapLockLeft > 0f) return
+        emit(GameEvent.Tapped(hit = false))
     }
 
     /** Push all bubbles sideways. [direction] is -1 (left) to +1 (right). */
     fun triggerBreeze(direction: Float) {
         if (isGameOver) return
         breeze = direction.coerceIn(-1f, 1f)
+    }
+
+    /**
+     * A horizontal swipe of [dragFraction] of the screen width (negative = left).
+     * Stronger swipes give stronger wind; a weaker swipe never weakens current wind
+     * in the same direction.
+     */
+    fun swipeWind(dragFraction: Float) {
+        if (isGameOver || isPaused.value) return
+        val strength = (dragFraction / GameRules.FULL_WIND_SWIPE_FRACTION).coerceIn(-1f, 1f)
+        val sameDirection = strength * breeze > 0f
+        if (!sameDirection || abs(strength) > abs(breeze)) breeze = strength
     }
 
     fun restartGame() {
@@ -222,44 +328,56 @@ class BubbleGameViewModel(
         hitStopLeft   = 0f
         shakeTimeLeft = 0f
         random        = newRandom()
+        objectiveTracker = stage?.let { ObjectiveTracker() }
+        timeLeftSec   = stage?.durationSec
+        stageResult   = null
+        shieldActive  = false
+        freezeTimeLeft = 0f
+        tapLockLeft   = 0f
+        bosses.clear()
+        confetti.clear()
+        bossSpawned   = false
+        bossClock     = 0f
+        bossTapHits   = 0
+        bossDamageDealt = 0
+        bossBombsDropped = false
+        celebrationLeft = 0f
+        refreshObjectives()
+    }
+
+    init {
+        refreshObjectives()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Popping
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** Normal and heart bubbles: extend the combo and score with its multiplier. */
+    /** Every non-skull bubble: extend the combo, score with its multiplier, apply its effect. */
     private fun popScoring(bubble: Bubble) {
         val previous   = comboTracker.combo
         val newCombo   = comboTracker.onPop(playTime)
         val multiplier = ComboTracker.multiplierFor(newCombo)
-        val points     = bubble.size.points * multiplier
+        val points     = GameRules.basePoints(bubble) * multiplier
 
-        if (bubble.type == BubbleType.HEART && missedCount > 0) missedCount--
         score += points
         syncComboState()
 
         val intensity = 1f + minOf(newCombo, GameRules.MAX_BURST_COMBO) * GameRules.BURST_GROWTH_PER_COMBO
         addPopAnimation(bubble, intensity)
-        floatingTexts.add(
-            FloatingText(
-                id = "text_${nextEffectId++}",
-                text = if (multiplier > 1) "+$points ×$multiplier" else "+$points",
-                x = bubble.x,
-                y = bubble.y - bubble.radius,
-                color = if (bubble.type == BubbleType.HEART) HeartPopupColor else ScorePopupColor,
-            )
+        addFloatingText(
+            text = if (multiplier > 1) "+$points ×$multiplier" else "+$points",
+            x = bubble.x,
+            y = bubble.y - bubble.radius,
+            color = popupColor(bubble.type),
         )
         ComboTracker.milestoneText(newCombo)?.let { text ->
-            floatingTexts.add(
-                FloatingText(
-                    id = "text_${nextEffectId++}",
-                    text = text,
-                    x = bubble.x,
-                    y = bubble.y - bubble.radius - GameRules.MILESTONE_TEXT_OFFSET_DP * density,
-                    color = ComboColor,
-                    isMilestone = true,
-                )
+            addFloatingText(
+                text = text,
+                x = bubble.x,
+                y = bubble.y - bubble.radius - GameRules.MILESTONE_TEXT_OFFSET_DP * density,
+                color = ComboColor,
+                isMilestone = true,
             )
             hitStopLeft = GameRules.HIT_STOP_SECONDS
             startShake(GameRules.SHAKE_MILESTONE_DP, GameRules.SHAKE_MILESTONE_SECONDS)
@@ -270,14 +388,321 @@ class BubbleGameViewModel(
 
         emit(GameEvent.Popped(bubble, points, newCombo))
         emit(GameEvent.ComboChanged(newCombo, previous))
+
+        if (bubble.type == BubbleType.BOMB) explode(bubble, multiplier, newCombo) else applyEffect(bubble)
     }
 
+    /** What a popped heart / ice / shield / splitter bubble does. Bombs are handled by [explode]. */
+    private fun applyEffect(bubble: Bubble) {
+        when (bubble.type) {
+            BubbleType.HEART -> if (missedCount > 0) missedCount--
+            BubbleType.FREEZE -> freezeTimeLeft = GameRules.FREEZE_SECONDS
+            BubbleType.SHIELD -> shieldActive = true
+            BubbleType.SPLITTER -> split(bubble)
+            BubbleType.NORMAL, BubbleType.GOLDEN, BubbleType.BOMB, BubbleType.POISON -> Unit
+        }
+    }
+
+    /** A skull ends the round — unless a shield absorbs it. */
     private fun popPoison(bubble: Bubble) {
-        breakCombo()
         addPopAnimation(bubble, intensity = 1f)
+        if (useShield(bubble)) return
+        breakCombo()
         startShake(GameRules.SHAKE_POISON_DP, GameRules.SHAKE_POISON_SECONDS)
         emit(GameEvent.Popped(bubble, points = 0, combo = 0))
         endGame(GameOverReason.POISON)
+    }
+
+    /** Spends the shield on [skull] if one is up. Returns true if the skull was absorbed. */
+    private fun useShield(skull: Bubble): Boolean {
+        if (!shieldActive) return false
+        shieldActive = false
+        addFloatingText("SHIELD!", skull.x, skull.y - skull.radius, ShieldColor, isMilestone = true)
+        emit(GameEvent.Popped(skull, points = 0, combo = comboTracker.combo))
+        emit(GameEvent.ShieldUsed)
+        return true
+    }
+
+    /**
+     * Pops everything within reach of [bomb], skulls included. Bombs caught in
+     * the blast go off too. Caught bubbles score with the bomb's [multiplier] but
+     * don't extend the combo.
+     */
+    private fun explode(bomb: Bubble, multiplier: Int, combo: Int) {
+        val blastRadius = GameRules.BOMB_RADIUS_DP * density
+        val pendingBombs = ArrayDeque<Bubble>().apply { add(bomb) }
+        var chain = 0
+        var chainPoints = 0
+        var hitSkull: Bubble? = null
+
+        while (pendingBombs.isNotEmpty()) {
+            val center = pendingBombs.removeFirst()
+            // Blasts hurt bosses too.
+            bosses.toList()
+                .filter { hypot(it.x - center.x, it.y - center.y) - it.radius <= blastRadius }
+                .forEach { boss ->
+                    val points = GameRules.BOSS_HIT_POINTS * GameRules.BOMB_BOSS_DAMAGE * multiplier
+                    score += points
+                    chainPoints += points
+                    damageBoss(boss, GameRules.BOMB_BOSS_DAMAGE, points)
+                }
+            popAnimations.add(
+                PopAnimation(
+                    id = "blast_${nextEffectId++}",
+                    x = center.x,
+                    y = center.y,
+                    radius = blastRadius / 3f,
+                    color = center.color,
+                    intensity = BLAST_INTENSITY,
+                )
+            )
+            val caught = bubbles.filter { hypot(it.x - center.x, it.y - center.y) - it.radius <= blastRadius }
+            bubbles.removeAll(caught.toSet())
+
+            for (bubble in caught) {
+                chain++
+                bubblesPopped++
+                addPopAnimation(bubble, intensity = 1f)
+                if (bubble.type == BubbleType.POISON) {
+                    if (!useShield(bubble) && hitSkull == null) hitSkull = bubble
+                    continue
+                }
+                val points = GameRules.basePoints(bubble) * multiplier
+                score += points
+                chainPoints += points
+                emit(GameEvent.Popped(bubble, points, combo))
+                if (bubble.type == BubbleType.BOMB) pendingBombs.add(bubble) else applyEffect(bubble)
+            }
+        }
+
+        if (chain > 0) {
+            addFloatingText(
+                text = "CHAIN ×$chain  +$chainPoints",
+                x = bomb.x,
+                y = bomb.y - bomb.radius - GameRules.MILESTONE_TEXT_OFFSET_DP * density,
+                color = ComboColor,
+                isMilestone = true,
+            )
+        }
+        startShake(GameRules.SHAKE_BOMB_DP, GameRules.SHAKE_BOMB_SECONDS)
+        emit(GameEvent.BombExploded(chain))
+
+        hitSkull?.let { skull ->
+            breakCombo()
+            emit(GameEvent.Popped(skull, points = 0, combo = 0))
+            endGame(GameOverReason.POISON)
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Bosses
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** The boss appears on the first frame of a boss stage (once the canvas size is known). */
+    private fun spawnBossIfNeeded() {
+        val config = stage?.boss ?: return
+        if (bossSpawned) return
+        bossSpawned = true
+        bosses.add(
+            BossBubble(
+                id = "boss_${nextEffectId++}",
+                config = config,
+                generation = 0,
+                maxHp = config.hpPerGeneration.first(),
+                fullRadius = config.radiusDp * density,
+                motionPhase = 0f,
+                x = canvasWidth / 2f,
+                y = bossBaseY(),
+            )
+        )
+    }
+
+    /** Bosses drift side to side and bob, faster as they lose HP. */
+    private fun bossStep(dt: Float) {
+        if (bosses.isEmpty()) return
+        bossClock += dt * GameRules.BOSS_PHASE_SPEED[bossPhase()]
+        val bob = GameRules.BOSS_BOB_DP * density
+        // Glide towards the path rather than snapping, so fresh split copies fly apart smoothly.
+        val follow = (dt * BOSS_FOLLOW_RATE).coerceAtMost(1f)
+        for (boss in bosses) {
+            val range = (canvasWidth / 2f - boss.fullRadius).coerceAtLeast(0f)
+            val targetX = canvasWidth / 2f + sin(bossClock * 0.7f + boss.motionPhase) * range
+            val targetY = bossBaseY() + sin(bossClock * 1.3f + boss.motionPhase * 1.7f) * bob
+            boss.x += (targetX - boss.x) * follow
+            boss.y += (targetY - boss.y) * follow
+            boss.hitFlash = (boss.hitFlash - dt).coerceAtLeast(0f)
+        }
+    }
+
+    private fun bossBaseY() =
+        canvasTopOffset + (canvasHeight - canvasTopOffset) * GameRules.BOSS_HEIGHT_FRACTION
+
+    /** 0 above ⅔ of the boss's total HP, 1 above ⅓, 2 below. */
+    private fun bossPhase(): Int {
+        val totalHp = stage?.boss?.totalHp ?: return 0
+        val damageFraction = bossDamageDealt.toFloat() / totalHp
+        return when {
+            damageFraction < 1f / 3f -> 0
+            damageFraction < 2f / 3f -> 1
+            else -> 2
+        }
+    }
+
+    /** A tap on a boss: 1 damage, extends the combo, and may set off the boss's gimmick. */
+    private fun hitBossByTap(boss: BossBubble) {
+        val previous   = comboTracker.combo
+        val newCombo   = comboTracker.onPop(playTime)
+        val points     = GameRules.BOSS_HIT_POINTS * ComboTracker.multiplierFor(newCombo)
+        score += points
+        syncComboState()
+        addFloatingText("+$points", boss.x, boss.y - boss.radius, ScorePopupColor)
+        emit(GameEvent.ComboChanged(newCombo, previous))
+
+        bossTapHits++
+        damageBoss(boss, damage = 1, points = points)
+        if (boss.hp <= 0) return
+        when (boss.config.gimmick) {
+            BossGimmick.THROWS_SKULLS -> if (bossTapHits % GameRules.SKULL_EVERY_HITS == 0) throwSkull(boss)
+            BossGimmick.STINGS -> if (bossTapHits % GameRules.STING_EVERY_HITS == 0) sting(boss)
+            BossGimmick.DROPS_BOMBS, BossGimmick.SPLITS -> Unit
+        }
+    }
+
+    /** Deals [damage] to [boss] (already scored as [points]). Beaten copies split or vanish. */
+    private fun damageBoss(boss: BossBubble, damage: Int, points: Int) {
+        if (boss.hp <= 0) return
+        val dealt = minOf(damage, boss.hp)
+        boss.hp -= dealt
+        bossDamageDealt += dealt
+        boss.hitFlash = GameRules.BOSS_HIT_FLASH_SECONDS
+        startShake(GameRules.SHAKE_BOSS_HIT_DP, GameRules.SHAKE_BOSS_HIT_SECONDS)
+        emit(GameEvent.BossHit(dealt, points))
+
+        if (boss.config.gimmick == BossGimmick.DROPS_BOMBS && !bossBombsDropped && bossPhase() == 2) {
+            dropBombs(boss)
+        }
+        if (boss.hp == 0) beatBossCopy(boss)
+    }
+
+    private fun beatBossCopy(boss: BossBubble) {
+        bosses.remove(boss)
+        popAnimations.add(
+            PopAnimation(
+                id = "${boss.id}_pop",
+                x = boss.x,
+                y = boss.y,
+                radius = boss.radius,
+                color = ScorePopupColor,
+                intensity = BOSS_POP_INTENSITY,
+            )
+        )
+        val nextGeneration = boss.generation + 1
+        boss.config.hpPerGeneration.getOrNull(nextGeneration)?.let { hp ->
+            repeat(GameRules.BOSS_SPLIT_COUNT) { i ->
+                bosses.add(
+                    BossBubble(
+                        id = "boss_${nextEffectId++}",
+                        config = boss.config,
+                        generation = nextGeneration,
+                        maxHp = hp,
+                        fullRadius = boss.fullRadius * GameRules.BOSS_SPLIT_SCALE,
+                        motionPhase = boss.motionPhase + i * 2f * PI.toFloat() / GameRules.BOSS_SPLIT_COUNT,
+                        x = boss.x,
+                        y = boss.y,
+                    )
+                )
+            }
+        }
+        if (bosses.isEmpty()) defeatBoss(boss)
+    }
+
+    /** The last copy is gone: bonus points, confetti, slow motion — the stage ends afterwards. */
+    private fun defeatBoss(last: BossBubble) {
+        score += GameRules.BOSS_DEFEAT_POINTS
+        celebrationLeft = GameRules.BOSS_CELEBRATION_SECONDS
+        startShake(GameRules.SHAKE_BOSS_DEFEAT_DP, GameRules.SHAKE_BOSS_DEFEAT_SECONDS)
+        addFloatingText(
+            text = "${last.config.name.uppercase()} DEFEATED!",
+            x = canvasWidth / 2f,
+            y = bossBaseY(),
+            color = ComboColor,
+            isMilestone = true,
+        )
+        burstConfetti(last.x, last.y)
+        emit(GameEvent.BossDefeated(GameRules.BOSS_DEFEAT_POINTS))
+    }
+
+    private fun throwSkull(boss: BossBubble) {
+        val gap = SKULL_GAP_DP * density
+        bubbles.add(createBubble(forcedType = BubbleType.POISON, at = Offset(boss.x, boss.y - boss.radius - gap)))
+    }
+
+    private fun sting(boss: BossBubble) {
+        tapLockLeft = GameRules.STING_SECONDS
+        addFloatingText("STUNG!", boss.x, boss.y + boss.radius + SKULL_GAP_DP * density, StingColor, isMilestone = true)
+    }
+
+    /** Nebula Core: bombs drop out from under it once, when it falls below ⅓ HP. */
+    private fun dropBombs(boss: BossBubble) {
+        bossBombsDropped = true
+        val spacing = BOMB_DROP_SPACING_DP * density
+        repeat(GameRules.NEBULA_BOMB_COUNT) { i ->
+            val offsetX = (i - (GameRules.NEBULA_BOMB_COUNT - 1) / 2f) * spacing
+            bubbles.add(
+                createBubble(
+                    forcedType = BubbleType.BOMB,
+                    at = Offset(boss.x + offsetX, boss.y + boss.radius + spacing),
+                )
+            )
+        }
+    }
+
+    private fun burstConfetti(x: Float, y: Float) {
+        repeat(GameRules.CONFETTI_COUNT) {
+            val angle = effectRandom.nextFloat() * 2f * PI.toFloat()
+            val speed = (CONFETTI_MIN_SPEED_DP + effectRandom.nextFloat() * CONFETTI_EXTRA_SPEED_DP) * density
+            confetti.add(
+                Confetti(
+                    x = x,
+                    y = y,
+                    vx = cos(angle) * speed,
+                    vy = sin(angle) * speed - CONFETTI_LIFT_DP * density,
+                    color = ConfettiColors[effectRandom.nextInt(ConfettiColors.size)],
+                    size = (5f + effectRandom.nextFloat() * 5f) * density,
+                    rotation = effectRandom.nextFloat() * 360f,
+                    spin = (effectRandom.nextFloat() - 0.5f) * 720f,
+                    life = 1.6f + effectRandom.nextFloat() * 0.8f,
+                )
+            )
+        }
+    }
+
+    /** Replaces a splitter with [GameRules.SPLIT_COUNT] small normal bubbles spread sideways. */
+    private fun split(splitter: Bubble) {
+        val spread = GameRules.SPLIT_SPREAD_DP * density
+        repeat(GameRules.SPLIT_COUNT) { i ->
+            val offsetX = (i - (GameRules.SPLIT_COUNT - 1) / 2f) * spread
+            bubbles.add(createBubble(forcedType = BubbleType.NORMAL, at = Offset(splitter.x + offsetX, splitter.y)))
+        }
+    }
+
+    private fun popupColor(type: BubbleType) = when (type) {
+        BubbleType.HEART -> HeartPopupColor
+        BubbleType.GOLDEN -> ComboColor
+        else -> ScorePopupColor
+    }
+
+    private fun addFloatingText(text: String, x: Float, y: Float, color: Color, isMilestone: Boolean = false) {
+        floatingTexts.add(
+            FloatingText(
+                id = "text_${nextEffectId++}",
+                text = text,
+                x = x,
+                y = y,
+                color = color,
+                isMilestone = isMilestone,
+            )
+        )
     }
 
     private fun addPopAnimation(bubble: Bubble, intensity: Float) {
@@ -329,6 +754,19 @@ class BubbleGameViewModel(
         }
         floatingTexts.removeAll { it.progress >= 1f }
 
+        if (confetti.isNotEmpty()) {
+            val gravity = CONFETTI_GRAVITY_DP * density
+            for (scrap in confetti) {
+                scrap.vy += gravity * dt
+                scrap.vx *= 1f - CONFETTI_DRAG * dt
+                scrap.x += scrap.vx * dt
+                scrap.y += scrap.vy * dt
+                scrap.rotation += scrap.spin * dt
+                scrap.life -= dt
+            }
+            confetti.removeAll { it.life <= 0f }
+        }
+
         if (shakeTimeLeft > 0f) {
             shakeTimeLeft = (shakeTimeLeft - dt).coerceAtLeast(0f)
             shakeClock += dt
@@ -353,12 +791,28 @@ class BubbleGameViewModel(
 
     private fun moveStep(dt: Float) {
         val breezeVelocity = breeze * GameRules.BREEZE_SPEED * canvasWidth
+        val windy = abs(breeze) > GameRules.WIND_SAVE_MIN_BREEZE
         for (bubble in bubbles) {
             bubble.y -= bubble.speed * dt
             bubble.baseX += breezeVelocity * dt
+            // Wind can blow skulls off the side; every other bubble stays on screen.
+            val canLeave = windy && bubble.type == BubbleType.POISON
+            if (!canLeave && canvasWidth > bubble.radius * 2) {
+                bubble.baseX = bubble.baseX.coerceIn(bubble.radius, canvasWidth - bubble.radius)
+            }
             bubble.x = bubble.baseX +
                     sin(bubble.y / density * GameRules.WOBBLE_FREQUENCY + bubble.phase) * bubble.amplitude
         }
+    }
+
+    /** Skulls blown fully off either side are gone for good. */
+    private fun windSaveStep() {
+        val blownAway = bubbles.filter {
+            it.type == BubbleType.POISON && (it.x + it.radius < 0f || it.x - it.radius > canvasWidth)
+        }
+        if (blownAway.isEmpty()) return
+        bubbles.removeAll(blownAway.toSet())
+        blownAway.forEach { emit(GameEvent.WindSave(it)) }
     }
 
     private fun cullStep() {
@@ -374,7 +828,7 @@ class BubbleGameViewModel(
             }
             emit(GameEvent.Missed(bubble, lifeLost))
         }
-        if (missedCount >= GameRules.MAX_LIVES) endGame(GameOverReason.OUT_OF_LIVES)
+        if (missedCount >= maxLives) endGame(GameOverReason.OUT_OF_LIVES)
     }
 
     private fun breezeDecayStep(dt: Float) {
@@ -396,40 +850,93 @@ class BubbleGameViewModel(
         syncComboState()
     }
 
+    private fun timerStep() {
+        val duration = stage?.durationSec ?: return
+        timeLeftSec = ceil(duration - playTime).toInt().coerceAtLeast(0)
+    }
+
+    /**
+     * Stage only. Ends the stage when its objectives are met (untimed: main goal;
+     * timed: every objective) or when the timer runs out.
+     */
+    private fun checkStageEnd() {
+        val stage = stage ?: return
+        val tracker = objectiveTracker ?: return
+        if (isGameOver) return
+        // Let the boss-defeat slow motion play out before the result appears.
+        if (celebrationLeft > 0f) return
+
+        val goalMet = tracker.isSatisfied(stage.goal)
+        val duration = stage.durationSec
+        when {
+            goalMet && (duration == null || stage.allObjectives.all(tracker::isSatisfied)) ->
+                endGame(GameOverReason.GOAL_COMPLETE)
+            duration != null && playTime >= duration ->
+                endGame(GameOverReason.TIME_UP)
+        }
+    }
+
     private fun endGame(reason: GameOverReason) {
         if (isGameOver) return
         isGameOver = true
-        isNewBest  = score > 0 && score > (bestScore.value ?: 0)
+
+        // Stars come from the objectives at this moment, whatever ended the round.
+        val stars = stage?.let { objectiveTracker?.stars(it) } ?: 0
+        stage?.let { stageResult = StageResult(won = stars > 0, stars = stars, objectives = objectives) }
+        isNewBest = score > 0 && score > (bestScore.value ?: 0) && (stage == null || stars > 0)
         emit(GameEvent.GameOver(reason, score, isNewBest))
 
         val finalScore = score
         val popped = bubblesPopped
         val bestCombo = comboTracker.best
         viewModelScope.launch {
-            progressRepository.recordEndlessGame(difficulty, finalScore, popped, bestCombo)
+            when (mode) {
+                is GameMode.Endless ->
+                    progressRepository.recordEndlessGame(mode.difficulty, finalScore, popped, bestCombo)
+                is GameMode.Stage ->
+                    progressRepository.recordStageGame(mode.stageId, stars, finalScore, popped, bestCombo)
+            }
         }
     }
 
     private fun emit(event: GameEvent) {
         _events.tryEmit(event)
+        objectiveTracker?.let { tracker ->
+            tracker.onEvent(event)
+            refreshObjectives()
+        }
+    }
+
+    private fun refreshObjectives() {
+        val stage = stage ?: return
+        val tracker = objectiveTracker ?: return
+        objectives = stage.allObjectives.map(tracker::progress)
     }
 
     private fun newRandom(): Random = seed?.let { Random(it) } ?: Random.Default
 
-    private fun createBubble(): Bubble {
-        val radiusDp = random.nextFloat() * (GameRules.MAX_RADIUS_DP - GameRules.MIN_RADIUS_DP) +
-                GameRules.MIN_RADIUS_DP
+    /**
+     * A new bubble rising from below the screen, or — with [at] — a small one
+     * appearing at that point (splitter fragments). [forcedType] skips the
+     * weighted type roll.
+     */
+    private fun createBubble(forcedType: BubbleType? = null, at: Offset? = null): Bubble {
+        val type = forcedType ?: rollBubbleType()
+        // Golden bubbles and splitter fragments are always small.
+        val maxRadiusDp = if (type == BubbleType.GOLDEN || at != null) GameRules.SMALL_RADIUS_DP else GameRules.MAX_RADIUS_DP
+        val radiusDp = random.nextFloat() * (maxRadiusDp - GameRules.MIN_RADIUS_DP) + GameRules.MIN_RADIUS_DP
         val radius   = radiusDp * density
-        val startX   = random.nextFloat() * canvasWidth
+        val randomX  = random.nextFloat() * canvasWidth
+        val startX   = at?.x ?: randomX
         val maxSpeed = (spawn.maxSpeed + score * spawn.speedRampPerPoint).coerceAtMost(spawn.maxSpeedCap)
-        val speed    = (random.nextFloat() * (maxSpeed - spawn.minSpeed) + spawn.minSpeed) * canvasHeight
+        var speed    = (random.nextFloat() * (maxSpeed - spawn.minSpeed) + spawn.minSpeed) * canvasHeight
+        if (type == BubbleType.GOLDEN) speed *= GameRules.GOLDEN_SPEED_MULTIPLIER
         val amplitudeDp = random.nextFloat() * (GameRules.MAX_AMPLITUDE_DP - GameRules.MIN_AMPLITUDE_DP) +
                 GameRules.MIN_AMPLITUDE_DP
-        val type = rollBubbleType()
         return Bubble(
             id = random.nextLong().toString(),
             x = startX,
-            y = canvasHeight + radius,
+            y = at?.y ?: (canvasHeight + radius),
             radius = radius,
             size = GameRules.sizeForRadius(radiusDp),
             speed = speed,

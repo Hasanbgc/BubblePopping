@@ -5,6 +5,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
+import com.apps.bubblepopping.stage.World
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -20,6 +22,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apps.bubblepopping.game.GameRules
+import com.apps.bubblepopping.view.BossCrownColor
+import com.apps.bubblepopping.view.BossHpFullColor
+import com.apps.bubblepopping.view.BossHpLowColor
 import com.apps.bubblepopping.view.NearMissColor
 import kotlin.math.PI
 import kotlin.math.abs
@@ -82,12 +88,11 @@ private val POISON_SCHEME = BubbleScheme(
 // Shared soap-bubble renderer (parameterised by color scheme)
 // ─────────────────────────────────────────────────────────────────────────────
 
-private fun DrawScope.drawSoapBubble(bubble: Bubble, scheme: BubbleScheme) {
-    val cx     = bubble.x
-    val cy     = bubble.y
-    val r      = bubble.radius
+private fun DrawScope.drawSoapBubble(bubble: Bubble, scheme: BubbleScheme) =
+    drawSoapBubble(bubble.x, bubble.y, bubble.radius, bubble.shimmerAngle, scheme)
+
+private fun DrawScope.drawSoapBubble(cx: Float, cy: Float, r: Float, rot: Float, scheme: BubbleScheme) {
     val center = Offset(cx, cy)
-    val rot    = bubble.shimmerAngle
 
     // 1. Ghost fill
     drawCircle(color = scheme.bodyTint.copy(alpha = 0.07f), radius = r, center = center)
@@ -187,12 +192,273 @@ private fun DrawScope.drawBubbleIcon(bubble: Bubble, icon: ImageBitmap) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Special-bubble and per-world schemes
+// ─────────────────────────────────────────────────────────────────────────────
+
+private fun rainbow(vararg colors: Long) = listOf(Color.Transparent) + colors.map { Color(it) } + Color.Transparent
+
+private val GOLDEN_SCHEME = BubbleScheme(
+    bodyTint      = Color(0xFFFFE082),
+    outlineColor  = Color(0xFFFFD54F).copy(alpha = 0.8f),
+    arcAStops     = rainbow(0xFFFFD54F, 0xFFFFF59D, 0xFFFFB300, 0xFFFFECB3),
+    arcBStops     = rainbow(0xFFFFA000, 0xFFFFE082, 0xFFFFCA28, 0xFFFFF8E1),
+    crescentColor = Color(0xFFFFF59D),
+)
+
+private val FREEZE_SCHEME = BubbleScheme(
+    bodyTint      = Color(0xFFB3E5FC),
+    outlineColor  = Color(0xFFE1F5FE).copy(alpha = 0.8f),
+    arcAStops     = rainbow(0xFF80D8FF, 0xFFE1F5FE, 0xFF40C4FF, 0xFFB3E5FC),
+    arcBStops     = rainbow(0xFF81D4FA, 0xFFFFFFFF, 0xFF4FC3F7, 0xFFE1F5FE),
+    crescentColor = Color(0xFFE1F5FE),
+)
+
+private val BOMB_SCHEME = BubbleScheme(
+    bodyTint      = Color(0xFFFF5252),
+    outlineColor  = Color(0xFFFF8A80).copy(alpha = 0.7f),
+    arcAStops     = rainbow(0xFFFF1744, 0xFFFF9100, 0xFFFF3D00, 0xFFFFAB40),
+    arcBStops     = rainbow(0xFFD50000, 0xFFFF6E40, 0xFFFF5252, 0xFFFFD180),
+    crescentColor = Color(0xFFFFAB40),
+    sparkleColor  = Color(0xFFFFD180),
+)
+
+private val SPLITTER_SCHEME = BubbleScheme(
+    bodyTint      = Color(0xFFE1BEE7),
+    outlineColor  = Color(0xFFEA80FC).copy(alpha = 0.7f),
+    arcAStops     = rainbow(0xFFEA80FC, 0xFFB388FF, 0xFFFF80AB, 0xFFE1BEE7),
+    arcBStops     = rainbow(0xFFB388FF, 0xFF80D8FF, 0xFFEA80FC, 0xFFF8BBD0),
+    crescentColor = Color(0xFFEA80FC),
+)
+
+private val SHIELD_SCHEME = BubbleScheme(
+    bodyTint      = Color(0xFFECEFF1),
+    outlineColor  = Color(0xFFCFD8DC).copy(alpha = 0.9f),
+    arcAStops     = rainbow(0xFFCFD8DC, 0xFFFFFFFF, 0xFF90A4AE, 0xFFECEFF1),
+    arcBStops     = rainbow(0xFFB0BEC5, 0xFFECEFF1, 0xFF78909C, 0xFFFFFFFF),
+    crescentColor = Color(0xFFFFFFFF),
+)
+
+/** Normal bubbles take on each world's palette. */
+private fun normalScheme(world: World): BubbleScheme = when (world) {
+    World.SKY -> NORMAL_SCHEME
+    World.OCEAN -> NORMAL_SCHEME.copy(
+        bodyTint  = Color(0xFFB2EBF2),
+        arcAStops = rainbow(0xFF18FFFF, 0xFF64FFDA, 0xFF80D8FF, 0xFFA7FFEB),
+        arcBStops = rainbow(0xFF00E5FF, 0xFF69F0AE, 0xFF40C4FF, 0xFF84FFFF),
+    )
+    World.SPACE -> NORMAL_SCHEME.copy(
+        bodyTint  = Color(0xFFD1C4E9),
+        arcAStops = rainbow(0xFFB388FF, 0xFF8C9EFF, 0xFFEA80FC, 0xFF82B1FF),
+        arcBStops = rainbow(0xFF7C4DFF, 0xFF536DFE, 0xFFE040FB, 0xFF448AFF),
+    )
+    World.CANDY -> NORMAL_SCHEME.copy(
+        bodyTint  = Color(0xFFFCE4EC),
+        arcAStops = rainbow(0xFFFF80AB, 0xFFFFFF8D, 0xFFFF9E80, 0xFFF8BBD0),
+        arcBStops = rainbow(0xFFFF4081, 0xFFFFD180, 0xFFEA80FC, 0xFFFFFF8D),
+    )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vector icons for special bubbles (drawn, not image assets)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Five-pointed star. */
+private fun DrawScope.drawStarIcon(center: Offset, r: Float) {
+    val path = Path()
+    for (i in 0 until 10) {
+        val radius = if (i % 2 == 0) r else r * 0.45f
+        val angle = (-90f + i * 36f) * PI.toFloat() / 180f
+        val point = Offset(center.x + radius * cos(angle), center.y + radius * sin(angle))
+        if (i == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
+    }
+    path.close()
+    drawPath(path, Color(0xFFFFC107))
+    drawPath(path, Color.White.copy(alpha = 0.8f), style = Stroke(width = r * 0.12f))
+}
+
+/** Three crossing strokes with small side branches. */
+private fun DrawScope.drawSnowflakeIcon(center: Offset, r: Float) {
+    val stroke = r * 0.16f
+    for (i in 0 until 3) {
+        val angle = (i * 60f) * PI.toFloat() / 180f
+        val dx = r * cos(angle)
+        val dy = r * sin(angle)
+        drawLine(Color.White, Offset(center.x - dx, center.y - dy), Offset(center.x + dx, center.y + dy), stroke, StrokeCap.Round)
+    }
+    for (i in 0 until 6) {
+        val angle = (i * 60f) * PI.toFloat() / 180f
+        val tip = Offset(center.x + r * 0.6f * cos(angle), center.y + r * 0.6f * sin(angle))
+        for (side in listOf(-1f, 1f)) {
+            val branchAngle = angle + side * 0.8f
+            drawLine(
+                Color.White,
+                tip,
+                Offset(tip.x + r * 0.3f * cos(branchAngle), tip.y + r * 0.3f * sin(branchAngle)),
+                stroke * 0.7f,
+                StrokeCap.Round,
+            )
+        }
+    }
+}
+
+/** Round bomb with a fuse and a spark. */
+private fun DrawScope.drawBombIcon(center: Offset, r: Float) {
+    val body = Offset(center.x - r * 0.1f, center.y + r * 0.15f)
+    drawCircle(Color(0xFF212121), r * 0.7f, body)
+    drawCircle(Color.White.copy(alpha = 0.35f), r * 0.18f, Offset(body.x - r * 0.25f, body.y - r * 0.25f))
+    val fuseStart = Offset(body.x + r * 0.45f, body.y - r * 0.5f)
+    val fuseEnd = Offset(center.x + r * 0.75f, center.y - r * 0.85f)
+    drawLine(Color(0xFF8D6E63), fuseStart, fuseEnd, r * 0.14f, StrokeCap.Round)
+    drawCircle(Color(0xFFFFD180), r * 0.2f, fuseEnd)
+    drawCircle(Color(0xFFFF6D00), r * 0.11f, fuseEnd)
+}
+
+/** Three small bubbles in a triangle. */
+private fun DrawScope.drawSplitterIcon(center: Offset, r: Float) {
+    for (i in 0 until 3) {
+        val angle = (-90f + i * 120f) * PI.toFloat() / 180f
+        val dot = Offset(center.x + r * 0.5f * cos(angle), center.y + r * 0.5f * sin(angle))
+        drawCircle(Color.White.copy(alpha = 0.25f), r * 0.33f, dot)
+        drawCircle(Color.White, r * 0.33f, dot, style = Stroke(width = r * 0.1f))
+    }
+}
+
+/** Shield badge: flat top, pointed bottom. */
+private fun DrawScope.drawShieldIcon(center: Offset, r: Float) {
+    val path = Path().apply {
+        moveTo(center.x, center.y - r)
+        lineTo(center.x + r * 0.8f, center.y - r * 0.65f)
+        lineTo(center.x + r * 0.7f, center.y + r * 0.2f)
+        quadraticTo(center.x + r * 0.45f, center.y + r * 0.75f, center.x, center.y + r)
+        quadraticTo(center.x - r * 0.45f, center.y + r * 0.75f, center.x - r * 0.7f, center.y + r * 0.2f)
+        lineTo(center.x - r * 0.8f, center.y - r * 0.65f)
+        close()
+    }
+    drawPath(path, Color(0xFF90A4AE))
+    drawPath(path, Color.White, style = Stroke(width = r * 0.12f))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Public draw API
 // ─────────────────────────────────────────────────────────────────────────────
 
-fun DrawScope.drawBubble(bubble: Bubble)                            = drawSoapBubble(bubble, NORMAL_SCHEME)
-fun DrawScope.drawPoisonBubble(bubble: Bubble, icon: ImageBitmap)  { drawSoapBubble(bubble, POISON_SCHEME); drawBubbleIcon(bubble, icon) }
-fun DrawScope.drawHeartBubble(bubble: Bubble, icon: ImageBitmap)  { drawSoapBubble(bubble, HEART_SCHEME);  drawBubbleIcon(bubble, icon) }
+/** Image icons for the bubble types that use artwork. */
+class BubbleIcons(val heart: ImageBitmap, val skull: ImageBitmap)
+
+/** Draws [bubble] with its type's look; normal bubbles use [world]'s palette. */
+fun DrawScope.drawGameBubble(bubble: Bubble, world: World, icons: BubbleIcons) {
+    val center = Offset(bubble.x, bubble.y)
+    val iconRadius = bubble.radius * 0.45f
+    when (bubble.type) {
+        BubbleType.NORMAL -> drawSoapBubble(bubble, normalScheme(world))
+        BubbleType.POISON -> { drawSoapBubble(bubble, POISON_SCHEME); drawBubbleIcon(bubble, icons.skull) }
+        BubbleType.HEART -> { drawSoapBubble(bubble, HEART_SCHEME); drawBubbleIcon(bubble, icons.heart) }
+        BubbleType.GOLDEN -> { drawSoapBubble(bubble, GOLDEN_SCHEME); drawStarIcon(center, iconRadius) }
+        BubbleType.FREEZE -> { drawSoapBubble(bubble, FREEZE_SCHEME); drawSnowflakeIcon(center, iconRadius) }
+        BubbleType.BOMB -> { drawSoapBubble(bubble, BOMB_SCHEME); drawBombIcon(center, iconRadius) }
+        BubbleType.SPLITTER -> { drawSoapBubble(bubble, SPLITTER_SCHEME); drawSplitterIcon(center, iconRadius) }
+        BubbleType.SHIELD -> { drawSoapBubble(bubble, SHIELD_SCHEME); drawShieldIcon(center, iconRadius) }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Boss
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A boss: a big soap bubble in the world's colours with a crown, an HP ring,
+ * cracks below ⅔ and ⅓ HP, and a white flash + wobble when hit.
+ */
+fun DrawScope.drawBoss(boss: BossBubble, world: World, time: Float) {
+    val flash = (boss.hitFlash / GameRules.BOSS_HIT_FLASH_SECONDS).coerceIn(0f, 1f)
+    val wobble = 1f + 0.08f * flash * sin(time * 60f)
+    val r = boss.radius * wobble
+    val center = Offset(boss.x, boss.y)
+
+    // Body: a more solid version of the world palette so the boss reads as "big and heavy".
+    drawCircle(Brush.radialGradient(
+        colors = listOf(Color.White.copy(alpha = 0.18f), worldBossTint(world).copy(alpha = 0.35f)),
+        center = center,
+        radius = r,
+    ), r, center)
+    drawSoapBubble(boss.x, boss.y, r, rot = time * 20f, scheme = normalScheme(world))
+
+    // Cracks, deterministic per boss.
+    if (boss.hpFraction <= 2f / 3f) drawCracks(center, r, seed = boss.id.hashCode(), count = 2)
+    if (boss.hpFraction <= 1f / 3f) drawCracks(center, r, seed = boss.id.hashCode() + 7, count = 3)
+
+    // HP ring, green → red.
+    val ringR = r + 6.dp.toPx()
+    drawCircle(Color.Black.copy(alpha = 0.25f), ringR, center, style = Stroke(width = 5.dp.toPx()))
+    drawArc(
+        color = lerp(BossHpLowColor, BossHpFullColor, boss.hpFraction),
+        startAngle = -90f,
+        sweepAngle = 360f * boss.hpFraction,
+        useCenter = false,
+        topLeft = Offset(center.x - ringR, center.y - ringR),
+        size = Size(ringR * 2, ringR * 2),
+        style = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round),
+    )
+
+    if (boss.generation == 0) drawCrown(Offset(center.x, center.y - r), r * 0.45f)
+
+    if (flash > 0f) drawCircle(Color.White.copy(alpha = 0.45f * flash), r, center)
+}
+
+private fun worldBossTint(world: World): Color = when (world) {
+    World.SKY -> Color(0xFF90CAF9)
+    World.OCEAN -> Color(0xFFCE93D8)
+    World.SPACE -> Color(0xFF7C4DFF)
+    World.CANDY -> Color(0xFFFF80AB)
+}
+
+/** Zig-zag cracks from the rim inwards; positions come from [seed] so they don't flicker. */
+private fun DrawScope.drawCracks(center: Offset, r: Float, seed: Int, count: Int) {
+    val random = kotlin.random.Random(seed)
+    repeat(count) {
+        val angle = random.nextFloat() * 2f * PI.toFloat()
+        var point = Offset(center.x + r * 0.95f * cos(angle), center.y + r * 0.95f * sin(angle))
+        val path = Path().apply { moveTo(point.x, point.y) }
+        repeat(4) { step ->
+            val inward = angle + PI.toFloat() + (random.nextFloat() - 0.5f) * 1.2f
+            val length = r * (0.12f + random.nextFloat() * 0.1f) * (1f - step * 0.15f)
+            point = Offset(point.x + length * cos(inward), point.y + length * sin(inward))
+            path.lineTo(point.x, point.y)
+        }
+        drawPath(path, Color.White.copy(alpha = 0.75f), style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
+    }
+}
+
+/** Three-pointed crown sitting on top of the boss. */
+private fun DrawScope.drawCrown(base: Offset, width: Float) {
+    val h = width * 0.6f
+    val left = base.x - width / 2
+    val path = Path().apply {
+        moveTo(left, base.y)
+        lineTo(left, base.y - h * 0.6f)
+        lineTo(left + width * 0.25f, base.y - h * 0.25f)
+        lineTo(base.x, base.y - h)
+        lineTo(left + width * 0.75f, base.y - h * 0.25f)
+        lineTo(left + width, base.y - h * 0.6f)
+        lineTo(left + width, base.y)
+        close()
+    }
+    drawPath(path, BossCrownColor)
+    drawPath(path, Color.White.copy(alpha = 0.7f), style = Stroke(width = 1.5f.dp.toPx()))
+    drawCircle(Color(0xFFE53935), width * 0.07f, Offset(base.x, base.y - h * 0.3f))
+}
+
+/** A spinning confetti scrap, fading out over its last half second. */
+fun DrawScope.drawConfetti(scrap: Confetti) {
+    val alpha = (scrap.life / 0.5f).coerceIn(0f, 1f)
+    rotate(degrees = scrap.rotation, pivot = Offset(scrap.x, scrap.y)) {
+        drawRect(
+            color = scrap.color.copy(alpha = alpha),
+            topLeft = Offset(scrap.x - scrap.size / 2, scrap.y - scrap.size / 4),
+            size = Size(scrap.size, scrap.size / 2),
+        )
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pop animation

@@ -18,6 +18,8 @@ data class GameSettings(
     val soundEnabled: Boolean = true,
     val musicEnabled: Boolean = true,
     val hapticsEnabled: Boolean = true,
+    /** On-screen wind buttons, alongside swiping. An accessibility option. */
+    val windButtonsEnabled: Boolean = true,
 )
 
 interface SettingsRepository {
@@ -25,6 +27,7 @@ interface SettingsRepository {
     suspend fun setSoundEnabled(enabled: Boolean)
     suspend fun setMusicEnabled(enabled: Boolean)
     suspend fun setHapticsEnabled(enabled: Boolean)
+    suspend fun setWindButtonsEnabled(enabled: Boolean)
 }
 
 class DataStoreSettingsRepository(
@@ -35,6 +38,7 @@ class DataStoreSettingsRepository(
         val SOUND = booleanPreferencesKey("sound_enabled")
         val MUSIC = booleanPreferencesKey("music_enabled")
         val HAPTICS = booleanPreferencesKey("haptics_enabled")
+        val WIND_BUTTONS = booleanPreferencesKey("wind_buttons_enabled")
     }
 
     override val settings: Flow<GameSettings> = dataStore.data.map { prefs ->
@@ -43,12 +47,14 @@ class DataStoreSettingsRepository(
             soundEnabled = prefs[Keys.SOUND] ?: defaults.soundEnabled,
             musicEnabled = prefs[Keys.MUSIC] ?: defaults.musicEnabled,
             hapticsEnabled = prefs[Keys.HAPTICS] ?: defaults.hapticsEnabled,
+            windButtonsEnabled = prefs[Keys.WIND_BUTTONS] ?: defaults.windButtonsEnabled,
         )
     }
 
     override suspend fun setSoundEnabled(enabled: Boolean) = set(Keys.SOUND, enabled)
     override suspend fun setMusicEnabled(enabled: Boolean) = set(Keys.MUSIC, enabled)
     override suspend fun setHapticsEnabled(enabled: Boolean) = set(Keys.HAPTICS, enabled)
+    override suspend fun setWindButtonsEnabled(enabled: Boolean) = set(Keys.WIND_BUTTONS, enabled)
 
     private suspend fun set(key: Preferences.Key<Boolean>, value: Boolean) {
         dataStore.edit { it[key] = value }

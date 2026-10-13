@@ -28,6 +28,21 @@ sealed interface GameEvent {
      */
     data class ComboChanged(val combo: Int, val previous: Int, val broken: Boolean = false) : GameEvent
 
+    /** A bomb went off; [chainSize] bubbles were popped by it and any bombs it set off. */
+    data class BombExploded(val chainSize: Int) : GameEvent
+
+    /** The wind blew a skull bubble off the side of the screen. */
+    data class WindSave(val bubble: Bubble) : GameEvent
+
+    /** A shield absorbed a skull pop. */
+    data object ShieldUsed : GameEvent
+
+    /** A boss took [damage] (from a tap or a bomb); [points] were scored for it. */
+    data class BossHit(val damage: Int, val points: Int) : GameEvent
+
+    /** The last copy of the boss was beaten; [points] is the defeat bonus. */
+    data class BossDefeated(val points: Int) : GameEvent
+
     /** Emitted once per whole second of (unpaused) play time. */
     data class Tick(val elapsedSec: Int) : GameEvent
 
@@ -41,4 +56,8 @@ sealed interface GameEvent {
 enum class GameOverReason {
     POISON,
     OUT_OF_LIVES,
+    /** Stage only: the timer ran out. */
+    TIME_UP,
+    /** Stage only: ended early because its objectives were met. */
+    GOAL_COMPLETE,
 }

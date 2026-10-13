@@ -45,6 +45,12 @@ class GameSounds(private val sound: SoundManager) {
     fun heart() = sound.play(sample = 0, rate = 1.6f)
     fun poison() = sound.play(sample = 0, rate = 0.55f)
     fun comboBreak() = sound.play(sample = 0, rate = 0.75f)
+    fun golden() = sound.play(sample = 1, rate = 1.9f)
+    fun freeze() = sound.play(sample = 2, rate = 0.7f)
+    fun bomb() = sound.play(sample = 0, rate = 0.5f)
+    fun shield() = sound.play(sample = 1, rate = 1.3f)
+    fun windSave() = sound.play(sample = 2, rate = 1.5f)
+    fun bossHit() = sound.play(sample = Random.nextInt(sound.sampleCount), rate = 0.8f)
 
     /** Short rising arpeggio. */
     suspend fun newBest() {

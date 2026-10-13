@@ -63,6 +63,8 @@ import com.apps.bubblepopping.game.GameRules
 import com.apps.bubblepopping.view.BalooFontFamily
 import com.apps.bubblepopping.view.play.component.drawFloatingText
 import com.apps.bubblepopping.view.play.component.drawNearMissWarning
+import com.apps.bubblepopping.view.play.component.StageGoalBar
+import androidx.compose.foundation.layout.statusBarsPadding
 import kotlinx.coroutines.launch
 import com.apps.bubblepopping.heart
 import com.apps.bubblepopping.play_screen_bg
@@ -72,9 +74,16 @@ import com.apps.bubblepopping.view.play.component.BubbleType
 import com.apps.bubblepopping.view.play.component.GameHud
 import com.apps.bubblepopping.view.play.component.HUD_CONTENT_HEIGHT
 import com.apps.bubblepopping.view.play.component.drawBreezeLines
-import com.apps.bubblepopping.view.play.component.drawBubble
-import com.apps.bubblepopping.view.play.component.drawHeartBubble
-import com.apps.bubblepopping.view.play.component.drawPoisonBubble
+import com.apps.bubblepopping.view.play.component.drawGameBubble
+import com.apps.bubblepopping.view.play.component.drawBoss
+import com.apps.bubblepopping.view.play.component.drawConfetti
+import com.apps.bubblepopping.view.StingColor
+import com.apps.bubblepopping.view.play.component.BubbleIcons
+import com.apps.bubblepopping.view.FreezeColor
+import com.apps.bubblepopping.view.worldMapColors
+import com.apps.bubblepopping.stage.World
+import androidx.compose.foundation.gestures.awaitEachGesture
+import kotlin.math.abs
 import com.apps.bubblepopping.view.play.component.drawPopAnimation
 import org.jetbrains.compose.resources.painterResource
 
@@ -83,6 +92,17 @@ private val POP_SAMPLES = listOf("files/pop_1.mp3", "files/pop_2.mp3", "files/po
 
 /** Breaking a combo this long or longer plays the combo-break sound. */
 private const val COMBO_BREAK_SOUND_MIN = 3
+
+/** Each result star plays a pop pitched as if at this many more combo steps. */
+private const val STAR_PITCH_STEP = 4
+
+/** Horizontal movement after a missed press that turns it into a wind swipe. */
+private val SWIPE_THRESHOLD = 24.dp
+
+/** Opacity of the world colour wash over the play background (worlds after Sky). */
+private const val WORLD_TINT_ALPHA = 0.35f
+private const val FREEZE_TINT_ALPHA = 0.12f
+private const val STING_TINT_ALPHA = 0.15f
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BubblePoppingScreen
@@ -93,20 +113,28 @@ fun PlayScreenRoot(
     hapticFeedback: HapticFeedback,
     onBack: (() -> Unit)? = null,
     onHome: (() -> Unit)? = null,
+    onNextStage: (() -> Unit)? = null,
 ) {
     BubblePoppingScreen(
         viewModel = viewModel,
         hapticFeedback = hapticFeedback,
         onBack = onBack,
         onHome = onHome,
+        onNextStage = onNextStage,
     )
 }
+
+/**
+ * [onHome] leaves after the round (Endless → Home, stage → stage list).
+ * [onNextStage] is shown on a cleared stage's result when a next stage exists.
+ */
 @Composable
 fun BubblePoppingScreen(
     viewModel: BubbleGameViewModel,
     hapticFeedback: HapticFeedback,
     onBack: (() -> Unit)? = null,
     onHome: (() -> Unit)? = null,
+    onNextStage: (() -> Unit)? = null,
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val bestScore by viewModel.bestScore.collectAsStateWithLifecycle()
@@ -115,6 +143,7 @@ fun BubblePoppingScreen(
 
     val heartBitmap = rememberIconBitmap(painterResource(Res.drawable.heart))
     val skullBitmap = rememberIconBitmap(painterResource(Res.drawable.skull))
+    val bubbleIcons = remember(heartBitmap, skullBitmap) { BubbleIcons(heart = heartBitmap, skull = skullBitmap) }
 
     val isPaused by viewModel.isPaused.collectAsStateWithLifecycle()
 
@@ -150,7 +179,7 @@ fun BubblePoppingScreen(
             val haptics = hapticFeedback.takeIf { settings.hapticsEnabled }
             when (event) {
                 is GameEvent.Popped -> when (event.bubble.type) {
-                    BubbleType.NORMAL -> {
+                    BubbleType.NORMAL, BubbleType.SPLITTER -> {
                         sounds?.pop(event.combo)
                         if (event.bubble.size == BubbleSize.SMALL) haptics?.light() else haptics?.medium()
                     }
@@ -158,10 +187,44 @@ fun BubblePoppingScreen(
                         sounds?.heart()
                         haptics?.medium()
                     }
+                    BubbleType.GOLDEN -> {
+                        sounds?.golden()
+                        haptics?.medium()
+                    }
+                    BubbleType.FREEZE -> {
+                        sounds?.freeze()
+                        haptics?.medium()
+                    }
+                    BubbleType.SHIELD -> {
+                        sounds?.shield()
+                        haptics?.medium()
+                    }
+                    // The blast itself plays on BombExploded.
+                    BubbleType.BOMB -> Unit
                     BubbleType.POISON -> {
                         sounds?.poison()
                         haptics?.heavy()
                     }
+                }
+                is GameEvent.BombExploded -> {
+                    sounds?.bomb()
+                    haptics?.heavy()
+                }
+                is GameEvent.ShieldUsed -> {
+                    sounds?.shield()
+                    haptics?.success()
+                }
+                is GameEvent.WindSave -> {
+                    sounds?.windSave()
+                    haptics?.light()
+                }
+                is GameEvent.BossHit -> {
+                    sounds?.bossHit()
+                    haptics?.medium()
+                }
+                is GameEvent.BossDefeated -> {
+                    haptics?.success()
+                    sounds?.let { launch { it.newBest() } }
                 }
                 is GameEvent.ComboChanged -> {
                     if (event.broken && event.previous >= COMBO_BREAK_SOUND_MIN) sounds?.comboBreak()
@@ -214,6 +277,14 @@ fun BubblePoppingScreen(
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
+        // Later worlds tint the background with their own colours.
+        if (viewModel.world != World.SKY) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Brush.verticalGradient(worldMapColors(viewModel.world).map { it.copy(alpha = WORLD_TINT_ALPHA) }))
+            )
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -253,28 +324,42 @@ fun BubblePoppingScreen(
                             density   = density.density,
                         )
                     }
+                    // A press on a bubble pops it. A press that misses is either a
+                    // horizontal swipe (wind) or, if released without swiping, a missed tap.
                     .pointerInput(Unit) {
-                        awaitPointerEventScope {
-                            while (true) {
-                                val down = awaitFirstDown() // requireUnconsumed = true
-                                // Sound and haptics follow from the Popped event.
-                                if (viewModel.tryPop(down.position)) down.consume()
+                        val swipeThreshold = SWIPE_THRESHOLD.toPx()
+                        awaitEachGesture {
+                            val down = awaitFirstDown() // requireUnconsumed = true
+                            // Sound and haptics follow from the Popped event.
+                            if (viewModel.tryPop(down.position)) {
+                                down.consume()
+                                return@awaitEachGesture
                             }
+                            var swiped = false
+                            while (true) {
+                                val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                                val dx = change.position.x - down.position.x
+                                if (!swiped && abs(dx) > swipeThreshold) swiped = true
+                                if (swiped) viewModel.swipeWind(dx / size.width)
+                                if (!change.pressed) break
+                            }
+                            if (!swiped) viewModel.onMissedTap()
                         }
                     }
             )  {
                 drawBreezeLines(viewModel.breeze, elapsedTime)
 
+                // Bosses sit behind the bubbles (a skull in front of a boss gets tapped first).
+                for (boss in viewModel.bosses) {
+                    drawBoss(boss, viewModel.world, elapsedTime)
+                }
+
                 // Normal bubbles this close to the top pulse red — they're about to cost a life.
                 val dangerY = topOffsetPx + (size.height - topOffsetPx) * GameRules.NEAR_MISS_ZONE
                 for (bubble in viewModel.bubbles) {
-                    when (bubble.type) {
-                        BubbleType.NORMAL -> {
-                            drawBubble(bubble)
-                            if (bubble.y - bubble.radius < dangerY) drawNearMissWarning(bubble, elapsedTime)
-                        }
-                        BubbleType.POISON -> drawPoisonBubble(bubble, skullBitmap)
-                        BubbleType.HEART  -> drawHeartBubble(bubble, heartBitmap)
+                    drawGameBubble(bubble, viewModel.world, bubbleIcons)
+                    if (bubble.type == BubbleType.NORMAL && bubble.y - bubble.radius < dangerY) {
+                        drawNearMissWarning(bubble, elapsedTime)
                     }
                 }
 
@@ -285,6 +370,28 @@ fun BubblePoppingScreen(
                 for (text in viewModel.floatingTexts) {
                     drawFloatingText(text, textMeasurer, fontFamily)
                 }
+
+                for (scrap in viewModel.confetti) {
+                    drawConfetti(scrap)
+                }
+            }
+
+            // ── Sting tint (taps locked) ─────────────────────────────────────────
+            if (viewModel.tapLockLeft > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(StingColor.copy(alpha = STING_TINT_ALPHA))
+                )
+            }
+
+            // ── Freeze tint ──────────────────────────────────────────────────────
+            if (viewModel.freezeTimeLeft > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(FreezeColor.copy(alpha = FREEZE_TINT_ALPHA))
+                )
             }
 
             // ── Pause overlay ────────────────────────────────────────────────────
@@ -302,15 +409,18 @@ fun BubblePoppingScreen(
             // ── Breeze controls ──────────────────────────────────────────────────
             // navigationBarsPadding() keeps buttons above the gesture bar on all
             // device configurations (3-button nav, gesture nav, etc.).
-            BreezeControls(
-                onBreezeLeft  = { viewModel.triggerBreeze(-1f) },
-                onBreezeRight = { viewModel.triggerBreeze(+1f) },
-                breeze        = viewModel.breeze,
-                modifier      = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 20.dp),
-            )
+            // Swiping always works; the buttons can be turned off in settings.
+            if (settings.windButtonsEnabled) {
+                BreezeControls(
+                    onBreezeLeft  = { viewModel.triggerBreeze(-1f) },
+                    onBreezeRight = { viewModel.triggerBreeze(+1f) },
+                    breeze        = viewModel.breeze,
+                    modifier      = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 20.dp),
+                )
+            }
 
             // ── HUD — drawn last, always on top ──────────────────────────────────
             // Manages its own statusBarsPadding; no external top padding needed.
@@ -324,17 +434,53 @@ fun BubblePoppingScreen(
                 modifier = Modifier.align(Alignment.TopStart),
                 comboTimeLeft = viewModel.comboTimeLeft,
                 comboMultiplier = viewModel.comboMultiplier,
+                shieldActive = viewModel.shieldActive,
+                freezeTimeLeft = viewModel.freezeTimeLeft,
             )
 
-            if (viewModel.isGameOver) {
-                GameOverOverlay(
-                    score     = viewModel.score,
-                    bestScore = bestScore,
-                    isNewBest = viewModel.isNewBest,
-                    onRestart = { viewModel.restartGame() },
-                    onHome    = onHome,
-                    modifier  = Modifier.fillMaxSize(),
+            // ── Stage: timer + goal progress under the HUD ──────────────────────
+            if (viewModel.stage != null) {
+                StageGoalBar(
+                    goal = viewModel.objectives.firstOrNull(),
+                    timeLeftSec = viewModel.timeLeftSec,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(top = HUD_CONTENT_HEIGHT + 4.dp),
                 )
+            }
+
+            if (viewModel.isGameOver) {
+                val stage = viewModel.stage
+                val stageResult = viewModel.stageResult
+                if (stage != null && stageResult != null) {
+                    StageResultOverlay(
+                        isBossStage = stage.boss != null,
+                        stageId     = stage.id,
+                        result      = stageResult,
+                        maxStars    = stage.maxStars,
+                        score       = viewModel.score,
+                        bestScore   = bestScore,
+                        isNewBest   = viewModel.isNewBest,
+                        onRetry     = { viewModel.restartGame() },
+                        onStages    = onHome,
+                        onNext      = onNextStage,
+                        onStarShown = { star ->
+                            if (settings.soundEnabled) gameSounds?.pop(combo = star * STAR_PITCH_STEP)
+                            if (settings.hapticsEnabled) hapticFeedback.medium()
+                        },
+                        modifier    = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    GameOverOverlay(
+                        score     = viewModel.score,
+                        bestScore = bestScore,
+                        isNewBest = viewModel.isNewBest,
+                        onRestart = { viewModel.restartGame() },
+                        onHome    = onHome,
+                        modifier  = Modifier.fillMaxSize(),
+                    )
+                }
             }
 
         }

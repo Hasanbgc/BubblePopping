@@ -43,6 +43,9 @@ import androidx.compose.ui.unit.sp
 import com.apps.bubblepopping.Res
 import com.apps.bubblepopping.heart
 import com.apps.bubblepopping.view.ComboColor
+import com.apps.bubblepopping.view.FreezeColor
+import com.apps.bubblepopping.view.ShieldColor
+import kotlin.math.ceil
 import org.jetbrains.compose.resources.painterResource
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,6 +78,8 @@ fun GameHud(
     modifier: Modifier = Modifier,
     comboTimeLeft: Float = 0f,
     comboMultiplier: Int = 1,
+    shieldActive: Boolean = false,
+    freezeTimeLeft: Float = 0f,
 ) {
     Box(
         modifier = modifier
@@ -103,7 +108,13 @@ fun GameHud(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                LivesView(lives = lives)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    LivesView(lives = lives)
+                    PowerUpBadges(shieldActive = shieldActive, freezeTimeLeft = freezeTimeLeft)
+                }
 
                 PlayPauseButton(isPaused = isPaused, onClick = onPlayPauseClick)
             }
@@ -150,6 +161,36 @@ fun LivesView(
             fontSize   = 16.sp,
             fontWeight = FontWeight.SemiBold,
         )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PowerUpBadges — active shield / freeze
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** "🛡" while a shield is ready, "❄ 3" while bubbles are frozen. */
+@Composable
+fun PowerUpBadges(
+    shieldActive: Boolean,
+    freezeTimeLeft: Float,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier,
+    ) {
+        if (shieldActive) {
+            Text(text = "🛡", fontSize = 16.sp, color = ShieldColor)
+        }
+        if (freezeTimeLeft > 0f) {
+            Text(
+                text = "❄ ${ceil(freezeTimeLeft).toInt()}",
+                color = FreezeColor,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
 }
 

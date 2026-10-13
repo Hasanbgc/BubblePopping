@@ -35,7 +35,10 @@ import com.apps.bubblepopping.Res
 import com.apps.bubblepopping.data.PlayerStats
 import com.apps.bubblepopping.data.ProgressRepository
 import com.apps.bubblepopping.ic_avatar
+import com.apps.bubblepopping.stage.StageCatalog
 import com.apps.bubblepopping.view.ComboColor
+import com.apps.bubblepopping.view.ScreenBackgroundColors
+import com.apps.bubblepopping.view.StarColor
 import com.apps.bubblepopping.view.home.BubbleTopAppBar
 import com.apps.bubblepopping.view.home.Difficulty
 import kotlinx.coroutines.flow.combine
@@ -56,24 +59,24 @@ fun ProfileScreenRoot(
             }
         ) { pairs -> pairs.toMap() }
     }.collectAsStateWithLifecycle(emptyMap())
+    val totalStars by remember(progressRepository) {
+        progressRepository.stageProgress().map { progress -> progress.values.sumOf { it.stars } }
+    }.collectAsStateWithLifecycle(0)
 
-    ProfileScreen(stats = stats, bestScores = bestScores, onBack = onBack)
+    ProfileScreen(stats = stats, bestScores = bestScores, totalStars = totalStars, onBack = onBack)
 }
 
 @Composable
 fun ProfileScreen(
     stats: PlayerStats,
     bestScores: Map<Difficulty, Int?>,
+    totalStars: Int,
     onBack: () -> Unit,
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(Color(0xFF050E1A), Color(0xFF0A1E35), Color(0xFF144B6E))
-                )
-            )
+            .background(Brush.verticalGradient(ScreenBackgroundColors))
     ) {
         Column(
             modifier = Modifier
@@ -104,6 +107,11 @@ fun ProfileScreen(
             StatRow(label = "Games played", value = stats.gamesPlayed.toString())
             StatRow(label = "Bubbles popped", value = stats.bubblesPopped.toString())
             StatRow(label = "Best combo", value = stats.bestCombo.toString(), valueColor = ComboColor)
+            StatRow(
+                label = "Stage stars",
+                value = "★ $totalStars / ${StageCatalog.maxStars}",
+                valueColor = StarColor,
+            )
 
             Spacer(Modifier.height(20.dp))
             SectionTitle("Best scores")
@@ -156,6 +164,7 @@ fun ProfileScreenPreview() {
         ProfileScreen(
             stats = PlayerStats(gamesPlayed = 42, bubblesPopped = 1_337, bestCombo = 18),
             bestScores = mapOf(Difficulty.EASY to 120, Difficulty.MEDIUM to 85, Difficulty.HARD to null),
+            totalStars = 14,
             onBack = {},
         )
     }

@@ -36,8 +36,12 @@ interface ProgressRepository {
     /** Saves a finished Endless round and updates lifetime stats. */
     suspend fun recordEndlessGame(difficulty: Difficulty, score: Int, bubblesPopped: Int, bestCombo: Int)
 
-    /** Saves a stage result, keeping the best stars and score seen so far. */
-    suspend fun recordStageResult(stageId: Int, stars: Int, score: Int)
+    /**
+     * Saves a finished stage attempt and updates lifetime stats. A cleared
+     * stage ([stars] > 0) keeps the best stars and score seen so far; a failed
+     * one only counts towards stats.
+     */
+    suspend fun recordStageGame(stageId: Int, stars: Int, score: Int, bubblesPopped: Int, bestCombo: Int)
 }
 
 class RoomProgressRepository(
@@ -77,32 +81,46 @@ class RoomProgressRepository(
                         playedAt = nowMillis(),
                     )
                 )
-                val stats = statsDao.get() ?: StatsEntity()
-                statsDao.upsert(
-                    stats.copy(
-                        gamesPlayed = stats.gamesPlayed + 1,
-                        bubblesPopped = stats.bubblesPopped + bubblesPopped,
-                        bestCombo = maxOf(stats.bestCombo, bestCombo),
-                    )
-                )
+                addToStats(bubblesPopped, bestCombo)
             }
         }
     }
 
-    override suspend fun recordStageResult(stageId: Int, stars: Int, score: Int) {
+    override suspend fun recordStageGame(
+        stageId: Int,
+        stars: Int,
+        score: Int,
+        bubblesPopped: Int,
+        bestCombo: Int,
+    ) {
         database.useWriterConnection { transactor ->
             transactor.immediateTransaction {
-                val previous = stageDao.get(stageId)
-                stageDao.upsert(
-                    StageProgressEntity(
-                        stageId = stageId,
-                        stars = maxOf(stars, previous?.stars ?: 0),
-                        bestScore = maxOf(score, previous?.bestScore ?: 0),
-                        completedAt = nowMillis(),
+                if (stars > 0) {
+                    val previous = stageDao.get(stageId)
+                    stageDao.upsert(
+                        StageProgressEntity(
+                            stageId = stageId,
+                            stars = maxOf(stars, previous?.stars ?: 0),
+                            bestScore = maxOf(score, previous?.bestScore ?: 0),
+                            completedAt = nowMillis(),
+                        )
                     )
-                )
+                }
+                addToStats(bubblesPopped, bestCombo)
             }
         }
+    }
+
+    /** Must be called inside a write transaction. */
+    private suspend fun addToStats(bubblesPopped: Int, bestCombo: Int) {
+        val stats = statsDao.get() ?: StatsEntity()
+        statsDao.upsert(
+            stats.copy(
+                gamesPlayed = stats.gamesPlayed + 1,
+                bubblesPopped = stats.bubblesPopped + bubblesPopped,
+                bestCombo = maxOf(stats.bestCombo, bestCombo),
+            )
+        )
     }
 
     @OptIn(ExperimentalTime::class)
