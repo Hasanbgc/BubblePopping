@@ -18,12 +18,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,28 +41,36 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apps.bubblepopping.data.ProgressRepository
 import com.apps.bubblepopping.data.StageProgress
 import com.apps.bubblepopping.stage.StageCatalog
 import com.apps.bubblepopping.stage.StageConfig
 import com.apps.bubblepopping.stage.World
-import com.apps.bubblepopping.view.LockedNodeColor
 import com.apps.bubblepopping.view.MapCloudColor
 import com.apps.bubblepopping.view.MapRoadColor
 import com.apps.bubblepopping.view.MapRoadDashColor
 import com.apps.bubblepopping.view.MapRoadDoneColor
-import com.apps.bubblepopping.view.ScreenBackgroundColors
-import com.apps.bubblepopping.view.StageAccentColor
-import com.apps.bubblepopping.view.StageCardColor
-import com.apps.bubblepopping.view.StarColor
-import com.apps.bubblepopping.view.home.BubbleTopAppBar
+import com.apps.bubblepopping.ui.components.GameTopBar
+import com.apps.bubblepopping.ui.components.LocalUiFeedback
+import com.apps.bubblepopping.ui.components.OutlinedText
+import com.apps.bubblepopping.ui.icons.GameIcons
+import com.apps.bubblepopping.ui.theme.BubbleTheme
+import com.apps.bubblepopping.ui.theme.Corners
+import com.apps.bubblepopping.ui.theme.GameColors
+import com.apps.bubblepopping.ui.theme.GameTheme
+import com.apps.bubblepopping.ui.theme.Spacing
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.apps.bubblepopping.ui.components.StarCounter
 import com.apps.bubblepopping.view.worldMapColors
 import kotlinx.coroutines.flow.first
 import kotlin.math.sin
@@ -103,22 +108,13 @@ fun StageMapScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(ScreenBackgroundColors))
+            .background(GameColors.Scrim)
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
+            modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            BubbleTopAppBar(title = "Stages", onBackPress = onBack)
-            Text(
-                text = "★ ${StageCatalog.totalStars(progress.orEmpty())} / ${StageCatalog.maxStars}",
-                color = StarColor,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
+            GameTopBar(title = "Stages", onBack = onBack, actions = { StarCounter(showMax = true) })
             if (progress != null) {
                 StageMap(
                     stages = stages,
@@ -358,11 +354,18 @@ private fun StageNode(
             label = "pulse",
         ).value
     } else 1f
+    val feedback = LocalUiFeedback.current
 
-    val borderColor = when (state) {
-        NodeState.LOCKED -> LockedNodeColor
-        NodeState.CURRENT -> StageAccentColor
-        NodeState.DONE -> StarColor
+    // Candy bubbles: blue for the next stage, violet for cleared ones, dark glass when locked.
+    val (top, bottom) = when (state) {
+        NodeState.CURRENT -> GameColors.BlueTop to GameColors.BlueBottom
+        NodeState.DONE -> GameColors.VioletTop to GameColors.VioletBottom
+        NodeState.LOCKED -> GameColors.Ink.copy(alpha = 0.55f) to GameColors.Ink.copy(alpha = 0.75f)
+    }
+    val rim = when (state) {
+        NodeState.CURRENT -> Color.White
+        NodeState.DONE -> GameColors.Gold
+        NodeState.LOCKED -> GameColors.GlassRim.copy(alpha = 0.5f)
     }
 
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -372,30 +375,37 @@ private fun StageNode(
                 .scale(pulse)
                 .size(NODE_SIZE)
                 .clip(CircleShape)
-                .background(if (state == NodeState.LOCKED) LockedNodeColor.copy(alpha = 0.6f) else StageCardColor)
-                .border(3.dp, borderColor, CircleShape)
-                .clickable(enabled = state != NodeState.LOCKED, onClick = onClick),
-        ) {
-            Text(
-                text = when {
-                    state == NodeState.LOCKED -> "🔒"
-                    stage.boss != null -> "👑"
-                    else -> stage.id.toString()
+                .background(Brush.verticalGradient(listOf(top, bottom)))
+                .drawBehind {
+                    // Gloss highlight across the top.
+                    drawOval(
+                        color = Color.White.copy(alpha = 0.35f),
+                        topLeft = Offset(size.width * 0.2f, size.height * 0.08f),
+                        size = Size(size.width * 0.6f, size.height * 0.3f),
+                    )
+                }
+                .border(3.dp, rim, CircleShape)
+                .semantics { contentDescription = "Stage ${stage.id}" + if (state == NodeState.LOCKED) ", locked" else "" }
+                .clickable(enabled = state != NodeState.LOCKED) {
+                    feedback.click()
+                    onClick()
                 },
-                color = Color.White,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-            )
+        ) {
+            when {
+                state == NodeState.LOCKED -> Image(GameIcons.Lock, contentDescription = null, modifier = Modifier.size(NODE_ICON))
+                stage.boss != null -> Image(GameIcons.Crown, contentDescription = null, modifier = Modifier.size(NODE_ICON))
+                else -> OutlinedText(stage.id.toString(), GameTheme.type.title, outlineWidth = 2.5.dp)
+            }
         }
         if (state != NodeState.LOCKED) {
-            StarRow(earned = stars, total = stage.maxStars, fontSize = 14.sp)
+            StarRow(earned = stars, total = stage.maxStars, starSize = 16.dp, modifier = Modifier.padding(top = Spacing.xs))
         }
     }
 }
 
 /**
- * "☁️ Sky World". When [starsNeeded] is set the world is still locked and
- * shows its star requirement; [comingSoon] marks a world without stages yet.
+ * "Sky World". When [starsNeeded] is set the world is still locked and shows
+ * its star requirement; [comingSoon] marks a world without stages yet.
  */
 @Composable
 private fun WorldBanner(
@@ -406,27 +416,30 @@ private fun WorldBanner(
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
         modifier = modifier
             .height(BANNER_HALF_HEIGHT * 2)
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color.Black.copy(alpha = 0.35f))
-            .padding(horizontal = 20.dp, vertical = 6.dp),
+            .clip(Corners.large)
+            .background(GameColors.Ink.copy(alpha = 0.55f))
+            .border(2.dp, GameColors.GlassRim, Corners.large)
+            .padding(horizontal = Spacing.xl),
     ) {
-        Text(
-            text = "${world.emoji} ${world.displayName} World",
-            color = Color.White,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-        )
-        val subtitle = when {
-            comingSoon && starsNeeded != null -> "Coming soon · ★ $starsNeeded needed"
-            starsNeeded != null -> "🔒 ★ $starsNeeded needed"
-            else -> null
+        OutlinedText("${world.displayName} World", GameTheme.type.headline)
+        if (starsNeeded != null) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                Image(if (comingSoon) GameIcons.Clock else GameIcons.Lock, contentDescription = null, modifier = Modifier.size(14.dp))
+                Image(GameIcons.Star, contentDescription = null, modifier = Modifier.size(14.dp))
+                Text(
+                    text = if (comingSoon) "Coming soon · $starsNeeded needed" else "$starsNeeded needed",
+                    style = GameTheme.type.caption,
+                    color = GameColors.Gold,
+                )
+            }
         }
-        subtitle?.let { Text(text = it, color = StarColor, fontSize = 13.sp) }
     }
 }
 
+private val NODE_ICON = 34.dp
 private val NODE_SIZE = 68.dp
 private val NODE_SPACING = 130.dp
 /** Extra room between worlds, for the banner. */
@@ -445,7 +458,7 @@ private const val WAVE_STEP = 0.95f
 @Preview
 @Composable
 fun StageMapScreenPreview() {
-    MaterialTheme {
+    BubbleTheme {
         StageMapScreen(
             stages = StageCatalog.stages,
             progress = mapOf(

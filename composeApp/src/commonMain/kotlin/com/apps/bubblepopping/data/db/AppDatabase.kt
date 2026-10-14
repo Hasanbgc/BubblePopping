@@ -1,5 +1,6 @@
 package com.apps.bubblepopping.data.db
 
+import androidx.room.AutoMigration
 import androidx.room.ConstructedBy
 import androidx.room.Database
 import androidx.room.RoomDatabase
@@ -15,14 +16,21 @@ const val DATABASE_NAME = "bubble_popping.db"
         StageProgressEntity::class,
         EndlessScoreEntity::class,
         StatsEntity::class,
+        PlayerEntity::class,
+        MissionEntity::class,
+        OwnedCosmeticEntity::class,
+        AchievementEntity::class,
     ],
-    version = 1,
+    version = 2,
+    // Version 2 (Phase 8) only adds tables, so Room migrates it automatically.
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun stageProgressDao(): StageProgressDao
     abstract fun endlessScoreDao(): EndlessScoreDao
     abstract fun statsDao(): StatsDao
+    abstract fun metaDao(): MetaDao
 }
 
 // Room's KSP processor generates the `actual` implementations for each platform.

@@ -43,6 +43,12 @@ sealed interface GameEvent {
     /** The last copy of the boss was beaten; [points] is the defeat bonus. */
     data class BossDefeated(val points: Int) : GameEvent
 
+    /** Endless: [wave] was survived and the calm before the next one began. */
+    data class WaveCleared(val wave: Int) : GameEvent
+
+    /** Endless: [wave] (2 or later) began after a calm. */
+    data class WaveStarted(val wave: Int) : GameEvent
+
     /** Emitted once per whole second of (unpaused) play time. */
     data class Tick(val elapsedSec: Int) : GameEvent
 

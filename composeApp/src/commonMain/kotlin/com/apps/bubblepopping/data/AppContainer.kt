@@ -15,5 +15,13 @@ class AppContainer(
     settingsDataStore: DataStore<Preferences>,
 ) {
     val progressRepository: ProgressRepository = RoomProgressRepository(database)
+    val metaRepository: MetaRepository = RoomMetaRepository(database, progressRepository)
     val settingsRepository: SettingsRepository = DataStoreSettingsRepository(settingsDataStore)
+
+    /** "Reset progress" in Settings: every saved result, coin and unlock. Audio and accessibility settings and the name stay. */
+    suspend fun resetProgress() {
+        progressRepository.resetProgress()
+        metaRepository.resetProgress()
+        settingsRepository.resetProgressSettings()
+    }
 }

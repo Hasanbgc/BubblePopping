@@ -1,17 +1,13 @@
 package com.apps.bubblepopping.view.play.component
 
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,14 +16,12 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -35,39 +29,29 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.apps.bubblepopping.Res
-import com.apps.bubblepopping.heart
-import com.apps.bubblepopping.view.ComboColor
-import com.apps.bubblepopping.view.FreezeColor
-import com.apps.bubblepopping.view.ShieldColor
+import com.apps.bubblepopping.ui.components.ButtonColor
+import com.apps.bubblepopping.ui.components.GameIconButton
+import com.apps.bubblepopping.ui.components.OutlinedText
+import com.apps.bubblepopping.ui.icons.GameIcons
+import com.apps.bubblepopping.ui.theme.BubbleTheme
+import com.apps.bubblepopping.ui.theme.Corners
+import com.apps.bubblepopping.ui.theme.GameColors
+import com.apps.bubblepopping.ui.theme.GameTheme
+import com.apps.bubblepopping.ui.theme.Spacing
 import kotlin.math.ceil
-import org.jetbrains.compose.resources.painterResource
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Dimension constant — shared with BubblePoppinScreen for inset arithmetic
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Height of the HUD content row (below the status bar). */
+/** Height of the HUD content row (below the status bar). Bubbles escape at its bottom edge. */
 internal val HUD_CONTENT_HEIGHT: Dp = 56.dp
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GameHud
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
- * Full-width overlay HUD that blends seamlessly into the game background.
- *
- * The outer Box carries a vertical gradient (opaque dark → transparent) so the
- * bar looks native to the game instead of a separate UI layer. Content sits in
- * the Row below the status bar so it never overlaps system icons.
- *
- * No touch-blocking is needed: bubbles are culled at canvasTopOffset (the HUD
- * bottom edge), so tryPop always returns false for taps in this area.
+ * The in-game HUD: lives and power-ups on the left, the score (with the combo
+ * ring) in the middle, the pause button on the right. A soft indigo fade sits
+ * behind it so it reads over any background.
  */
 @Composable
 fun GameHud(
@@ -84,12 +68,10 @@ fun GameHud(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            // Solid dark-blue over the status bar; fades to transparent so the
-            // game canvas shows through at the bottom edge of the HUD.
             .background(
                 Brush.verticalGradient(
-                    0.00f to Color(0xFF050E1A),
-                    0.60f to Color(0xFF050E1A).copy(alpha = 0.82f),
+                    0.00f to GameColors.Scrim.copy(alpha = 0.85f),
+                    0.60f to GameColors.Scrim.copy(alpha = 0.55f),
                     1.00f to Color.Transparent,
                 )
             ),
@@ -99,111 +81,91 @@ fun GameHud(
                 .fillMaxWidth()
                 .statusBarsPadding()
                 .height(HUD_CONTENT_HEIGHT)
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = Spacing.screen),
         ) {
-
-            // Left + Right Row
             Row(
                 modifier = Modifier.fillMaxSize(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.s),
                 ) {
                     LivesView(lives = lives)
                     PowerUpBadges(shieldActive = shieldActive, freezeTimeLeft = freezeTimeLeft)
                 }
-
-                PlayPauseButton(isPaused = isPaused, onClick = onPlayPauseClick)
+                GameIconButton(
+                    icon = if (isPaused) GameIcons.Play else GameIcons.Pause,
+                    contentDescription = if (isPaused) "Resume" else "Pause",
+                    onClick = onPlayPauseClick,
+                    color = ButtonColor.BLUE,
+                    size = PAUSE_BUTTON_SIZE,
+                )
             }
-
-            // Center Score (true center)
             ScoreView(
                 score = score,
                 comboTimeLeft = comboTimeLeft,
                 comboMultiplier = comboMultiplier,
-                modifier = Modifier.align(Alignment.Center)
+                modifier = Modifier.align(Alignment.Center),
             )
         }
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LivesView — ❤ icon + "x N"
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Compact lives indicator: a single heart icon followed by "x [lives]".
- */
+/** A heart on a glass pill with the lives left. */
 @Composable
-fun LivesView(
-    lives: Int,
-    modifier: Modifier = Modifier,
-) {
-    val heartTint = if (lives > 0) Color(0xFFFF1744) else Color.White.copy(alpha = 0.30f)
-
-    Row(
-        verticalAlignment     = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier              = modifier,
-    ) {
-        Icon(
-            painter            = painterResource(Res.drawable.heart),
-            contentDescription = "Lives",
-            tint               = heartTint,
-            modifier           = Modifier.size(20.dp),
+fun LivesView(lives: Int, modifier: Modifier = Modifier) {
+    HudPill(modifier.semantics { contentDescription = "$lives lives" }) {
+        Image(
+            imageVector = GameIcons.Heart,
+            contentDescription = null,
+            modifier = Modifier.size(24.dp).alpha(if (lives > 0) 1f else 0.4f),
         )
-        Text(
-            text       = "x $lives",
-            color      = Color.White,
-            fontSize   = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
+        OutlinedText("×$lives", GameTheme.type.label)
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PowerUpBadges — active shield / freeze
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** "🛡" while a shield is ready, "❄ 3" while bubbles are frozen. */
+/** A shield badge while a shield is ready; a snowflake with seconds left while frozen. */
 @Composable
-fun PowerUpBadges(
-    shieldActive: Boolean,
-    freezeTimeLeft: Float,
-    modifier: Modifier = Modifier,
-) {
+fun PowerUpBadges(shieldActive: Boolean, freezeTimeLeft: Float, modifier: Modifier = Modifier) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
         modifier = modifier,
     ) {
         if (shieldActive) {
-            Text(text = "🛡", fontSize = 16.sp, color = ShieldColor)
+            HudPill(Modifier.semantics { contentDescription = "Shield ready" }) {
+                Image(GameIcons.Shield, contentDescription = null, modifier = Modifier.size(24.dp))
+            }
         }
         if (freezeTimeLeft > 0f) {
-            Text(
-                text = "❄ ${ceil(freezeTimeLeft).toInt()}",
-                color = FreezeColor,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+            val seconds = ceil(freezeTimeLeft).toInt()
+            HudPill(Modifier.semantics { contentDescription = "Frozen, $seconds seconds left" }) {
+                Image(GameIcons.Snowflake, contentDescription = null, modifier = Modifier.size(22.dp))
+                OutlinedText("$seconds", GameTheme.type.label, color = Color(0xFFB3E5FC))
+            }
         }
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ScoreView — spring-animated score counter
-// ─────────────────────────────────────────────────────────────────────────────
+@Composable
+private fun HudPill(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+        modifier = modifier
+            .clip(Corners.pill)
+            .background(GameColors.Ink.copy(alpha = 0.5f))
+            .border(1.5.dp, GameColors.GlassRim, Corners.pill)
+            .padding(horizontal = Spacing.s, vertical = 2.dp),
+    ) { content() }
+}
 
 /**
- * Centered score display. The number spring-animates toward [score] on each
- * increment, giving a satisfying count-up feel.
- *
- * While a combo runs, a gold ring around the score drains as [comboTimeLeft]
- * goes 1 → 0, and the active multiplier ("×3") shows beside it.
+ * Centered score. The number springs towards [score] on each increase. While a
+ * combo runs, a gold ring around it drains as [comboTimeLeft] goes 1 → 0, and
+ * the active multiplier ("×3") shows beside it.
  */
 @Composable
 fun ScoreView(
@@ -213,108 +175,64 @@ fun ScoreView(
     comboMultiplier: Int = 1,
 ) {
     val displayed by animateIntAsState(
-        targetValue   = score,
+        targetValue = score,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label         = "score",
+        label = "score",
     )
-
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier            = Modifier.drawBehind {
-                if (comboTimeLeft <= 0f) return@drawBehind
-                val radius  = COMBO_RING_RADIUS.toPx()
-                val stroke  = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
-                val topLeft = Offset(center.x - radius, center.y - radius)
-                val ringSize = Size(radius * 2f, radius * 2f)
-                drawCircle(ComboColor.copy(alpha = 0.15f), radius, center, style = stroke)
-                drawArc(
-                    color      = ComboColor,
-                    startAngle = -90f,
-                    sweepAngle = 360f * comboTimeLeft,
-                    useCenter  = false,
-                    topLeft    = topLeft,
-                    size       = ringSize,
-                    style      = stroke,
-                )
-            },
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(COMBO_RING_RADIUS * 2)
+                .drawBehind {
+                    if (comboTimeLeft <= 0f) return@drawBehind
+                    val radius = COMBO_RING_RADIUS.toPx() - 2.dp.toPx()
+                    val stroke = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
+                    drawCircle(GameColors.Ink.copy(alpha = 0.5f), radius, center, style = Stroke(width = 6.dp.toPx()))
+                    drawArc(
+                        color = GameColors.Gold,
+                        startAngle = -90f,
+                        sweepAngle = 360f * comboTimeLeft,
+                        useCenter = false,
+                        topLeft = Offset(center.x - radius, center.y - radius),
+                        size = Size(radius * 2f, radius * 2f),
+                        style = stroke,
+                    )
+                }
+                .semantics { contentDescription = "Score $score" },
         ) {
-            Text(
-                text          = "SCORE",
-                color         = Color.White.copy(alpha = 0.45f),
-                fontSize      = 10.sp,
-                fontWeight    = FontWeight.Medium,
-                letterSpacing = 4.sp,
-            )
-            Text(
-                text       = displayed.toString(),
-                color      = Color.White,
-                fontSize   = 28.sp,
-                fontWeight = FontWeight.Light,
-            )
+            OutlinedText(displayed.toString(), GameTheme.type.title, outlineWidth = 3.dp, maxLines = 1)
         }
         if (comboMultiplier > 1 && comboTimeLeft > 0f) {
-            Text(
-                text       = "×$comboMultiplier",
-                color      = ComboColor,
-                fontSize   = 16.sp,
-                fontWeight = FontWeight.Bold,
-                modifier   = Modifier
+            OutlinedText(
+                text = "×$comboMultiplier",
+                style = GameTheme.type.headline,
+                color = GameColors.Gold,
+                modifier = Modifier
                     .align(Alignment.Center)
-                    .offset(x = COMBO_RING_RADIUS + 16.dp),
+                    .offset(x = COMBO_RING_RADIUS + Spacing.l),
             )
         }
     }
 }
 
 private val COMBO_RING_RADIUS = 30.dp
+private val PAUSE_BUTTON_SIZE = 44.dp
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PlayPauseButton
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Toggle button with a [Crossfade] dissolve between "▶" (play) and "⏸" (pause).
- * A [MutableInteractionSource]-driven bouncy scale animates on press.
- */
+@Preview
 @Composable
-fun PlayPauseButton(
-    isPaused: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-
-    val scale by animateFloatAsState(
-        targetValue   = if (pressed) 0.75f else 1.0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness    = Spring.StiffnessMedium,
-        ),
-        label = "play_pause_scale",
-    )
-
-    IconButton(
-        onClick           = onClick,
-        enabled = true,
-        interactionSource = interactionSource,
-        modifier          = modifier
-            .size(40.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            },
-    ) {
-        Crossfade(
-            targetState   = isPaused,
-            animationSpec = tween(durationMillis = 200),
-            label         = "play_pause_icon",
-        ) { paused ->
-            Text(
-                text     = if (paused) "▶" else "⏸",
-                fontSize = 20.sp,
-                color    = Color.White,
+fun GameHudPreview() {
+    BubbleTheme {
+        Box(Modifier.background(Color(0xFF4A2380))) {
+            GameHud(
+                score = 1240,
+                lives = 3,
+                isPaused = false,
+                onPlayPauseClick = {},
+                comboTimeLeft = 0.6f,
+                comboMultiplier = 3,
+                shieldActive = true,
+                freezeTimeLeft = 2.2f,
             )
         }
     }

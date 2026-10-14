@@ -1,5 +1,12 @@
 package com.apps.bubblepopping.navigation
 
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -16,13 +23,25 @@ import com.apps.bubblepopping.data.AppContainer
 import com.apps.bubblepopping.game.GameMode
 import com.apps.bubblepopping.stage.StageCatalog
 import com.apps.bubblepopping.view.BubbleGameViewModel
-import com.apps.bubblepopping.view.endless.EndlessScreen
+import com.apps.bubblepopping.view.endless.EndlessScreenRoot
 import com.apps.bubblepopping.view.stage.StageIntroScreenRoot
 import com.apps.bubblepopping.view.stage.StageMapScreenRoot
 import com.apps.bubblepopping.view.home.HomeScreenRoot
 import com.apps.bubblepopping.view.leaderboard.LeaderboardScreenRoot
 import com.apps.bubblepopping.view.play.PlayScreenRoot
 import com.apps.bubblepopping.view.profile.ProfileScreenRoot
+import com.apps.bubblepopping.view.meta.ShopScreenRoot
+import com.apps.bubblepopping.view.meta.TodayScreenRoot
+import com.apps.bubblepopping.view.settings.SettingsScreenRoot
+import com.apps.bubblepopping.ui.components.UiFeedbackProvider
+import com.apps.bubblepopping.ui.components.LocalPlayerResources
+import com.apps.bubblepopping.ui.components.PlayerResources
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.combine
+import com.apps.bubblepopping.ui.theme.BubbleTheme
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.modules.subclass
@@ -38,13 +57,41 @@ val config = SavedStateConfiguration {
             subclass(Routes.Stages::class)
             subclass(Routes.StageIntro::class)
             subclass(Routes.Endless::class)
+            subclass(Routes.Today::class)
+            subclass(Routes.Shop::class)
+            subclass(Routes.Settings::class)
         }
     }
 }
 
 @Composable
 fun NavGraph(container: AppContainer, hapticFeedback: HapticFeedback) {
+    BubbleTheme {
+        UiFeedbackProvider(container.settingsRepository, hapticFeedback) {
+            PlayerResourcesProvider(container) {
+                AppNavigation(container, hapticFeedback)
+            }
+        }
+    }
+}
 
+/** Keeps coins and stars up to date for every top bar. */
+@Composable
+private fun PlayerResourcesProvider(container: AppContainer, content: @Composable () -> Unit) {
+    val resources by remember(container) {
+        combine(container.metaRepository.player(), container.progressRepository.stageProgress()) { player, progress ->
+            PlayerResources(
+                coins = player.coins,
+                stars = StageCatalog.totalStars(progress),
+                maxStars = StageCatalog.maxStars,
+            )
+        }
+    }.collectAsStateWithLifecycle(PlayerResources())
+    CompositionLocalProvider(LocalPlayerResources provides resources, content = content)
+}
+
+@Composable
+private fun AppNavigation(container: AppContainer, hapticFeedback: HapticFeedback) {
     val backStack = rememberNavBackStack(config, Routes.Home)
 
     NavDisplay(
@@ -57,9 +104,17 @@ fun NavGraph(container: AppContainer, hapticFeedback: HapticFeedback) {
         onBack = {
             backStack.removeLastOrNull()
         },
+        // Forward: the new screen slides in a little and fades up. Back: the reverse.
+        transitionSpec = {
+            (slideInHorizontally(tween(TRANSITION_MS)) { it / SLIDE_FRACTION } + fadeIn(tween(TRANSITION_MS))) togetherWith
+                fadeOut(tween(TRANSITION_MS))
+        },
+        popTransitionSpec = { popTransition() },
+        predictivePopTransitionSpec = { popTransition() },
         entryProvider = entryProvider {
             entry<Routes.Home> {
                 HomeScreenRoot(
+                    metaRepository = container.metaRepository,
                     onNavigateToStages = {
                         backStack.add(Routes.Stages)
                     },
@@ -69,10 +124,23 @@ fun NavGraph(container: AppContainer, hapticFeedback: HapticFeedback) {
                     onNavigateToProfile = {
                         backStack.add(Routes.Profile)
                     },
+                    onNavigateToToday = {
+                        backStack.add(Routes.Today)
+                    },
+                    onNavigateToShop = {
+                        backStack.add(Routes.Shop)
+                    },
+                    onNavigateToRanking = {
+                        backStack.add(Routes.Ranking)
+                    },
+                    onNavigateToSettings = {
+                        backStack.add(Routes.Settings)
+                    },
                 )
             }
             entry<Routes.Endless> {
-                EndlessScreen(
+                EndlessScreenRoot(
+                    progressRepository = container.progressRepository,
                     onDifficultySelected = {
                         backStack.add(Routes.Play(GameMode.Endless(it)))
                     },
@@ -91,13 +159,15 @@ fun NavGraph(container: AppContainer, hapticFeedback: HapticFeedback) {
                             mode = args.mode,
                             progressRepository = container.progressRepository,
                             settingsRepository = container.settingsRepository,
+                            metaRepository = container.metaRepository,
                         )
                     },
                     hapticFeedback = hapticFeedback,
+                    settingsRepository = container.settingsRepository,
                     onBack = {
                         backStack.removeLastOrNull()
                     },
-                    // Endless: back to Home. Stage: back to the stage list.
+                    // Endless: back to the cards. Stage: back to the map. Daily: back to Today.
                     onHome = {
                         backStack.removeLastOrNull()
                     },
@@ -137,6 +207,39 @@ fun NavGraph(container: AppContainer, hapticFeedback: HapticFeedback) {
             }
             entry<Routes.Ranking> {
                 LeaderboardScreenRoot(
+                    progressRepository = container.progressRepository,
+                    settingsRepository = container.settingsRepository,
+                    onBack = {
+                        backStack.removeLastOrNull()
+                    },
+                )
+            }
+            entry<Routes.Today> {
+                TodayScreenRoot(
+                    metaRepository = container.metaRepository,
+                    progressRepository = container.progressRepository,
+                    onPlay = { mode ->
+                        backStack.add(Routes.Play(mode))
+                    },
+                    onBack = {
+                        backStack.removeLastOrNull()
+                    },
+                )
+            }
+            entry<Routes.Settings> {
+                SettingsScreenRoot(
+                    settingsRepository = container.settingsRepository,
+                    onResetProgress = container::resetProgress,
+                    onBack = {
+                        backStack.removeLastOrNull()
+                    },
+                )
+            }
+            entry<Routes.Shop> {
+                ShopScreenRoot(
+                    metaRepository = container.metaRepository,
+                    progressRepository = container.progressRepository,
+                    settingsRepository = container.settingsRepository,
                     onBack = {
                         backStack.removeLastOrNull()
                     },
@@ -145,6 +248,8 @@ fun NavGraph(container: AppContainer, hapticFeedback: HapticFeedback) {
             entry<Routes.Profile> {
                 ProfileScreenRoot(
                     progressRepository = container.progressRepository,
+                    metaRepository = container.metaRepository,
+                    settingsRepository = container.settingsRepository,
                     onBack = {
                         backStack.removeLastOrNull()
                     },
@@ -154,3 +259,10 @@ fun NavGraph(container: AppContainer, hapticFeedback: HapticFeedback) {
     )
 
 }
+private fun popTransition(): ContentTransform =
+    fadeIn(tween(TRANSITION_MS)) togetherWith
+        (slideOutHorizontally(tween(TRANSITION_MS)) { it / SLIDE_FRACTION } + fadeOut(tween(TRANSITION_MS)))
+
+private const val TRANSITION_MS = 280
+/** Screens slide by 1/4 of the width — a hint of movement, not a full slide. */
+private const val SLIDE_FRACTION = 4

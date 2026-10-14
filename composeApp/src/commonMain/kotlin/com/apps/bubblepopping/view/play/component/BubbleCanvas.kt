@@ -11,6 +11,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.TextMeasurer
@@ -23,6 +26,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apps.bubblepopping.game.GameRules
+import com.apps.bubblepopping.meta.Cosmetics
 import com.apps.bubblepopping.view.BossCrownColor
 import com.apps.bubblepopping.view.BossHpFullColor
 import com.apps.bubblepopping.view.BossHpLowColor
@@ -36,21 +40,10 @@ import kotlin.math.sin
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-private fun lerpRainbow(t: Float, stops: List<Color>): Color {
-    val segments = stops.size - 1
-    val scaled   = (t * segments).coerceIn(0f, segments.toFloat())
-    val idx      = scaled.toInt().coerceIn(0, segments - 1)
-    return lerp(stops[idx], stops[idx + 1], scaled - idx)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Color schemes — one per bubble type
 // ─────────────────────────────────────────────────────────────────────────────
 
-private data class BubbleScheme(
+internal data class BubbleScheme(
     val bodyTint: Color,
     val outlineColor: Color,
     val arcAStops: List<Color>,
@@ -59,7 +52,7 @@ private data class BubbleScheme(
     val sparkleColor: Color  = Color.White,
 )
 
-private val NORMAL_SCHEME = BubbleScheme(
+internal val NORMAL_SCHEME = BubbleScheme(
     bodyTint     = Color(0xFFD0EEFF),
     outlineColor = Color.White.copy(alpha = 0.45f),
     arcAStops    = listOf(Color.Transparent, Color(0xFFFF80CE), Color(0xFF80D8FF), Color(0xFF69F0AE), Color(0xFFFFFF8D), Color.Transparent),
@@ -88,10 +81,33 @@ private val POISON_SCHEME = BubbleScheme(
 // Shared soap-bubble renderer (parameterised by color scheme)
 // ─────────────────────────────────────────────────────────────────────────────
 
+private const val RIM_A_START = 10f
+private const val RIM_B_START = 190f
+private const val RIM_SWEEP = 130f
+
+/**
+ * Colour stops for a sweep gradient centred on the origin that paints [stops]
+ * evenly along the arc from [startDeg] to [startDeg] + [RIM_SWEEP]. Outside the
+ * arc the gradient holds its end colours, which are transparent.
+ */
+internal fun rimColorStops(startDeg: Float, stops: List<Color>): Array<Pair<Float, Color>> =
+    Array(stops.size) { i ->
+        val t = i.toFloat() / (stops.size - 1)
+        (startDeg + t * RIM_SWEEP) / 360f to stops[i]
+    }
+
+/** Sweep-gradient brushes for both rim arcs, built once per scheme. */
+private val rimBrushCache = HashMap<BubbleScheme, Pair<Brush, Brush>>()
+
+private fun rimBrushes(scheme: BubbleScheme): Pair<Brush, Brush> = rimBrushCache.getOrPut(scheme) {
+    Brush.sweepGradient(*rimColorStops(RIM_A_START, scheme.arcAStops), center = Offset.Zero) to
+        Brush.sweepGradient(*rimColorStops(RIM_B_START, scheme.arcBStops), center = Offset.Zero)
+}
+
 private fun DrawScope.drawSoapBubble(bubble: Bubble, scheme: BubbleScheme) =
     drawSoapBubble(bubble.x, bubble.y, bubble.radius, bubble.shimmerAngle, scheme)
 
-private fun DrawScope.drawSoapBubble(cx: Float, cy: Float, r: Float, rot: Float, scheme: BubbleScheme) {
+internal fun DrawScope.drawSoapBubble(cx: Float, cy: Float, r: Float, rot: Float, scheme: BubbleScheme) {
     val center = Offset(cx, cy)
 
     // 1. Ghost fill
@@ -105,31 +121,23 @@ private fun DrawScope.drawSoapBubble(cx: Float, cy: Float, r: Float, rot: Float,
         style  = Stroke(width = 0.3f.dp.toPx()),
     )
 
-    // 3. Two rainbow arc segments
+    // 3. Two rainbow arc segments. Each is one arc with a cached sweep gradient
+    //    (drawn around the origin, then moved and turned into place) — this used
+    //    to be 26 solid-colour arcs per segment, 52 draw calls per bubble.
     val rimWidth       = (r * 0.11f).coerceAtLeast(2.5f)
     val gapFromOutline = 1.2f.dp.toPx()
     val rimR           = r - gapFromOutline - rimWidth * 0.5f
-    val rimRect        = Offset(cx - rimR, cy - rimR)
+    val rimTopLeft     = Offset(-rimR, -rimR)
     val rimSize        = Size(rimR * 2f, rimR * 2f)
-    val arcSweep       = 130f
-    val segCount       = 26
-    val segAngle       = arcSweep / segCount
-
-    fun drawRainbowArc(startDeg: Float, stops: List<Color>) {
-        for (i in 0 until segCount) {
-            drawArc(
-                color      = lerpRainbow(i.toFloat() / (segCount - 1), stops),
-                startAngle = startDeg + rot + i * segAngle,
-                sweepAngle = segAngle + 0.8f,
-                useCenter  = false,
-                topLeft    = rimRect,
-                size       = rimSize,
-                style      = Stroke(width = rimWidth, cap = StrokeCap.Butt),
-            )
-        }
+    val rimStroke      = Stroke(width = rimWidth, cap = StrokeCap.Butt)
+    val brushes        = rimBrushes(scheme)
+    withTransform({
+        translate(cx, cy)
+        rotate(degrees = rot, pivot = Offset.Zero)
+    }) {
+        drawArc(brushes.first, RIM_A_START, RIM_SWEEP, useCenter = false, topLeft = rimTopLeft, size = rimSize, style = rimStroke)
+        drawArc(brushes.second, RIM_B_START, RIM_SWEEP, useCenter = false, topLeft = rimTopLeft, size = rimSize, style = rimStroke)
     }
-    drawRainbowArc(startDeg = 10f,  stops = scheme.arcAStops)
-    drawRainbowArc(startDeg = 190f, stops = scheme.arcBStops)
 
     // 4. Primary reflection blob
     val blobAngleRad = (rot - 45f) * PI.toFloat() / 180f
@@ -195,7 +203,7 @@ private fun DrawScope.drawBubbleIcon(bubble: Bubble, icon: ImageBitmap) {
 // Special-bubble and per-world schemes
 // ─────────────────────────────────────────────────────────────────────────────
 
-private fun rainbow(vararg colors: Long) = listOf(Color.Transparent) + colors.map { Color(it) } + Color.Transparent
+internal fun rainbow(vararg colors: Long) = listOf(Color.Transparent) + colors.map { Color(it) } + Color.Transparent
 
 private val GOLDEN_SCHEME = BubbleScheme(
     bodyTint      = Color(0xFFFFE082),
@@ -238,8 +246,12 @@ private val SHIELD_SCHEME = BubbleScheme(
     crescentColor = Color(0xFFFFFFFF),
 )
 
-/** Normal bubbles take on each world's palette. */
-private fun normalScheme(world: World): BubbleScheme = when (world) {
+/** Normal bubbles take on each world's palette (built once per world). */
+private fun normalScheme(world: World): BubbleScheme = WORLD_SCHEMES.getValue(world)
+
+private val WORLD_SCHEMES: Map<World, BubbleScheme> = World.entries.associateWith { world -> buildNormalScheme(world) }
+
+private fun buildNormalScheme(world: World): BubbleScheme = when (world) {
     World.SKY -> NORMAL_SCHEME
     World.OCEAN -> NORMAL_SCHEME.copy(
         bodyTint  = Color(0xFFB2EBF2),
@@ -263,7 +275,7 @@ private fun normalScheme(world: World): BubbleScheme = when (world) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Five-pointed star. */
-private fun DrawScope.drawStarIcon(center: Offset, r: Float) {
+internal fun DrawScope.drawStarIcon(center: Offset, r: Float) {
     val path = Path()
     for (i in 0 until 10) {
         val radius = if (i % 2 == 0) r else r * 0.45f
@@ -345,13 +357,26 @@ private fun DrawScope.drawShieldIcon(center: Offset, r: Float) {
 /** Image icons for the bubble types that use artwork. */
 class BubbleIcons(val heart: ImageBitmap, val skull: ImageBitmap)
 
-/** Draws [bubble] with its type's look; normal bubbles use [world]'s palette. */
-fun DrawScope.drawGameBubble(bubble: Bubble, world: World, icons: BubbleIcons) {
+/**
+ * Draws [bubble] with its type's look. Normal bubbles wear the equipped [skinId],
+ * or with the Classic skin [world]'s palette. Special bubbles never change look.
+ */
+fun DrawScope.drawGameBubble(
+    bubble: Bubble,
+    world: World,
+    icons: BubbleIcons,
+    skinId: String = Cosmetics.CLASSIC.id,
+    highContrastSkulls: Boolean = false,
+) {
     val center = Offset(bubble.x, bubble.y)
     val iconRadius = bubble.radius * 0.45f
     when (bubble.type) {
-        BubbleType.NORMAL -> drawSoapBubble(bubble, normalScheme(world))
-        BubbleType.POISON -> { drawSoapBubble(bubble, POISON_SCHEME); drawBubbleIcon(bubble, icons.skull) }
+        BubbleType.NORMAL -> drawSoapBubble(bubble, skinScheme(skinId) ?: normalScheme(world))
+        BubbleType.POISON -> {
+            drawSoapBubble(bubble, POISON_SCHEME)
+            drawBubbleIcon(bubble, icons.skull)
+            if (highContrastSkulls) drawHazardRing(center, bubble.radius)
+        }
         BubbleType.HEART -> { drawSoapBubble(bubble, HEART_SCHEME); drawBubbleIcon(bubble, icons.heart) }
         BubbleType.GOLDEN -> { drawSoapBubble(bubble, GOLDEN_SCHEME); drawStarIcon(center, iconRadius) }
         BubbleType.FREEZE -> { drawSoapBubble(bubble, FREEZE_SCHEME); drawSnowflakeIcon(center, iconRadius) }
@@ -360,6 +385,28 @@ fun DrawScope.drawGameBubble(bubble: Bubble, world: World, icons: BubbleIcons) {
         BubbleType.SHIELD -> { drawSoapBubble(bubble, SHIELD_SCHEME); drawShieldIcon(center, iconRadius) }
     }
 }
+
+/**
+ * Accessibility: a black-and-yellow striped ring, so skulls stand out by shape
+ * and contrast rather than by their green colour.
+ */
+private fun DrawScope.drawHazardRing(center: Offset, r: Float) {
+    val ringR = r + HAZARD_GAP_DP.dp.toPx()
+    val width = HAZARD_WIDTH_DP.dp.toPx()
+    val dash = HAZARD_DASH_DP.dp.toPx()
+    drawCircle(Color.Black, radius = ringR, center = center, style = Stroke(width = width))
+    drawCircle(
+        color = HazardYellow,
+        radius = ringR,
+        center = center,
+        style = Stroke(width = width, pathEffect = PathEffect.dashPathEffect(floatArrayOf(dash, dash))),
+    )
+}
+
+private val HazardYellow = Color(0xFFFFEB3B)
+private const val HAZARD_GAP_DP = 3f
+private const val HAZARD_WIDTH_DP = 4f
+private const val HAZARD_DASH_DP = 6f
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Boss
@@ -464,33 +511,25 @@ fun DrawScope.drawConfetti(scrap: Confetti) {
 // Pop animation
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Bursts scale with [PopAnimation.intensity]: higher combos → wider, thicker bursts. */
-fun DrawScope.drawPopAnimation(anim: PopAnimation) {
+/** Rainbow around the full circle, centred on the origin. */
+private val POP_RING_BRUSH = Brush.sweepGradient(
+    listOf(Color(0xFFFF80CE), Color(0xFF80D8FF), Color(0xFF69F0AE), Color(0xFFFFFF8D), Color(0xFFFF80CE)),
+    center = Offset.Zero,
+)
+
+/** The default "Rainbow ring" burst. Scales with [PopAnimation.intensity]: higher combos → wider, thicker bursts. */
+internal fun DrawScope.drawRainbowPop(anim: PopAnimation) {
     val p      = anim.progress
     val k      = anim.intensity
     val alpha  = (1f - p).coerceIn(0f, 1f)
     val center = Offset(anim.x, anim.y)
 
     val ringR    = anim.radius * (1f + p * 3f * k)
-    val ringRect = Offset(anim.x - ringR, anim.y - ringR)
-    val ringSize = Size(ringR * 2f, ringR * 2f)
     val strokeW  = ((3f * (1f - p) + 0.5f) * k).dp.toPx()
 
-    val popStops = listOf(
-        Color(0xFFFF80CE), Color(0xFF80D8FF), Color(0xFF69F0AE),
-        Color(0xFFFFFF8D), Color(0xFFFF80CE),
-    )
-    for (i in 0 until 36) {
-        val t = i.toFloat() / 36f
-        drawArc(
-            color      = lerpRainbow(t, popStops).copy(alpha = alpha),
-            startAngle = t * 360f,
-            sweepAngle = 10.5f,
-            useCenter  = false,
-            topLeft    = ringRect,
-            size       = ringSize,
-            style      = Stroke(width = strokeW, cap = StrokeCap.Butt),
-        )
+    // One circle with a rainbow sweep gradient (was 36 arcs).
+    translate(anim.x, anim.y) {
+        drawCircle(brush = POP_RING_BRUSH, radius = ringR, center = Offset.Zero, alpha = alpha, style = Stroke(width = strokeW))
     }
 
     val dropColors = listOf(

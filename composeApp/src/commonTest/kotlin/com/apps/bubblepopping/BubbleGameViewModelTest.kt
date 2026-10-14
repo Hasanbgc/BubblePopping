@@ -78,6 +78,7 @@ class BubbleGameViewModelTest {
         mode = stage?.let { GameMode.Stage(it.id) } ?: GameMode.Endless(Difficulty.MEDIUM),
         progressRepository = progress,
         settingsRepository = FakeSettingsRepository(),
+        metaRepository = FakeMetaRepository(),
         stage = stage,
         spawn = spawn ?: stage?.spawn ?: SpawnConfig.MEDIUM,
         seed = seed,

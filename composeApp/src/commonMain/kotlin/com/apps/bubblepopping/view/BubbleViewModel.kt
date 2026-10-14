@@ -8,17 +8,25 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.apps.bubblepopping.data.MetaRepository
 import com.apps.bubblepopping.data.ProgressRepository
+import com.apps.bubblepopping.data.StageProgress
 import com.apps.bubblepopping.data.prefs.GameSettings
 import com.apps.bubblepopping.data.prefs.SettingsRepository
 import com.apps.bubblepopping.game.BubbleSize
 import com.apps.bubblepopping.game.ComboTracker
+import com.apps.bubblepopping.game.EndlessUnlocks
 import com.apps.bubblepopping.game.GameEvent
 import com.apps.bubblepopping.game.GameMode
 import com.apps.bubblepopping.game.GameOverReason
 import com.apps.bubblepopping.game.GameRules
 import com.apps.bubblepopping.game.ObjectiveTracker
+import com.apps.bubblepopping.game.RunTracker
+import com.apps.bubblepopping.meta.DailyStageGenerator
+import com.apps.bubblepopping.meta.RunRewards
+import com.apps.bubblepopping.meta.RunSummary
 import com.apps.bubblepopping.game.SpawnConfig
+import com.apps.bubblepopping.game.WaveDirector
 import com.apps.bubblepopping.stage.BossGimmick
 import com.apps.bubblepopping.stage.ObjectiveProgress
 import com.apps.bubblepopping.view.play.component.BossBubble
@@ -27,6 +35,7 @@ import com.apps.bubblepopping.stage.StageCatalog
 import com.apps.bubblepopping.stage.StageConfig
 import com.apps.bubblepopping.stage.StageResult
 import com.apps.bubblepopping.stage.World
+import com.apps.bubblepopping.view.home.Difficulty
 import com.apps.bubblepopping.view.play.component.Bubble
 import com.apps.bubblepopping.view.play.component.BubbleType
 import com.apps.bubblepopping.view.play.component.FloatingText
@@ -39,6 +48,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -51,19 +61,21 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 /**
- * Runs one round: Endless at a difficulty, or a stage with objectives.
+ * Runs one round: Endless at a difficulty, a stage with objectives, or one of
+ * the daily modes (a seeded Endless run, or a generated stage).
  *
- * [stage] defaults to the catalog entry for a [GameMode.Stage]; tests can pass
- * their own. [spawn] defaults to the stage's or difficulty's preset. Pass a
- * [seed] for a deterministic round (same seed → same bubbles).
+ * [stage] defaults to the catalog entry for a [GameMode.Stage] (or today's
+ * generated stage); tests can pass their own. [spawn] defaults to the stage's or
+ * difficulty's preset. Pass a [seed] for a deterministic round (same seed → same bubbles).
  */
 class BubbleGameViewModel(
     val mode: GameMode,
     private val progressRepository: ProgressRepository,
     settingsRepository: SettingsRepository,
-    val stage: StageConfig? = (mode as? GameMode.Stage)?.let { StageCatalog.stage(it.stageId) },
-    private val spawn: SpawnConfig = stage?.spawn ?: (mode as GameMode.Endless).difficulty.spawn,
-    private val seed: Long? = stage?.seed,
+    private val metaRepository: MetaRepository,
+    val stage: StageConfig? = defaultStage(mode),
+    private val spawn: SpawnConfig = stage?.spawn ?: defaultSpawn(mode),
+    private val seed: Long? = stage?.seed ?: (mode as? GameMode.DailyChallenge)?.epochDay,
 ) : ViewModel() {
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -87,6 +99,8 @@ class BubbleGameViewModel(
         private const val CONFETTI_LIFT_DP = 250f
         private const val CONFETTI_GRAVITY_DP = 700f
         private const val CONFETTI_DRAG = 1.2f
+        /** Endless new-best confetti bursts from this fraction of the screen height. */
+        private const val NEW_BEST_CONFETTI_Y = 0.3f
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -133,11 +147,36 @@ class BubbleGameViewModel(
     /** Seconds the player's taps are disabled after a boss sting. */
     var tapLockLeft    by mutableStateOf(0f);        private set
 
+    /** Endless only: the wave being played, or during a calm the one about to start. */
+    var wave           by mutableStateOf(1);         private set
+    /** Endless only: true during the break between waves (nothing spawns). */
+    var isWaveCalm     by mutableStateOf(false);     private set
+    /** Endless only: fraction of the current wave played, 0 → 1. */
+    var waveProgress   by mutableStateOf(0f);        private set
+    /** Coins, missions, chests and achievements this round earned; null until paid out. */
+    var rewards        by mutableStateOf<RunRewards?>(null); private set
+    /** Endless only: a difficulty this round unlocked, shown on the game-over screen. */
+    var unlockedDifficulty by mutableStateOf<Difficulty?>(null); private set
+    /** Why the round ended; null while it is running. */
+    var gameOverReason by mutableStateOf<GameOverReason?>(null); private set
+
     /** Theme for backgrounds and bubble colours. Endless uses the first world. */
     val world: World = stage?.world ?: World.SKY
     val maxLives: Int = stage?.lives ?: GameRules.MAX_LIVES
     val livesLeft: Int get() = maxLives - missedCount
     val comboMultiplier: Int get() = ComboTracker.multiplierFor(combo)
+
+    /**
+     * How intense the music should be, 0 → 1: rises with the combo, later Endless
+     * waves, boss fights and a stage timer running out.
+     */
+    val musicIntensity: Float get() {
+        val fromCombo = combo / GameRules.MUSIC_FULL_COMBO.toFloat()
+        val fromWave = if (waveDirector != null) (wave - 1) / GameRules.MUSIC_FULL_WAVE.toFloat() else 0f
+        val fromBoss = if (bosses.isNotEmpty()) GameRules.MUSIC_BOSS_INTENSITY else 0f
+        val fromTimer = timeLeftSec?.let { if (it <= GameRules.MUSIC_URGENT_SECONDS) 1f else 0f } ?: 0f
+        return maxOf(fromCombo, fromWave, fromBoss, fromTimer).coerceIn(0f, 1f)
+    }
 
     private val _isPaused = MutableStateFlow(false)
     val isPaused  = _isPaused.asStateFlow()
@@ -149,14 +188,33 @@ class BubbleGameViewModel(
     /** Everything that happens during the round — see [GameEvent]. */
     val events: SharedFlow<GameEvent> = _events.asSharedFlow()
 
-    /** Saved best score for this difficulty or stage, or null if never played / cleared. */
+    /**
+     * Saved best score for this difficulty, stage or day's challenge, or null if
+     * never played / cleared. Daily Stages have none.
+     */
     val bestScore: StateFlow<Int?> = when (mode) {
         is GameMode.Endless -> progressRepository.bestEndlessScore(mode.difficulty)
         is GameMode.Stage -> progressRepository.stageProgress().map { it[mode.stageId]?.bestScore }
+        is GameMode.DailyChallenge -> metaRepository.player().map { it.dailyChallengeBest(mode.epochDay) }
+        is GameMode.DailyStage -> flowOf(null)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val settings: StateFlow<GameSettings> = settingsRepository.settings
         .stateIn(viewModelScope, SharingStarted.Eagerly, GameSettings())
+
+    /** Stage progress decides which bubble types and difficulties Endless has unlocked. */
+    private val stageProgress: StateFlow<Map<Int, StageProgress>> = progressRepository.stageProgress()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /**
+     * Stages use their own mix; Endless adds every special bubble unlocked in Stages.
+     * The Daily Challenge keeps the classic mix so every player gets the same round.
+     */
+    private val typeWeights: StateFlow<Map<BubbleType, Int>> =
+        if (mode !is GameMode.Endless) MutableStateFlow(spawn.typeWeights)
+        else stageProgress
+            .map { EndlessUnlocks.typeWeights(spawn.typeWeights, it) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, spawn.typeWeights)
 
     // ─────────────────────────────────────────────────────────────────────────
     // Private state
@@ -164,6 +222,11 @@ class BubbleGameViewModel(
 
     private val comboTracker    = ComboTracker()
     private var objectiveTracker = stage?.let { ObjectiveTracker() }
+    private var runTracker      = RunTracker()
+    /** Endless only: paces the round in waves instead of ramping with the score. */
+    private val waveDirector    = if (stage == null) WaveDirector(spawn) else null
+    /** Seconds of slow drift left after the round ends. */
+    private var gameOverSlowmoLeft = 0f
     private var random          = newRandom()
     private var spawnTimer      = 0f
     private var playTime        = 0f
@@ -222,7 +285,10 @@ class BubbleGameViewModel(
         val dt = delta.coerceAtMost(GameRules.MAX_DELTA)
 
         effectsStep(dt)
-        if (isGameOver) return
+        if (isGameOver) {
+            gameOverSlowmoStep(dt)
+            return
+        }
         if (hitStopLeft > 0f) {
             hitStopLeft -= dt
             return
@@ -239,6 +305,7 @@ class BubbleGameViewModel(
 
         spawnBossIfNeeded()
         bossStep(bubbleDt)
+        waveStep(dt)
         spawnStep(bubbleDt)
         moveStep(bubbleDt)
         windSaveStep()
@@ -258,13 +325,15 @@ class BubbleGameViewModel(
      */
     fun tryPop(offset: Offset): Boolean {
         if (isGameOver || isPaused.value || tapLockLeft > 0f) return false
-        val minHitRadius = GameRules.MIN_HIT_RADIUS_DP * density
+        // Accessibility option: every bubble gets a bigger touch area.
+        val hitScale = if (settings.value.largeHitArea) GameRules.LARGE_HIT_AREA_SCALE else 1f
+        val minHitRadius = GameRules.MIN_HIT_RADIUS_DP * density * hitScale
 
         // Bubbles first: they're drawn over the boss, so a skull in front of it gets popped.
         val hit = bubbles.firstOrNull { bubble ->
             val dx        = offset.x - bubble.x
             val dy        = offset.y - bubble.y
-            val hitRadius = bubble.radius.coerceAtLeast(minHitRadius)
+            val hitRadius = (bubble.radius * hitScale).coerceAtLeast(minHitRadius)
             (dx * dx + dy * dy) <= (hitRadius * hitRadius)
         }
         if (hit != null) {
@@ -342,6 +411,15 @@ class BubbleGameViewModel(
         bossDamageDealt = 0
         bossBombsDropped = false
         celebrationLeft = 0f
+        gameOverSlowmoLeft = 0f
+        waveDirector?.reset()
+        wave          = 1
+        isWaveCalm    = false
+        waveProgress  = 0f
+        gameOverReason = null
+        rewards       = null
+        runTracker    = RunTracker()
+        unlockedDifficulty = null
         refreshObjectives()
     }
 
@@ -779,9 +857,34 @@ class BubbleGameViewModel(
         effectFrame++
     }
 
+    /** Endless: advances the waves and announces each calm and each new wave. */
+    private fun waveStep(dt: Float) {
+        val director = waveDirector ?: return
+        when (director.update(dt)) {
+            WaveDirector.Change.CALM_STARTED -> {
+                spawnTimer = 0f
+                emit(GameEvent.WaveCleared(director.wave - 1))
+            }
+            WaveDirector.Change.WAVE_STARTED -> emit(GameEvent.WaveStarted(director.wave))
+            null -> Unit
+        }
+        wave         = director.wave
+        isWaveCalm   = director.isCalm
+        waveProgress = director.waveProgress
+    }
+
+    /** After the round ends, bubbles keep drifting in slow motion for a moment. */
+    private fun gameOverSlowmoStep(dt: Float) {
+        if (gameOverSlowmoLeft <= 0f) return
+        gameOverSlowmoLeft = (gameOverSlowmoLeft - dt).coerceAtLeast(0f)
+        moveStep(dt * GameRules.GAME_OVER_SLOWMO)
+    }
+
     private fun spawnStep(dt: Float) {
-        val interval = (spawn.spawnInterval - score * spawn.spawnRampPerPoint)
-            .coerceAtLeast(spawn.minSpawnInterval)
+        // Endless: nothing spawns between waves, and the wave sets the pace.
+        if (waveDirector?.isCalm == true) return
+        val interval = waveDirector?.spawnInterval
+            ?: (spawn.spawnInterval - score * spawn.spawnRampPerPoint).coerceAtLeast(spawn.minSpawnInterval)
         spawnTimer += dt
         if (spawnTimer >= interval) {
             spawnTimer = 0f
@@ -879,28 +982,59 @@ class BubbleGameViewModel(
     private fun endGame(reason: GameOverReason) {
         if (isGameOver) return
         isGameOver = true
+        gameOverReason = reason
 
         // Stars come from the objectives at this moment, whatever ended the round.
         val stars = stage?.let { objectiveTracker?.stars(it) } ?: 0
         stage?.let { stageResult = StageResult(won = stars > 0, stars = stars, objectives = objectives) }
-        isNewBest = score > 0 && score > (bestScore.value ?: 0) && (stage == null || stars > 0)
+        isNewBest = score > 0 && score > (bestScore.value ?: 0) && (stage == null || stars > 0) &&
+                mode !is GameMode.DailyStage
+        unlockedDifficulty = newlyUnlockedDifficulty()
+        gameOverSlowmoLeft = GameRules.GAME_OVER_SLOWMO_SECONDS
+        // Stages celebrate on their result card; Endless throws confetti for a new best.
+        if (isNewBest && stage == null) burstConfetti(canvasWidth / 2f, canvasHeight * NEW_BEST_CONFETTI_Y)
         emit(GameEvent.GameOver(reason, score, isNewBest))
 
         val finalScore = score
         val popped = bubblesPopped
         val bestCombo = comboTracker.best
+        val summary = RunSummary(
+            mode = mode,
+            score = finalScore,
+            stars = stars,
+            previousStars = (mode as? GameMode.Stage)?.let { stageProgress.value[it.stageId]?.stars } ?: 0,
+            stats = runTracker.stats(),
+        )
         viewModelScope.launch {
+            // Save the round first: chests and achievements are judged on the updated progress.
             when (mode) {
                 is GameMode.Endless ->
                     progressRepository.recordEndlessGame(mode.difficulty, finalScore, popped, bestCombo)
                 is GameMode.Stage ->
                     progressRepository.recordStageGame(mode.stageId, stars, finalScore, popped, bestCombo)
+                is GameMode.DailyChallenge, is GameMode.DailyStage ->
+                    progressRepository.recordDailyGame(popped, bestCombo)
             }
+            rewards = metaRepository.onRunFinished(summary)
+        }
+    }
+
+    /** Endless: a difficulty that was locked before this round's score and is open now. */
+    private fun newlyUnlockedDifficulty(): Difficulty? {
+        val endless = mode as? GameMode.Endless ?: return null
+        // Only the Medium best counts towards unlocks.
+        if (endless.difficulty != Difficulty.MEDIUM) return null
+        val before = bestScore.value
+        val after = maxOf(score, before ?: 0)
+        val progress = stageProgress.value
+        return Difficulty.entries.firstOrNull {
+            !EndlessUnlocks.isUnlocked(it, before, progress) && EndlessUnlocks.isUnlocked(it, after, progress)
         }
     }
 
     private fun emit(event: GameEvent) {
         _events.tryEmit(event)
+        runTracker.onEvent(event)
         objectiveTracker?.let { tracker ->
             tracker.onEvent(event)
             refreshObjectives()
@@ -928,7 +1062,8 @@ class BubbleGameViewModel(
         val radius   = radiusDp * density
         val randomX  = random.nextFloat() * canvasWidth
         val startX   = at?.x ?: randomX
-        val maxSpeed = (spawn.maxSpeed + score * spawn.speedRampPerPoint).coerceAtMost(spawn.maxSpeedCap)
+        val maxSpeed = waveDirector?.maxSpeed
+            ?: (spawn.maxSpeed + score * spawn.speedRampPerPoint).coerceAtMost(spawn.maxSpeedCap)
         var speed    = (random.nextFloat() * (maxSpeed - spawn.minSpeed) + spawn.minSpeed) * canvasHeight
         if (type == BubbleType.GOLDEN) speed *= GameRules.GOLDEN_SPEED_MULTIPLIER
         val amplitudeDp = random.nextFloat() * (GameRules.MAX_AMPLITUDE_DP - GameRules.MIN_AMPLITUDE_DP) +
@@ -950,11 +1085,26 @@ class BubbleGameViewModel(
     }
 
     private fun rollBubbleType(): BubbleType {
-        var roll = random.nextInt(spawn.typeWeights.values.sum())
-        for ((type, weight) in spawn.typeWeights) {
+        val weights = typeWeights.value
+        var roll = random.nextInt(weights.values.sum())
+        for ((type, weight) in weights) {
             if (roll < weight) return type
             roll -= weight
         }
         error("unreachable: roll exceeded total weight")
     }
+}
+
+/** The catalog stage, or today's generated stage; null for Endless modes. */
+private fun defaultStage(mode: GameMode): StageConfig? = when (mode) {
+    is GameMode.Stage -> StageCatalog.stage(mode.stageId)
+    is GameMode.DailyStage -> DailyStageGenerator.generate(mode.epochDay, mode.world)
+    is GameMode.Endless, is GameMode.DailyChallenge -> null
+}
+
+/** Endless modes' spawn preset. The Daily Challenge is always played at Medium. */
+private fun defaultSpawn(mode: GameMode): SpawnConfig = when (mode) {
+    is GameMode.Endless -> mode.difficulty.spawn
+    is GameMode.DailyChallenge -> Difficulty.MEDIUM.spawn
+    is GameMode.Stage, is GameMode.DailyStage -> error("Stage modes take the stage's spawn")
 }

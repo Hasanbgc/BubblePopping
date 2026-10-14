@@ -23,7 +23,9 @@ import com.apps.bubblepopping.data.appContainer
 import com.apps.bubblepopping.navigation.NavGraph
 import com.apps.bubblepopping.view.leaderboard.LeaderboardEntry
 import com.apps.bubblepopping.view.leaderboard.LeaderboardItem
-import com.apps.bubblepopping.view.leaderboard.LeaderboardScreenRoot
+import com.apps.bubblepopping.view.leaderboard.LeaderboardScreen
+import com.apps.bubblepopping.data.EndlessRun
+import com.apps.bubblepopping.view.home.Difficulty
 import com.apps.bubblepopping.view.play.component.GameHud
 
 class MainActivity : ComponentActivity() {
@@ -99,7 +101,15 @@ private fun GameHudPausedPreview() {
 @Composable
 private fun LeaderboardDialogPreview() {
     MaterialTheme {
-        LeaderboardScreenRoot {}
+        LeaderboardScreen(
+            runs = listOf(
+                EndlessRun(Difficulty.MEDIUM, score = 212, playedAt = 0),
+                EndlessRun(Difficulty.HARD, score = 156, playedAt = 0),
+                EndlessRun(Difficulty.EASY, score = 98, playedAt = 0),
+            ),
+            playerName = "Player",
+            onBack = {},
+        )
     }
 }
 

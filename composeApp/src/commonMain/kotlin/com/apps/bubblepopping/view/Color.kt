@@ -43,23 +43,6 @@ val ConfettiColors = listOf(
     Color(0xFFEA80FC), Color(0xFFFFAB40), Color(0xFFFFFFFF),
 )
 
-// ── Stages ──────────────────────────────────────────────────────────────────
-
-/** Dark-blue backdrop shared by the menu screens (stages, profile…). */
-val ScreenBackgroundColors = listOf(Color(0xFF050E1A), Color(0xFF0A1E35), Color(0xFF144B6E))
-/** Earned star. Unearned stars use it at low alpha. */
-val StarColor = Color(0xFFFFD54F)
-/** Stage node / card surface. */
-val StageCardColor = Color(0xFF12365A)
-/** Accent for buttons and unlocked stage outlines. */
-val StageAccentColor = Color(0xFF29B6F6)
-/** Objective met. */
-val ObjectiveMetColor = Color(0xFF66BB6A)
-/** Objective failed. */
-val ObjectiveFailedColor = Color(0xFFEF5350)
-/** Home screen Endless button. */
-val EndlessButtonColor = Color(0xFFFF8F00)
-
 // ── Stage map ───────────────────────────────────────────────────────────────
 
 /** Map background per world, top → bottom of that world's section. */
@@ -76,4 +59,16 @@ val MapRoadDashColor = Color.White.copy(alpha = 0.45f)
 val MapRoadDoneColor = Color(0xFFFFD54F)
 /** Soft cloud puffs drawn over the map background. */
 val MapCloudColor = Color.White.copy(alpha = 0.07f)
-val LockedNodeColor = Color(0xFF546E7A)
+
+// ── Cosmetics ───────────────────────────────────────────────────────────────
+
+/**
+ * Play background for an equipped background cosmetic, top → bottom, drawn
+ * over the default image. Null keeps the default daylight look.
+ */
+fun playBackgroundColors(backgroundId: String): List<Color>? = when (backgroundId) {
+    "bg_sunset" -> listOf(Color(0xFF4A148C), Color(0xFFD84315), Color(0xFFFFB74D))
+    "bg_midnight" -> listOf(Color(0xFF000814), Color(0xFF001D3D), Color(0xFF003566))
+    "bg_aurora" -> listOf(Color(0xFF0B132B), Color(0xFF1B998B), Color(0xFF7B2CBF))
+    else -> null
+}

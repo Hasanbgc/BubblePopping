@@ -71,6 +71,7 @@ class BossTest {
             mode = GameMode.Stage(stage.id),
             progressRepository = progress,
             settingsRepository = FakeSettingsRepository(),
+            metaRepository = FakeMetaRepository(),
             stage = stage,
             seed = 1L,
         ).apply {

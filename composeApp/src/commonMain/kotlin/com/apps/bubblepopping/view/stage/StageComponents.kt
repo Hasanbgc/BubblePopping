@@ -1,45 +1,50 @@
 package com.apps.bubblepopping.view.stage
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.apps.bubblepopping.stage.ObjectiveProgress
-import com.apps.bubblepopping.view.ObjectiveFailedColor
-import com.apps.bubblepopping.view.ObjectiveMetColor
-import com.apps.bubblepopping.view.StarColor
+import com.apps.bubblepopping.ui.icons.GameIcons
+import com.apps.bubblepopping.ui.theme.GameColors
+import com.apps.bubblepopping.ui.theme.GameTheme
+import com.apps.bubblepopping.ui.theme.Spacing
 
-/** [earned] gold stars followed by dim ones, up to [total]. */
+/** [earned] gold stars followed by faded ones, up to [total]. */
 @Composable
 fun StarRow(
     earned: Int,
     total: Int,
     modifier: Modifier = Modifier,
-    fontSize: TextUnit = 16.sp,
+    starSize: Dp = 18.dp,
 ) {
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(starSize / 8)) {
         repeat(total) { index ->
-            Text(
-                text = "★",
-                fontSize = fontSize,
-                color = if (index < earned) StarColor else StarColor.copy(alpha = 0.25f),
+            Image(
+                imageVector = GameIcons.Star,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(starSize)
+                    .alpha(if (index < earned) 1f else UNEARNED_ALPHA),
             )
         }
     }
 }
 
+private const val UNEARNED_ALPHA = 0.3f
+
 /**
- * One objective line: ✓/✗ (or ☆ before play), its description and, for goals
- * in progress, "current / target".
+ * One objective line: an icon (target / star before play, ✓ or ✗ after), its
+ * description and, for goals in progress, "current / target".
  */
 @Composable
 fun ObjectiveRow(
@@ -48,30 +53,38 @@ fun ObjectiveRow(
     isBonus: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val (icon, iconColor) = when {
-        progress == null -> (if (isBonus) "☆" else "●") to StarColor
-        progress.satisfied -> "✓" to ObjectiveMetColor
-        else -> "✗" to ObjectiveFailedColor
+    val icon = when {
+        progress == null -> if (isBonus) GameIcons.Star else GameIcons.Target
+        progress.satisfied -> GameIcons.Check
+        else -> GameIcons.Close
     }
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = Spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.m),
     ) {
-        Text(text = icon, color = iconColor, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Image(
+            imageVector = icon,
+            contentDescription = when {
+                progress == null -> null
+                progress.satisfied -> "Done"
+                else -> "Missed"
+            },
+            modifier = Modifier.size(24.dp),
+        )
         Text(
             text = description,
-            color = Color.White,
-            fontSize = 15.sp,
+            style = if (isBonus) GameTheme.type.body else GameTheme.type.label,
+            color = GameColors.TextPrimary,
             modifier = Modifier.weight(1f),
         )
         if (progress != null && !progress.objective.isConstraint && !progress.satisfied) {
             Text(
                 text = "${progress.current} / ${progress.target}",
-                color = Color.White.copy(alpha = 0.6f),
-                fontSize = 14.sp,
+                style = GameTheme.type.caption,
+                color = GameColors.TextSecondary,
             )
         }
     }

@@ -77,7 +77,8 @@ sealed interface Objective {
     }
 }
 
-private fun BubbleType.displayName(count: Int): String {
+/** "golden bubble" / "golden bubbles" — for objective and mission texts. */
+fun BubbleType.displayName(count: Int): String {
     val singular = when (this) {
         BubbleType.NORMAL -> "bubble"
         BubbleType.HEART -> "heart"

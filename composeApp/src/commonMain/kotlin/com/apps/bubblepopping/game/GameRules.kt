@@ -27,6 +27,8 @@ object GameRules {
     const val MEDIUM_RADIUS_DP = 20f
     /** Minimum touch radius, so small bubbles stay easy to hit. */
     const val MIN_HIT_RADIUS_DP = 25f
+    /** "Larger tap area" setting: touch radii grow by this factor. */
+    const val LARGE_HIT_AREA_SCALE = 1.35f
 
     const val MIN_AMPLITUDE_DP = 7f
     const val MAX_AMPLITUDE_DP = 22f
@@ -134,7 +136,19 @@ object GameRules {
     /** After the final blow the game runs in slow motion this long before the stage ends. */
     const val BOSS_CELEBRATION_SECONDS = 1.5f
     const val CELEBRATION_SLOWMO = 0.25f
+    /** When a round ends, bubbles drift on at this speed for [GAME_OVER_SLOWMO_SECONDS]. */
+    const val GAME_OVER_SLOWMO = 0.2f
+    const val GAME_OVER_SLOWMO_SECONDS = 0.8f
     const val CONFETTI_COUNT = 90
+
+    // ── Music intensity (Phase 9) ─────────────────────────────────────────────
+    /** A combo this long plays the drums at full volume. */
+    const val MUSIC_FULL_COMBO = 15
+    /** Endless: the drums are at full volume from this many waves in. */
+    const val MUSIC_FULL_WAVE = 4
+    const val MUSIC_BOSS_INTENSITY = 0.8f
+    /** Stages: the last this many seconds play at full intensity. */
+    const val MUSIC_URGENT_SECONDS = 10
 
     fun sizeForRadius(radiusDp: Float): BubbleSize = when {
         radiusDp < SMALL_RADIUS_DP -> BubbleSize.SMALL

@@ -26,6 +26,18 @@ sealed class Routes: NavKey{
     @Serializable
     object Endless: Routes()
 
+    /** Daily reward, Daily Challenge, Daily Stage and missions. */
+    @Serializable
+    object Today: Routes()
+
+    /** Sound, controls, accessibility, tutorial and progress reset. */
+    @Serializable
+    object Settings: Routes()
+
+    /** Cosmetics shop. */
+    @Serializable
+    object Shop: Routes()
+
     /** The card shown before a stage starts: goal, bonus objectives, Play. */
     @Serializable
     data class StageIntro(val stageId: Int): Routes()

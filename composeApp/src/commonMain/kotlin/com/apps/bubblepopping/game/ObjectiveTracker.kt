@@ -51,7 +51,8 @@ class ObjectiveTracker {
                 score += event.points
             }
             is GameEvent.Tick -> elapsedSec = event.elapsedSec
-            GameEvent.ShieldUsed, is GameEvent.GameOver -> Unit
+            GameEvent.ShieldUsed, is GameEvent.GameOver,
+            is GameEvent.WaveCleared, is GameEvent.WaveStarted -> Unit
         }
     }
 

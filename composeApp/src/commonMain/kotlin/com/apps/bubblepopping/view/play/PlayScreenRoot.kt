@@ -3,22 +3,16 @@ package com.apps.bubblepopping.view.play
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -44,10 +38,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
@@ -64,6 +56,8 @@ import com.apps.bubblepopping.view.BalooFontFamily
 import com.apps.bubblepopping.view.play.component.drawFloatingText
 import com.apps.bubblepopping.view.play.component.drawNearMissWarning
 import com.apps.bubblepopping.view.play.component.StageGoalBar
+import com.apps.bubblepopping.view.play.component.WaveBanner
+import com.apps.bubblepopping.view.play.component.WavePill
 import androidx.compose.foundation.layout.statusBarsPadding
 import kotlinx.coroutines.launch
 import com.apps.bubblepopping.heart
@@ -81,6 +75,35 @@ import com.apps.bubblepopping.view.StingColor
 import com.apps.bubblepopping.view.play.component.BubbleIcons
 import com.apps.bubblepopping.view.FreezeColor
 import com.apps.bubblepopping.view.worldMapColors
+import com.apps.bubblepopping.view.playBackgroundColors
+import com.apps.bubblepopping.game.GameMode
+import com.apps.bubblepopping.audio.GameMusic
+import com.apps.bubblepopping.data.prefs.SettingsRepository
+import com.apps.bubblepopping.view.settings.InGameSettingsDialog
+import com.apps.bubblepopping.ui.components.ButtonColor
+import androidx.compose.foundation.layout.fillMaxWidth
+import com.apps.bubblepopping.ui.components.ButtonSize
+import com.apps.bubblepopping.ui.components.DialogButtons
+import com.apps.bubblepopping.ui.components.GameButton
+import com.apps.bubblepopping.ui.components.GameDialogCard
+import com.apps.bubblepopping.ui.components.OutlinedText
+import com.apps.bubblepopping.ui.components.OverlayScrim
+import com.apps.bubblepopping.ui.components.formatCount
+import com.apps.bubblepopping.ui.icons.GameIcons
+import com.apps.bubblepopping.ui.theme.GameColors
+import com.apps.bubblepopping.ui.theme.GameTheme
+import com.apps.bubblepopping.ui.theme.Spacing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.apps.bubblepopping.stage.World
 import androidx.compose.foundation.gestures.awaitEachGesture
 import kotlin.math.abs
@@ -95,6 +118,9 @@ private const val COMBO_BREAK_SOUND_MIN = 3
 
 /** Each result star plays a pop pitched as if at this many more combo steps. */
 private const val STAR_PITCH_STEP = 4
+
+/** How quickly the music's drum layer follows the action. */
+private const val MUSIC_INTENSITY_FADE_MS = 1_500
 
 /** Horizontal movement after a missed press that turns it into a wind swipe. */
 private val SWIPE_THRESHOLD = 24.dp
@@ -111,6 +137,7 @@ private const val STING_TINT_ALPHA = 0.15f
 fun PlayScreenRoot(
     viewModel: BubbleGameViewModel,
     hapticFeedback: HapticFeedback,
+    settingsRepository: SettingsRepository,
     onBack: (() -> Unit)? = null,
     onHome: (() -> Unit)? = null,
     onNextStage: (() -> Unit)? = null,
@@ -118,6 +145,7 @@ fun PlayScreenRoot(
     BubblePoppingScreen(
         viewModel = viewModel,
         hapticFeedback = hapticFeedback,
+        settingsRepository = settingsRepository,
         onBack = onBack,
         onHome = onHome,
         onNextStage = onNextStage,
@@ -127,17 +155,32 @@ fun PlayScreenRoot(
 /**
  * [onHome] leaves after the round (Endless → Home, stage → stage list).
  * [onNextStage] is shown on a cleared stage's result when a next stage exists.
+ * [settingsRepository] backs the pause menu's settings and the tutorial flag.
  */
 @Composable
 fun BubblePoppingScreen(
     viewModel: BubbleGameViewModel,
     hapticFeedback: HapticFeedback,
+    settingsRepository: SettingsRepository,
     onBack: (() -> Unit)? = null,
     onHome: (() -> Unit)? = null,
     onNextStage: (() -> Unit)? = null,
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val bestScore by viewModel.bestScore.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+
+    // ── First-run tutorial (World 1 Stage 1) ─────────────────────────────────
+    // null until DataStore has loaded, so the round waits rather than starting
+    // and then being interrupted by the tutorial.
+    val storedSettings by remember(settingsRepository) { settingsRepository.settings }
+        .collectAsStateWithLifecycle(null)
+    var tutorialFinished by rememberSaveable { mutableStateOf(false) }
+    val isTutorialStage = viewModel.mode == GameMode.Stage(TUTORIAL_STAGE_ID)
+    val showTutorial = isTutorialStage && !tutorialFinished && storedSettings?.tutorialSeen == false
+    val holdRound = isTutorialStage && !tutorialFinished && (storedSettings == null || showTutorial)
+    val currentHoldRound by rememberUpdatedState(holdRound)
+    var showSettings by remember { mutableStateOf(false) }
 
     var elapsedTime by remember { mutableStateOf(0f) }
 
@@ -154,7 +197,8 @@ fun BubblePoppingScreen(
         state = rememberNavigationEventState(NavigationEventInfo.None),
         isBackEnabled = !viewModel.isGameOver,
         onBackCompleted = {
-            if (isPaused) onBack?.invoke() else viewModel.togglePause()
+            // Before the round starts (tutorial), or when already paused, back leaves.
+            if (isPaused || holdRound) onBack?.invoke() else viewModel.togglePause()
         },
     )
 
@@ -170,6 +214,33 @@ fun BubblePoppingScreen(
     DisposableEffect(Unit) {
         onDispose { gameSounds?.dispose() }
     }
+
+    // ── Music ────────────────────────────────────────────────────────────────
+    // Synthesised per world off the main thread; plays while the round is live
+    // and the app is in the foreground. The drum layer follows the action.
+    val music by produceState<GameMusic?>(initialValue = null, viewModel.world) {
+        value = try {
+            GameMusic.create(withContext(Dispatchers.Default) { GameMusic.synthesize(viewModel.world) })
+        } catch (_: Exception) {
+            null // no music rather than a crash
+        }
+    }
+    DisposableEffect(music) {
+        val current = music
+        onDispose { current?.release() }
+    }
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    val musicPlaying = settings.musicEnabled && !isPaused && !viewModel.isGameOver && !holdRound &&
+            lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+    LaunchedEffect(music, musicPlaying) {
+        if (musicPlaying) music?.play() else music?.pause()
+    }
+    val musicIntensity by animateFloatAsState(
+        targetValue = viewModel.musicIntensity,
+        animationSpec = tween(MUSIC_INTENSITY_FADE_MS),
+        label = "music_intensity",
+    )
+    LaunchedEffect(music, musicIntensity) { music?.setIntensity(musicIntensity) }
 
     // ── Sound & haptics ──────────────────────────────────────────────────────
     // Driven by game events so feedback matches exactly what the game decided.
@@ -226,6 +297,11 @@ fun BubblePoppingScreen(
                     haptics?.success()
                     sounds?.let { launch { it.newBest() } }
                 }
+                is GameEvent.WaveCleared -> {
+                    sounds?.golden()
+                    haptics?.success()
+                }
+                is GameEvent.WaveStarted -> haptics?.medium()
                 is GameEvent.ComboChanged -> {
                     if (event.broken && event.previous >= COMBO_BREAK_SOUND_MIN) sounds?.comboBreak()
                 }
@@ -263,9 +339,10 @@ fun BubblePoppingScreen(
                 if (!viewModel.isGameOver && !viewModel.isPaused.value) {
                     elapsedTime += delta
                 }
-                // Always called: the ViewModel ignores pause itself, and keeps
-                // effects (bursts, floating text, shake) animating after game over.
-                viewModel.update(delta)
+                // Always called (except while the tutorial holds the round): the
+                // ViewModel ignores pause itself, and keeps effects (bursts,
+                // floating text, shake) animating after game over.
+                if (!currentHoldRound) viewModel.update(delta)
             }
         }
     }
@@ -277,8 +354,16 @@ fun BubblePoppingScreen(
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
-        // Later worlds tint the background with their own colours.
-        if (viewModel.world != World.SKY) {
+        // Later worlds tint the background with their own colours. Outside stages
+        // the equipped background cosmetic paints over the default daylight.
+        val cosmeticBackground = playBackgroundColors(settings.equippedBackground).takeIf { viewModel.stage == null }
+        if (cosmeticBackground != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Brush.verticalGradient(cosmeticBackground))
+            )
+        } else if (viewModel.world != World.SKY) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -357,14 +442,14 @@ fun BubblePoppingScreen(
                 // Normal bubbles this close to the top pulse red — they're about to cost a life.
                 val dangerY = topOffsetPx + (size.height - topOffsetPx) * GameRules.NEAR_MISS_ZONE
                 for (bubble in viewModel.bubbles) {
-                    drawGameBubble(bubble, viewModel.world, bubbleIcons)
+                    drawGameBubble(bubble, viewModel.world, bubbleIcons, settings.equippedSkin, settings.highContrastSkulls)
                     if (bubble.type == BubbleType.NORMAL && bubble.y - bubble.radius < dangerY) {
                         drawNearMissWarning(bubble, elapsedTime)
                     }
                 }
 
                 for (anim in viewModel.popAnimations) {
-                    drawPopAnimation(anim)
+                    drawPopAnimation(anim, settings.equippedPopEffect)
                 }
 
                 for (text in viewModel.floatingTexts) {
@@ -399,10 +484,17 @@ fun BubblePoppingScreen(
             // interactive. Tapping the dim layer also resumes the game.
             if (isPaused && !viewModel.isGameOver) {
                 PauseOverlay(
-                    score    = viewModel.score,
-                    onResume = { viewModel.togglePause() },
-                    onQuit   = onBack,
-                    modifier = Modifier.fillMaxSize(),
+                    score     = viewModel.score,
+                    onResume  = { viewModel.togglePause() },
+                    onRestart = { viewModel.restartGame() },
+                    onSettings = { showSettings = true },
+                    onQuit    = onBack,
+                    quitLabel = when (viewModel.mode) {
+                        is GameMode.Stage -> "Quit to map"
+                        is GameMode.DailyChallenge, is GameMode.DailyStage -> "Quit to Today"
+                        is GameMode.Endless -> "Quit"
+                    },
+                    modifier  = Modifier.fillMaxSize(),
                 )
             }
 
@@ -448,15 +540,35 @@ fun BubblePoppingScreen(
                         .statusBarsPadding()
                         .padding(top = HUD_CONTENT_HEIGHT + 4.dp),
                 )
+            } else {
+                // ── Endless: wave progress under the HUD, banner between waves ──
+                WavePill(
+                    wave     = viewModel.wave,
+                    progress = viewModel.waveProgress,
+                    isCalm   = viewModel.isWaveCalm,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(top = HUD_CONTENT_HEIGHT + 4.dp),
+                )
+                WaveBanner(
+                    wave     = viewModel.wave,
+                    visible  = viewModel.isWaveCalm && !viewModel.isGameOver,
+                    modifier = Modifier.align(Alignment.Center),
+                )
             }
 
             if (viewModel.isGameOver) {
                 val stage = viewModel.stage
                 val stageResult = viewModel.stageResult
                 if (stage != null && stageResult != null) {
+                    val isDaily = viewModel.mode is GameMode.DailyStage
                     StageResultOverlay(
                         isBossStage = stage.boss != null,
                         stageId     = stage.id,
+                        stageLabel  = if (isDaily) "DAILY STAGE" else "STAGE ${stage.id}",
+                        backLabel   = if (isDaily) "Today" else "Stages",
+                        rewards     = viewModel.rewards,
                         result      = stageResult,
                         maxStars    = stage.maxStars,
                         score       = viewModel.score,
@@ -476,6 +588,11 @@ fun BubblePoppingScreen(
                         score     = viewModel.score,
                         bestScore = bestScore,
                         isNewBest = viewModel.isNewBest,
+                        reason    = viewModel.gameOverReason,
+                        wave      = viewModel.wave,
+                        unlockedDifficulty = viewModel.unlockedDifficulty,
+                        rewards   = viewModel.rewards,
+                        label     = if (viewModel.mode is GameMode.DailyChallenge) "DAILY CHALLENGE" else null,
                         onRestart = { viewModel.restartGame() },
                         onHome    = onHome,
                         modifier  = Modifier.fillMaxSize(),
@@ -483,6 +600,31 @@ fun BubblePoppingScreen(
                 }
             }
 
+            // ── First-run tutorial — over everything, the round waits behind it ──
+            if (showTutorial) {
+                TutorialOverlay(
+                    icons = bubbleIcons,
+                    skinId = settings.equippedSkin,
+                    highContrastSkulls = settings.highContrastSkulls,
+                    onPop = {
+                        if (settings.soundEnabled) gameSounds?.pop(combo = 0)
+                        if (settings.hapticsEnabled) hapticFeedback.medium()
+                    },
+                    onFinish = {
+                        tutorialFinished = true
+                        scope.launch { settingsRepository.setTutorialSeen(true) }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
+            if (showSettings) {
+                InGameSettingsDialog(
+                    settings = settings,
+                    onToggle = { toggle, on -> scope.launch { toggle.set(settingsRepository, on) } },
+                    onDismiss = { showSettings = false },
+                )
+            }
         }
     }
 }
@@ -495,145 +637,24 @@ fun BubblePoppingScreen(
 private fun PauseOverlay(
     score: Int,
     onResume: () -> Unit,
-    onQuit: (() -> Unit)?,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier         = modifier
-            .background(Color.Black.copy(alpha = 0.50f))
-            .clickable(onClick = onResume),
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text          = "PAUSED",
-                color         = Color.White,
-                fontSize      = 32.sp,
-                fontWeight    = FontWeight.Bold,
-                letterSpacing = 6.sp,
-            )
-            Text(
-                text          = "SCORE",
-                color         = Color.White.copy(alpha = 0.50f),
-                fontSize      = 11.sp,
-                fontWeight    = FontWeight.Medium,
-                letterSpacing = 4.sp,
-            )
-            Text(
-                text       = score.toString(),
-                color      = Color.White,
-                fontSize   = 48.sp,
-                fontWeight = FontWeight.Light,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text     = "tap to resume",
-                color    = Color.White.copy(alpha = 0.40f),
-                fontSize = 13.sp,
-            )
-            // iOS has no system back button, so quitting mid-round needs a button.
-            if (onQuit != null) {
-                Spacer(Modifier.height(12.dp))
-                Button(
-                    onClick  = onQuit,
-                    shape    = RoundedCornerShape(50),
-                    colors   = ButtonDefaults.buttonColors(
-                        containerColor = Color.White.copy(alpha = 0.12f),
-                        contentColor   = Color.White,
-                    ),
-                    modifier = Modifier.height(46.dp),
-                ) {
-                    Text(text = "Quit", fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                }
-            }
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GameOverOverlay
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun GameOverOverlay(
-    score: Int,
-    bestScore: Int?,
-    isNewBest: Boolean,
     onRestart: () -> Unit,
-    onHome: (() -> Unit)? = null,
+    onSettings: () -> Unit,
+    onQuit: (() -> Unit)?,
+    quitLabel: String,
     modifier: Modifier = Modifier,
 ) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier         = modifier.background(Color.Black.copy(alpha = 0.72f)),
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text(
-                text          = "GAME OVER",
-                color         = Color.White,
-                fontSize      = 36.sp,
-                fontWeight    = FontWeight.Bold,
-                letterSpacing = 4.sp,
-            )
-            Text(
-                text          = "SCORE",
-                color         = Color.White.copy(alpha = 0.50f),
-                fontSize      = 12.sp,
-                fontWeight    = FontWeight.Medium,
-                letterSpacing = 4.sp,
-            )
-            Text(
-                text       = score.toString(),
-                color      = Color.White,
-                fontSize   = 56.sp,
-                fontWeight = FontWeight.Light,
-            )
-            if (isNewBest) {
-                Text(
-                    text          = "NEW BEST!",
-                    color         = Color(0xFFFFD700),
-                    fontSize      = 18.sp,
-                    fontWeight    = FontWeight.Bold,
-                    letterSpacing = 3.sp,
-                )
-            } else if (bestScore != null) {
-                Text(
-                    text          = "BEST  $bestScore",
-                    color         = Color.White.copy(alpha = 0.60f),
-                    fontSize      = 14.sp,
-                    fontWeight    = FontWeight.Medium,
-                    letterSpacing = 2.sp,
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick  = onRestart,
-                shape    = RoundedCornerShape(50),
-                colors   = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF29B6F6).copy(alpha = 0.88f),
-                    contentColor   = Color.White,
-                ),
-                modifier = Modifier.height(52.dp),
-            ) {
-                Text(text = "Play Again", fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            }
-            if (onHome != null) {
-                Button(
-                    onClick  = onHome,
-                    shape    = RoundedCornerShape(50),
-                    colors   = ButtonDefaults.buttonColors(
-                        containerColor = Color.White.copy(alpha = 0.12f),
-                        contentColor   = Color.White,
-                    ),
-                    modifier = Modifier.height(52.dp),
-                ) {
-                    Text(text = "Home", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+    // Tapping the dim area outside the card also resumes.
+    OverlayScrim(modifier = modifier, onScrimClick = onResume) {
+        GameDialogCard(title = "Paused", onClose = onResume) {
+            Text("Score", style = GameTheme.type.label, color = GameColors.TextSecondary)
+            OutlinedText(formatCount(score), GameTheme.type.display, outlineWidth = 3.dp)
+            DialogButtons {
+                GameButton("Resume", onClick = onResume, size = ButtonSize.LARGE, icon = GameIcons.Play, modifier = Modifier.fillMaxWidth())
+                GameButton("Restart", onClick = onRestart, color = ButtonColor.GLASS, icon = GameIcons.Restart, modifier = Modifier.fillMaxWidth())
+                GameButton("Settings", onClick = onSettings, color = ButtonColor.GLASS, icon = GameIcons.Gear, modifier = Modifier.fillMaxWidth())
+                // iOS has no system back button, so quitting mid-round needs a button.
+                if (onQuit != null) {
+                    GameButton(quitLabel, onClick = onQuit, color = ButtonColor.RED, icon = GameIcons.Home, modifier = Modifier.fillMaxWidth())
                 }
             }
         }
@@ -644,6 +665,7 @@ private fun GameOverOverlay(
 // BreezeControls
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Optional on-screen wind buttons (swiping always works). The active side lights up blue. */
 @Composable
 private fun BreezeControls(
     onBreezeLeft: () -> Unit,
@@ -652,30 +674,29 @@ private fun BreezeControls(
     modifier: Modifier = Modifier,
 ) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(20.dp),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.xl),
         verticalAlignment     = Alignment.CenterVertically,
         modifier              = modifier,
     ) {
-        BreezeButton(label = "← Wind", onClick = onBreezeLeft,  isActive = breeze < -0.03f)
-        BreezeButton(label = "Wind →", onClick = onBreezeRight, isActive = breeze > +0.03f)
+        GameButton(
+            text = "← Wind",
+            onClick = onBreezeLeft,
+            color = if (breeze < -WIND_ACTIVE) ButtonColor.BLUE else ButtonColor.GLASS,
+            size = ButtonSize.SMALL,
+            icon = GameIcons.Wind,
+        )
+        GameButton(
+            text = "Wind →",
+            onClick = onBreezeRight,
+            color = if (breeze > WIND_ACTIVE) ButtonColor.BLUE else ButtonColor.GLASS,
+            size = ButtonSize.SMALL,
+            icon = GameIcons.Wind,
+        )
     }
 }
 
-@Composable
-private fun BreezeButton(label: String, onClick: () -> Unit, isActive: Boolean) {
-    Button(
-        onClick  = onClick,
-        shape    = RoundedCornerShape(50),
-        colors   = ButtonDefaults.buttonColors(
-            containerColor = if (isActive) Color(0xFF29B6F6).copy(alpha = 0.88f)
-                             else          Color.White.copy(alpha = 0.12f),
-            contentColor   = Color.White,
-        ),
-        modifier = Modifier.height(46.dp),
-    ) {
-        Text(text = label, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-    }
-}
+/** Breeze above this strength lights up its button. */
+private const val WIND_ACTIVE = 0.03f
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Icon helper

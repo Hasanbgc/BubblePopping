@@ -18,6 +18,13 @@ data class StageProgress(
     val bestScore: Int,
 )
 
+/** One finished Endless round, for the Local leaderboard. */
+data class EndlessRun(
+    val difficulty: Difficulty,
+    val score: Int,
+    val playedAt: Long,
+)
+
 data class PlayerStats(
     val gamesPlayed: Int = 0,
     val bubblesPopped: Long = 0,
@@ -33,6 +40,9 @@ interface ProgressRepository {
     fun stageProgress(): Flow<Map<Int, StageProgress>>
     fun stats(): Flow<PlayerStats>
 
+    /** The best Endless rounds on this device, highest score first. */
+    fun topEndlessRuns(limit: Int): Flow<List<EndlessRun>>
+
     /** Saves a finished Endless round and updates lifetime stats. */
     suspend fun recordEndlessGame(difficulty: Difficulty, score: Int, bubblesPopped: Int, bestCombo: Int)
 
@@ -42,6 +52,12 @@ interface ProgressRepository {
      * one only counts towards stats.
      */
     suspend fun recordStageGame(stageId: Int, stars: Int, score: Int, bubblesPopped: Int, bestCombo: Int)
+
+    /** Daily Challenge / Daily Stage rounds only count towards lifetime stats here. */
+    suspend fun recordDailyGame(bubblesPopped: Int, bestCombo: Int)
+
+    /** Deletes all stage progress, Endless scores and stats. */
+    suspend fun resetProgress()
 }
 
 class RoomProgressRepository(
@@ -64,6 +80,20 @@ class RoomProgressRepository(
         statsDao.observe().map { row ->
             row?.let { PlayerStats(it.gamesPlayed, it.bubblesPopped, it.bestCombo) } ?: PlayerStats()
         }
+
+    override fun topEndlessRuns(limit: Int): Flow<List<EndlessRun>> =
+        endlessDao.observeTopScores(limit).map { rows ->
+            rows.mapNotNull { row ->
+                Difficulty.entries.firstOrNull { it.name == row.difficulty }
+                    ?.let { EndlessRun(it, row.score, row.playedAt) }
+            }
+        }
+
+    override suspend fun recordDailyGame(bubblesPopped: Int, bestCombo: Int) {
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction { addToStats(bubblesPopped, bestCombo) }
+        }
+    }
 
     override suspend fun recordEndlessGame(
         difficulty: Difficulty,
@@ -107,6 +137,16 @@ class RoomProgressRepository(
                     )
                 }
                 addToStats(bubblesPopped, bestCombo)
+            }
+        }
+    }
+
+    override suspend fun resetProgress() {
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction {
+                stageDao.deleteAll()
+                endlessDao.deleteAll()
+                statsDao.deleteAll()
             }
         }
     }
