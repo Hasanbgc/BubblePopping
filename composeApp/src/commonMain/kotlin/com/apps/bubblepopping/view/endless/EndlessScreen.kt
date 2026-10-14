@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
@@ -36,6 +35,7 @@ import com.apps.bubblepopping.game.EndlessUnlocks
 import com.apps.bubblepopping.ui.components.CoinCounter
 import com.apps.bubblepopping.ui.components.GameBackground
 import com.apps.bubblepopping.ui.components.GameTopBar
+import com.apps.bubblepopping.ui.components.screenBottomPadding
 import com.apps.bubblepopping.ui.components.GlassPanel
 import com.apps.bubblepopping.ui.components.LocalUiFeedback
 import com.apps.bubblepopping.ui.components.ResourcePill
@@ -113,7 +113,7 @@ fun EndlessScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .navigationBarsPadding(),
+                .screenBottomPadding(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             GameTopBar(title = "Endless", onBack = onBack, actions = { CoinCounter() })

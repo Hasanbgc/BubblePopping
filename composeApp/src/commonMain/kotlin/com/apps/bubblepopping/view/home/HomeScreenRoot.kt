@@ -8,10 +8,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,11 +32,12 @@ import com.apps.bubblepopping.meta.PlayerState
 import com.apps.bubblepopping.meta.currentEpochDay
 import com.apps.bubblepopping.ribbon
 import com.apps.bubblepopping.ui.components.AvatarButton
-import com.apps.bubblepopping.ui.components.BottomDock
+import com.apps.bubblepopping.ui.theme.BubbleTheme
 import com.apps.bubblepopping.ui.components.CoinCounter
-import com.apps.bubblepopping.ui.components.DockItem
 import com.apps.bubblepopping.ui.components.GameBackground
+import com.apps.bubblepopping.ui.components.BackgroundStyle
 import com.apps.bubblepopping.ui.components.GameTopBar
+import com.apps.bubblepopping.ui.components.screenBottomPadding
 import com.apps.bubblepopping.ui.components.StarCounter
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.apps.bubblepopping.view.meta.LoginWeek
@@ -61,10 +60,6 @@ fun HomeScreenRoot(
     onNavigateToStages: () -> Unit,
     onNavigateToEndless: () -> Unit,
     onNavigateToProfile: () -> Unit,
-    onNavigateToToday: () -> Unit,
-    onNavigateToShop: () -> Unit,
-    onNavigateToRanking: () -> Unit,
-    onNavigateToSettings: () -> Unit,
 ) {
     val today = remember { currentEpochDay() }
     val scope = rememberCoroutineScope()
@@ -73,14 +68,9 @@ fun HomeScreenRoot(
     var loginDismissed by rememberSaveable { mutableStateOf(false) }
 
     HomeContent(
-        todayHasNews = player?.canClaimLogin(today) == true,
         onStagesClick = onNavigateToStages,
         onEndlessClick = onNavigateToEndless,
         onProfileClick = onNavigateToProfile,
-        onTodayClick = onNavigateToToday,
-        onShopClick = onNavigateToShop,
-        onRankingClick = onNavigateToRanking,
-        onSettingsClick = onNavigateToSettings,
     )
 
     val current = player
@@ -93,23 +83,19 @@ fun HomeScreenRoot(
     }
 }
 
+/** Home: avatar and counters, the logo, and the two mode buttons. The bottom dock is drawn by the app frame. */
 @Composable
 fun HomeContent(
-    todayHasNews: Boolean,
     onStagesClick: () -> Unit,
     onEndlessClick: () -> Unit,
     onProfileClick: () -> Unit,
-    onTodayClick: () -> Unit,
-    onShopClick: () -> Unit,
-    onRankingClick: () -> Unit,
-    onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    GameBackground(modifier) {
+    GameBackground(modifier, style = BackgroundStyle.ART) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .navigationBarsPadding(),
+                .screenBottomPadding(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Avatar on the left (the photo arrives with Google / Facebook sign-in), counters on the right.
@@ -158,16 +144,6 @@ fun HomeContent(
                 onClick = onEndlessClick,
             )
             Spacer(Modifier.weight(1f))
-
-            BottomDock(
-                items = listOf(
-                    DockItem(GameIcons.Shop, "Shop", onShopClick),
-                    DockItem(GameIcons.Calendar, "Today", onTodayClick, showBadge = todayHasNews),
-                    DockItem(GameIcons.Home, "Home", onClick = {}, isCenter = true),
-                    DockItem(GameIcons.Trophy, "Ranks", onRankingClick),
-                    DockItem(GameIcons.Gear, "Settings", onSettingsClick),
-                ),
-            )
         }
     }
 }
@@ -223,16 +199,11 @@ private fun DailyRewardDialog(player: PlayerState, onClaim: () -> Unit, onDismis
 @Composable
 @Preview
 fun HomeContentPreview() {
-    MaterialTheme {
+    BubbleTheme {
         HomeContent(
-            todayHasNews = true,
             onStagesClick = {},
             onEndlessClick = {},
             onProfileClick = {},
-            onTodayClick = {},
-            onShopClick = {},
-            onRankingClick = {},
-            onSettingsClick = {},
         )
     }
 }

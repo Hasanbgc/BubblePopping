@@ -67,10 +67,11 @@ fun UiKitScreen(onBack: () -> Unit) {
                 listOf(
                     DockItem(GameIcons.Shop, "Shop", {}),
                     DockItem(GameIcons.Calendar, "Today", {}, showBadge = true),
-                    DockItem(GameIcons.Home, "Home", {}, isCenter = true),
+                    DockItem(GameIcons.Home, "Home", {}),
                     DockItem(GameIcons.Trophy, "Ranks", {}),
                     DockItem(GameIcons.Gear, "Settings", {}),
-                )
+                ),
+                selectedIndex = 2,
             )
         },
     ) {

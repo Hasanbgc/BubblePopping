@@ -25,6 +25,8 @@ data class PlayerResources(
     val coins: Int? = null,
     val stars: Int? = null,
     val maxStars: Int? = null,
+    /** Today's login reward is waiting (badge on the Today tab). */
+    val dailyRewardReady: Boolean = false,
 )
 
 /** Provided once at the app root, so any top bar can show the counters. */

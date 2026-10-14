@@ -56,6 +56,7 @@ import com.apps.bubblepopping.view.MapRoadColor
 import com.apps.bubblepopping.view.MapRoadDashColor
 import com.apps.bubblepopping.view.MapRoadDoneColor
 import com.apps.bubblepopping.ui.components.GameTopBar
+import com.apps.bubblepopping.ui.components.screenBottomPadding
 import com.apps.bubblepopping.ui.components.LocalUiFeedback
 import com.apps.bubblepopping.ui.components.OutlinedText
 import com.apps.bubblepopping.ui.icons.GameIcons
@@ -111,7 +112,7 @@ fun StageMapScreen(
             .background(GameColors.Scrim)
     ) {
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().screenBottomPadding(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             GameTopBar(title = "Stages", onBack = onBack, actions = { StarCounter(showMax = true) })

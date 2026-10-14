@@ -64,6 +64,18 @@ object GameColors {
 
     /** Darkens the background art behind menus so text stays readable. */
     val Scrim = Color(0xFF14093D)
+
+    // Night sky behind every menu screen except Home: calm and dark so the
+    // glass cards and text stand out, glowing sky blue towards the bottom.
+    val NightTop = Color(0xFF040A24)
+    val NightMiddle = Color(0xFF0A2257)
+    val NightBottom = Color(0xFF0F4C91)
+    val NightGlow = Color(0xFF3FA9FF)
+    val NightGlowCyan = Color(0xFF4FE3FF)
+    val NightGlowViolet = Color(0xFF7E5BFF)
+    val Starlight = Color(0xFFE8F4FF)
+    /** Black shade laid over the night sky, so cards and text are what stands out. */
+    val BackgroundShade = Color.Black.copy(alpha = 0.4f)
 }
 
 /** The only spacing values used in layouts. */

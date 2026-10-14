@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,19 +21,33 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -49,34 +62,62 @@ import com.apps.bubblepopping.ui.theme.Spacing
 import com.apps.bubblepopping.view.home.DriftingBubbles
 import org.jetbrains.compose.resources.painterResource
 
+/** Which sky a menu screen sits on. */
+enum class BackgroundStyle {
+    /** The sunset art — Home only, where it greets the player. */
+    ART,
+    /** The calm night sky — every other menu screen, so cards and text get the focus. */
+    NIGHT_SKY,
+}
+
 /**
- * The sky behind every menu: the sunset art, bubbles drifting up, and a soft
- * indigo scrim towards the bottom so text and panels stay readable.
+ * The sky behind menu screens, with bubbles drifting up. [BackgroundStyle.ART]
+ * is the sunset picture with a soft indigo scrim for readability;
+ * [BackgroundStyle.NIGHT_SKY] is the quieter night sky with dimmer bubbles,
+ * shaded with black so cards and text stand out.
  */
 @Composable
-fun GameBackground(modifier: Modifier = Modifier, bubbles: Boolean = true, content: @Composable BoxScope.() -> Unit) {
-    Box(modifier.fillMaxSize().background(GameColors.Scrim)) {
-        Image(
-            painter = painterResource(Res.drawable.bg),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
-        if (bubbles) DriftingBubbles(Modifier.fillMaxSize())
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0f to GameColors.Scrim.copy(alpha = 0.25f),
-                        0.4f to GameColors.Scrim.copy(alpha = 0.05f),
-                        1f to GameColors.Scrim.copy(alpha = 0.5f),
-                    )
+fun GameBackground(
+    modifier: Modifier = Modifier,
+    style: BackgroundStyle = BackgroundStyle.NIGHT_SKY,
+    bubbles: Boolean = true,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Box(modifier.fillMaxSize().background(GameColors.NightTop)) {
+        when (style) {
+            BackgroundStyle.ART -> {
+                Image(
+                    painter = painterResource(Res.drawable.bg),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
                 )
-        )
+                if (bubbles) DriftingBubbles(Modifier.fillMaxSize())
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0f to GameColors.Scrim.copy(alpha = 0.25f),
+                                0.4f to GameColors.Scrim.copy(alpha = 0.05f),
+                                1f to GameColors.Scrim.copy(alpha = 0.5f),
+                            )
+                        )
+                )
+            }
+            BackgroundStyle.NIGHT_SKY -> {
+                NightSky(Modifier.fillMaxSize())
+                if (bubbles) DriftingBubbles(Modifier.fillMaxSize().alpha(NIGHT_BUBBLE_ALPHA))
+                // Shade the whole sky down so the content on top gets the focus.
+                Box(Modifier.fillMaxSize().background(GameColors.BackgroundShade))
+            }
+        }
         content()
     }
 }
+
+/** Bubbles stay in the background on the night sky. */
+private const val NIGHT_BUBBLE_ALPHA = 0.35f
 
 /**
  * Top bar used by every screen: round back button on the left, outlined
@@ -153,7 +194,7 @@ fun GameScreen(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     GameBackground(modifier) {
-        Column(Modifier.fillMaxSize().navigationBarsPadding()) {
+        Column(Modifier.fillMaxSize().screenBottomPadding()) {
             GameTopBar(title = title, onBack = onBack, actions = actions)
             Column(
                 horizontalAlignment = horizontalAlignment,
@@ -170,77 +211,120 @@ fun GameScreen(
     }
 }
 
-/** One slot in the [BottomDock]. */
+/** One tab in the [BottomDock]. */
 data class DockItem(
     val icon: ImageVector,
     val label: String,
     val onClick: () -> Unit,
     val showBadge: Boolean = false,
-    /** The raised middle slot (the screen you're on). */
-    val isCenter: Boolean = false,
 )
 
-/** Home's bottom dock: glass bar of icon buttons, the middle one raised. */
+/**
+ * The bottom tab bar on every menu screen: a dark glass bar of icon tabs. The
+ * current tab ([selectedIndex]) sits on a glossy blue highlight that slides
+ * between tabs; its icon grows and its label gets the outline.
+ */
 @Composable
-fun BottomDock(items: List<DockItem>, modifier: Modifier = Modifier) {
+fun BottomDock(items: List<DockItem>, selectedIndex: Int, modifier: Modifier = Modifier) {
     val feedback = LocalUiFeedback.current
-    Box(modifier.fillMaxWidth().padding(horizontal = Spacing.screen, vertical = Spacing.s)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = DOCK_RAISE)
-                .clip(Corners.large)
-                .background(GameColors.Ink.copy(alpha = 0.55f))
-                .border(2.dp, GameColors.GlassRim, Corners.large)
-                .padding(vertical = Spacing.s),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            items.forEach { item ->
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.screen, vertical = Spacing.s)
+            .clip(Corners.large)
+            .background(GameColors.Ink.copy(alpha = 0.7f))
+            .border(2.dp, GameColors.GlassRim, Corners.large)
+            .padding(DOCK_INSET),
+    ) {
+        val slot = maxWidth / items.size
+        val highlightX by animateDpAsState(
+            targetValue = slot * selectedIndex.coerceIn(0, items.lastIndex),
+            animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow),
+            label = "dock_highlight",
+        )
+        // The sliding highlight, drawn under the tabs.
+        if (selectedIndex in items.indices) {
+            Box(
+                Modifier
+                    .offset(x = highlightX)
+                    .size(width = slot, height = DOCK_HEIGHT)
+                    .clip(Corners.medium)
+                    .background(Brush.verticalGradient(listOf(GameColors.BlueTop, GameColors.BlueBottom)))
+                    .drawBehind {
+                        // Gloss across the top.
+                        drawRoundRect(
+                            brush = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.45f), Color.White.copy(alpha = 0.05f))),
+                            topLeft = Offset(size.width * 0.12f, size.height * 0.06f),
+                            size = Size(size.width * 0.76f, size.height * 0.36f),
+                            cornerRadius = CornerRadius(size.height * 0.2f),
+                        )
+                    }
+                    .border(2.dp, Color.White.copy(alpha = 0.6f), Corners.medium)
+            )
+        }
+        Row(Modifier.fillMaxWidth().height(DOCK_HEIGHT)) {
+            items.forEachIndexed { index, item ->
+                val selected = index == selectedIndex
+                val iconScale by animateFloatAsState(
+                    targetValue = if (selected) SELECTED_ICON_SCALE else 1f,
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                    label = "dock_icon_${item.label}",
+                )
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                     modifier = Modifier
                         .weight(1f)
-                        .semantics { role = Role.Button }
+                        .fillMaxHeight()
+                        .semantics {
+                            role = Role.Tab
+                            this.selected = selected
+                        }
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                             feedback.click()
                             item.onClick()
                         },
                 ) {
-                    if (item.isCenter) {
-                        // Leave room: the raised bubble is drawn on top.
-                        Spacer(Modifier.height(DOCK_ICON))
-                    } else {
-                        Box {
-                            Image(item.icon, contentDescription = null, modifier = Modifier.size(DOCK_ICON))
-                            if (item.showBadge) BadgeDot(Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-2).dp))
-                        }
+                    Box {
+                        Image(
+                            item.icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(DOCK_ICON).graphicsLayer {
+                                scaleX = iconScale
+                                scaleY = iconScale
+                            },
+                        )
+                        if (item.showBadge) BadgeDot(Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-2).dp))
                     }
-                    Text(item.label, style = GameTheme.type.caption, color = GameColors.TextPrimary)
+                    if (selected) {
+                        OutlinedText(item.label, GameTheme.type.caption, outlineColor = GameColors.BlueLip, maxLines = 1)
+                    } else {
+                        Text(item.label, style = GameTheme.type.caption, color = GameColors.TextSecondary, maxLines = 1)
+                    }
                 }
-            }
-        }
-        // Raised centre bubble.
-        val centerIndex = items.indexOfFirst { it.isCenter }
-        if (centerIndex >= 0) {
-            val center = items[centerIndex]
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .size(DOCK_CENTER)
-                    .clip(CircleShape)
-                    .background(Brush.verticalGradient(listOf(GameColors.BlueTop, GameColors.BlueBottom)))
-                    .border(3.dp, Color.White.copy(alpha = 0.8f), CircleShape)
-                    .clickable { feedback.click(); center.onClick() },
-            ) {
-                Image(center.icon, contentDescription = center.label, modifier = Modifier.size(DOCK_ICON + 6.dp))
             }
         }
     }
 }
 
 val TOP_BAR_HEIGHT = 64.dp
-private val DOCK_ICON = 34.dp
-private val DOCK_CENTER = 64.dp
-private val DOCK_RAISE = 18.dp
+private val DOCK_ICON = 30.dp
+private val DOCK_HEIGHT = 58.dp
+private val DOCK_INSET = 4.dp
+private const val SELECTED_ICON_SCALE = 1.15f
+
+/**
+ * How much of the bottom of the screen the bottom dock covers, including the
+ * system navigation bar under it; 0 when no dock is showing (e.g. in a round).
+ */
+val LocalBottomDockHeight = compositionLocalOf { 0.dp }
+
+/**
+ * Bottom padding for a screen's content: clears the bottom dock when it is
+ * showing, otherwise just the system navigation bar.
+ */
+@Composable
+fun Modifier.screenBottomPadding(): Modifier {
+    val dock = LocalBottomDockHeight.current
+    return if (dock > 0.dp) padding(bottom = dock) else navigationBarsPadding()
+}
