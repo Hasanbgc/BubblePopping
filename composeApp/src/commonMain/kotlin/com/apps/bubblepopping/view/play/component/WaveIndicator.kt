@@ -6,8 +6,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,20 +15,26 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.apps.bubblepopping.ui.components.ButtonColor
+import com.apps.bubblepopping.ui.components.EnamelTone
 import com.apps.bubblepopping.ui.components.GameProgressBar
 import com.apps.bubblepopping.ui.components.OutlinedText
 import com.apps.bubblepopping.ui.components.Ribbon
+import com.apps.bubblepopping.ui.components.enamelPill
 import com.apps.bubblepopping.ui.icons.GameIcons
 import com.apps.bubblepopping.ui.theme.BubbleTheme
-import com.apps.bubblepopping.ui.theme.Corners
 import com.apps.bubblepopping.ui.theme.GameColors
 import com.apps.bubblepopping.ui.theme.GameTheme
 import com.apps.bubblepopping.ui.theme.Spacing
 
-/** Endless, below the HUD: the current wave and how far through it the player is. */
+/**
+ * Endless, below the HUD: a light violet enamel pill with the wave number on a candy
+ * medallion at its left, then "WAVE 3" over a progress bar for the wave.
+ * During the calm between waves the medallion shows a bubble and the label reads
+ * "GET READY".
+ */
 @Composable
 fun WavePill(
     wave: Int,
@@ -38,20 +42,24 @@ fun WavePill(
     isCalm: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    Column(
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.s),
         modifier = modifier
-            .clip(Corners.medium)
-            .background(GameColors.Ink.copy(alpha = 0.5f))
-            .border(1.5.dp, GameColors.GlassRim, Corners.medium)
-            .padding(horizontal = Spacing.m, vertical = Spacing.xs),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+            .enamelPill(GameColors.VioletTop, EnamelTone.LIGHT)
+            .padding(start = PILL_INSET, end = Spacing.l, top = PILL_INSET, bottom = PILL_INSET),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-            Image(GameIcons.Bubble, contentDescription = null, modifier = Modifier.size(18.dp))
-            OutlinedText(if (isCalm) "GET READY" else "WAVE $wave", GameTheme.type.caption)
+        Medallion(ButtonColor.VIOLET) {
+            if (isCalm) {
+                Image(GameIcons.Bubble, contentDescription = null, modifier = Modifier.size(MEDALLION_SIZE * 0.6f))
+            } else {
+                OutlinedText("$wave", GameTheme.type.headline, outlineColor = GameColors.VioletLip, maxLines = 1)
+            }
         }
-        GameProgressBar(progress, modifier = Modifier.width(PROGRESS_BAR_WIDTH), height = 8.dp)
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+            OutlinedText(if (isCalm) "GET READY" else "WAVE $wave", GameTheme.type.label, maxLines = 1)
+            GameProgressBar(progress, modifier = Modifier.width(PROGRESS_BAR_WIDTH), height = PROGRESS_BAR_HEIGHT)
+        }
     }
 }
 
@@ -69,14 +77,17 @@ fun WaveBanner(
         modifier = modifier,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
-            Ribbon("Wave ${wave - 1} clear!")
+            //Ribbon("Wave ${wave - 1} clear!")
             OutlinedText("WAVE $wave", GameTheme.type.display.copy(fontSize = GameTheme.type.display.fontSize * BANNER_SCALE), color = GameColors.Gold, outlineWidth = 4.dp)
             OutlinedText("Faster bubbles incoming!", GameTheme.type.label)
         }
     }
 }
 
-private val PROGRESS_BAR_WIDTH = 110.dp
+/** Gap between the pill's rim and the medallion (and top / bottom). */
+private val PILL_INSET = 5.dp
+private val PROGRESS_BAR_WIDTH = 120.dp
+private val PROGRESS_BAR_HEIGHT = 10.dp
 /** The wave number is the biggest text in the game. */
 private const val BANNER_SCALE = 1.4f
 
@@ -84,7 +95,10 @@ private const val BANNER_SCALE = 1.4f
 @Composable
 fun WavePillPreview() {
     BubbleTheme {
-        WavePill(wave = 3, progress = 0.4f, isCalm = false)
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.m), modifier = Modifier.padding(Spacing.l)) {
+            WavePill(wave = 3, progress = 0.4f, isCalm = false)
+            WavePill(wave = 4, progress = 0f, isCalm = true)
+        }
     }
 }
 

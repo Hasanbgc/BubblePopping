@@ -1,7 +1,9 @@
 package com.apps.bubblepopping.view.play
 
+import com.apps.bubblepopping.view.play.component.GoalBanner
+import kotlinx.coroutines.delay
+import com.apps.bubblepopping.ui.components.PanelDivider
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -13,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -35,7 +36,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.LayoutDirection
@@ -61,7 +61,6 @@ import com.apps.bubblepopping.view.play.component.WavePill
 import androidx.compose.foundation.layout.statusBarsPadding
 import kotlinx.coroutines.launch
 import com.apps.bubblepopping.heart
-import com.apps.bubblepopping.play_screen_bg
 import com.apps.bubblepopping.skull
 import com.apps.bubblepopping.view.BubbleGameViewModel
 import com.apps.bubblepopping.view.play.component.BubbleType
@@ -74,8 +73,6 @@ import com.apps.bubblepopping.view.play.component.drawConfetti
 import com.apps.bubblepopping.view.StingColor
 import com.apps.bubblepopping.view.play.component.BubbleIcons
 import com.apps.bubblepopping.view.FreezeColor
-import com.apps.bubblepopping.view.worldMapColors
-import com.apps.bubblepopping.view.playBackgroundColors
 import com.apps.bubblepopping.game.GameMode
 import com.apps.bubblepopping.audio.GameMusic
 import com.apps.bubblepopping.data.prefs.SettingsRepository
@@ -83,15 +80,11 @@ import com.apps.bubblepopping.view.settings.InGameSettingsDialog
 import com.apps.bubblepopping.ui.components.ButtonColor
 import androidx.compose.foundation.layout.fillMaxWidth
 import com.apps.bubblepopping.ui.components.ButtonSize
-import com.apps.bubblepopping.ui.components.DialogButtons
 import com.apps.bubblepopping.ui.components.GameButton
 import com.apps.bubblepopping.ui.components.GameDialogCard
-import com.apps.bubblepopping.ui.components.OutlinedText
 import com.apps.bubblepopping.ui.components.OverlayScrim
 import com.apps.bubblepopping.ui.components.formatCount
 import com.apps.bubblepopping.ui.icons.GameIcons
-import com.apps.bubblepopping.ui.theme.GameColors
-import com.apps.bubblepopping.ui.theme.GameTheme
 import com.apps.bubblepopping.ui.theme.Spacing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -115,6 +108,8 @@ private val POP_SAMPLES = listOf("files/pop_1.mp3", "files/pop_2.mp3", "files/po
 
 /** Breaking a combo this long or longer plays the combo-break sound. */
 private const val COMBO_BREAK_SOUND_MIN = 3
+/** How long a stage's goal is shown big as the round starts. */
+private const val GOAL_BANNER_MS = 2_200L
 
 /** Each result star plays a pop pitched as if at this many more combo steps. */
 private const val STAR_PITCH_STEP = 4
@@ -125,8 +120,6 @@ private const val MUSIC_INTENSITY_FADE_MS = 1_500
 /** Horizontal movement after a missed press that turns it into a wind swipe. */
 private val SWIPE_THRESHOLD = 24.dp
 
-/** Opacity of the world colour wash over the play background (worlds after Sky). */
-private const val WORLD_TINT_ALPHA = 0.35f
 private const val FREEZE_TINT_ALPHA = 0.12f
 private const val STING_TINT_ALPHA = 0.15f
 
@@ -180,6 +173,15 @@ fun BubblePoppingScreen(
     val showTutorial = isTutorialStage && !tutorialFinished && storedSettings?.tutorialSeen == false
     val holdRound = isTutorialStage && !tutorialFinished && (storedSettings == null || showTutorial)
     val currentHoldRound by rememberUpdatedState(holdRound)
+    // A stage's goal is shown big for a moment whenever a round starts (after the tutorial).
+    var goalBannerVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(viewModel.isGameOver, holdRound) {
+        if (viewModel.stage != null && !viewModel.isGameOver && !holdRound) {
+            goalBannerVisible = true
+            delay(GOAL_BANNER_MS)
+            goalBannerVisible = false
+        }
+    }
     var showSettings by remember { mutableStateOf(false) }
 
     var elapsedTime by remember { mutableStateOf(0f) }
@@ -348,28 +350,12 @@ fun BubblePoppingScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()){
-        Image(
-            painter = painterResource(Res.drawable.play_screen_bg),
-            contentDescription = "background_image",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
+        // The world's colours and scenery. Outside stages the equipped background
+        // cosmetic brings its own.
+        PlayBackdrop(
+            world = viewModel.world,
+            backgroundId = settings.equippedBackground.takeIf { viewModel.stage == null },
         )
-        // Later worlds tint the background with their own colours. Outside stages
-        // the equipped background cosmetic paints over the default daylight.
-        val cosmeticBackground = playBackgroundColors(settings.equippedBackground).takeIf { viewModel.stage == null }
-        if (cosmeticBackground != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Brush.verticalGradient(cosmeticBackground))
-            )
-        } else if (viewModel.world != World.SKY) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Brush.verticalGradient(worldMapColors(viewModel.world).map { it.copy(alpha = WORLD_TINT_ALPHA) }))
-            )
-        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -540,6 +526,14 @@ fun BubblePoppingScreen(
                         .statusBarsPadding()
                         .padding(top = HUD_CONTENT_HEIGHT + 4.dp),
                 )
+                // The goal in full, big in the middle as the round starts.
+                viewModel.objectives.firstOrNull()?.let { goal ->
+                    GoalBanner(
+                        text = goal.objective.description,
+                        visible = goalBannerVisible,
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+                }
             } else {
                 // ── Endless: wave progress under the HUD, banner between waves ──
                 WavePill(
@@ -564,9 +558,6 @@ fun BubblePoppingScreen(
                 if (stage != null && stageResult != null) {
                     val isDaily = viewModel.mode is GameMode.DailyStage
                     StageResultOverlay(
-                        isBossStage = stage.boss != null,
-                        stageId     = stage.id,
-                        stageLabel  = if (isDaily) "DAILY STAGE" else "STAGE ${stage.id}",
                         backLabel   = if (isDaily) "Today" else "Stages",
                         rewards     = viewModel.rewards,
                         result      = stageResult,
@@ -646,16 +637,15 @@ private fun PauseOverlay(
     // Tapping the dim area outside the card also resumes.
     OverlayScrim(modifier = modifier, onScrimClick = onResume) {
         GameDialogCard(title = "Paused", onClose = onResume) {
-            Text("Score", style = GameTheme.type.label, color = GameColors.TextSecondary)
-            OutlinedText(formatCount(score), GameTheme.type.display, outlineWidth = 3.dp)
-            DialogButtons {
-                GameButton("Resume", onClick = onResume, size = ButtonSize.LARGE, icon = GameIcons.Play, modifier = Modifier.fillMaxWidth())
-                GameButton("Restart", onClick = onRestart, color = ButtonColor.GLASS, icon = GameIcons.Restart, modifier = Modifier.fillMaxWidth())
-                GameButton("Settings", onClick = onSettings, color = ButtonColor.GLASS, icon = GameIcons.Gear, modifier = Modifier.fillMaxWidth())
+            ScorePlaque(score = formatCount(score), celebrate = false)
+            GameButton("Resume", onClick = onResume, size = ButtonSize.LARGE, icon = GameIcons.Play, modifier = Modifier.fillMaxWidth())
+            // Secondary actions under a divider, as round buttons with labels, so Resume stays the obvious one.
+            PanelDivider()
+            RoundActions {
+                RoundAction(GameIcons.Restart, "Restart", ButtonColor.VIOLET, onRestart)
+                RoundAction(GameIcons.Gear, "Settings", ButtonColor.GLASS, onSettings)
                 // iOS has no system back button, so quitting mid-round needs a button.
-                if (onQuit != null) {
-                    GameButton(quitLabel, onClick = onQuit, color = ButtonColor.RED, icon = GameIcons.Home, modifier = Modifier.fillMaxWidth())
-                }
+                if (onQuit != null) RoundAction(GameIcons.Home, quitLabel, ButtonColor.RED, onQuit)
             }
         }
     }

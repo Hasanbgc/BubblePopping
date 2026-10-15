@@ -29,7 +29,9 @@ import com.apps.bubblepopping.ui.components.GameButton
 import com.apps.bubblepopping.ui.components.GameDialog
 import com.apps.bubblepopping.ui.components.ToggleRow
 import com.apps.bubblepopping.ui.components.GameScreen
-import com.apps.bubblepopping.ui.components.GlassPanel
+import com.apps.bubblepopping.ui.components.EnamelPanel
+import com.apps.bubblepopping.ui.components.PanelDivider
+import com.apps.bubblepopping.ui.components.PanelSectionTitle
 import com.apps.bubblepopping.view.meta.Hint
 import com.apps.bubblepopping.ui.theme.BubbleTheme
 import com.apps.bubblepopping.ui.icons.GameIcons
@@ -101,14 +103,18 @@ fun SettingsScreen(
     var confirmReset by remember { mutableStateOf(false) }
     var resetDone by remember { mutableStateOf(false) }
 
+    // One panel; sections are split by engraved dividers.
     GameScreen(title = "Settings", onBack = onBack) {
-        GlassPanel(Modifier.fillMaxWidth(), title = "Sound & controls", icon = GameIcons.Sound) {
+        EnamelPanel(Modifier.fillMaxWidth()) {
+            PanelSectionTitle("Sound & controls")
             SettingsToggles(settings, Toggle.AUDIO_AND_CONTROLS, onToggle)
-        }
-        GlassPanel(Modifier.fillMaxWidth(), title = "Accessibility", icon = GameIcons.Target) {
+
+            PanelDivider()
+            PanelSectionTitle("Accessibility")
             SettingsToggles(settings, Toggle.ACCESSIBILITY, onToggle)
-        }
-        GlassPanel(Modifier.fillMaxWidth(), title = "Help", icon = GameIcons.Bubble) {
+
+            PanelDivider()
+            PanelSectionTitle("Help")
             Hint(
                 if (settings.tutorialSeen) "Replay the tutorial at the start of stage 1."
                 else "The tutorial will play at the start of stage 1."
@@ -121,8 +127,9 @@ fun SettingsScreen(
                 enabled = settings.tutorialSeen,
                 modifier = Modifier.fillMaxWidth(),
             )
-        }
-        GlassPanel(Modifier.fillMaxWidth(), title = "Progress", icon = GameIcons.Skull) {
+
+            PanelDivider()
+            PanelSectionTitle("Progress")
             Hint(
                 if (resetDone) "Progress reset."
                 else "Deletes stars, scores, coins, missions, cosmetics and achievements. Settings and your name stay."

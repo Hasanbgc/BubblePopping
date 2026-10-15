@@ -80,6 +80,8 @@ fun DrawScope.drawSkinPreview(skinId: String, center: Offset, radius: Float, rot
 
 /** Draws a pop burst in the equipped [effectId] style. */
 fun DrawScope.drawPopAnimation(anim: PopAnimation, effectId: String = Cosmetics.RAINBOW.id) {
+    // The bubble's own burst (flash, droplets, film shards), then the equipped style on top.
+    drawPopBurst(anim)
     when (effectId) {
         "pop_confetti" -> drawConfettiPop(anim)
         "pop_stars" -> drawShapePop(anim, PopShape.STAR)

@@ -36,7 +36,7 @@ val LocalPlayerResources = compositionLocalOf { PlayerResources() }
 @Composable
 fun CoinCounter(modifier: Modifier = Modifier) {
     val coins = LocalPlayerResources.current.coins ?: return
-    ResourcePill(GameIcons.Coin, formatCount(coins), modifier)
+    ResourcePill(GameIcons.Coin, formatCount(coins), modifier, tint = GameColors.PillCoin)
 }
 
 /** Star counter for a top bar; with [showMax] it reads "34/120". */
@@ -45,7 +45,7 @@ fun StarCounter(modifier: Modifier = Modifier, showMax: Boolean = false) {
     val resources = LocalPlayerResources.current
     val stars = resources.stars ?: return
     val text = if (showMax && resources.maxStars != null) "$stars/${resources.maxStars}" else formatCount(stars)
-    ResourcePill(GameIcons.Star, text, modifier)
+    ResourcePill(GameIcons.Star, text, modifier, tint = GameColors.PillStar)
 }
 
 /** 1240 → "1,240". */

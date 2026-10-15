@@ -26,7 +26,19 @@ data class Cosmetic(
     val isFree: Boolean get() = price == null && bossStageId == null
     /** Bought items can also come out of star chests; boss rewards can't. */
     val inChests: Boolean get() = price != null
+    val rarity: CosmeticRarity get() = when {
+        bossStageId != null -> CosmeticRarity.LEGENDARY
+        price == null -> CosmeticRarity.COMMON
+        price >= EPIC_PRICE -> CosmeticRarity.EPIC
+        else -> CosmeticRarity.RARE
+    }
 }
+
+/** How special a cosmetic is, shown on its shop card: free, bought (by price), or a boss reward. */
+enum class CosmeticRarity { COMMON, RARE, EPIC, LEGENDARY }
+
+/** Bought cosmetics from this price up count as [CosmeticRarity.EPIC]. */
+private const val EPIC_PRICE = 400
 
 object Cosmetics {
 

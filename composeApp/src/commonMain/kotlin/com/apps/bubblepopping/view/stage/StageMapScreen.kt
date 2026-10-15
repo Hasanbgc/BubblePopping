@@ -1,5 +1,23 @@
 package com.apps.bubblepopping.view.stage
 
+import com.apps.bubblepopping.view.drawScenery
+import com.apps.bubblepopping.view.SceneArea
+import com.apps.bubblepopping.ui.components.TOP_BAR_HEIGHT
+import com.apps.bubblepopping.ui.components.LocalBottomDockHeight
+import kotlin.random.Random
+import com.apps.bubblepopping.ui.components.EnamelTone
+import kotlin.math.cos
+import kotlin.math.PI
+import com.apps.bubblepopping.ui.components.enamelPill
+import com.apps.bubblepopping.ui.components.candyFace
+import com.apps.bubblepopping.ui.components.ResourcePill
+import com.apps.bubblepopping.ui.components.ButtonColor
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -21,7 +39,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,7 +46,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -51,17 +67,14 @@ import com.apps.bubblepopping.data.StageProgress
 import com.apps.bubblepopping.stage.StageCatalog
 import com.apps.bubblepopping.stage.StageConfig
 import com.apps.bubblepopping.stage.World
-import com.apps.bubblepopping.view.MapCloudColor
 import com.apps.bubblepopping.view.MapRoadColor
 import com.apps.bubblepopping.view.MapRoadDashColor
 import com.apps.bubblepopping.view.MapRoadDoneColor
 import com.apps.bubblepopping.ui.components.GameTopBar
-import com.apps.bubblepopping.ui.components.screenBottomPadding
 import com.apps.bubblepopping.ui.components.LocalUiFeedback
 import com.apps.bubblepopping.ui.components.OutlinedText
 import com.apps.bubblepopping.ui.icons.GameIcons
 import com.apps.bubblepopping.ui.theme.BubbleTheme
-import com.apps.bubblepopping.ui.theme.Corners
 import com.apps.bubblepopping.ui.theme.GameColors
 import com.apps.bubblepopping.ui.theme.GameTheme
 import com.apps.bubblepopping.ui.theme.Spacing
@@ -83,19 +96,36 @@ import kotlin.math.sin
 @Composable
 fun StageMapScreenRoot(
     progressRepository: ProgressRepository,
-    onStageSelected: (Int) -> Unit,
+    onPlayStage: (Int) -> Unit,
     onBack: () -> Unit,
+    /** Opens with this stage's card showing (e.g. after "Next stage"). */
+    initialIntroStageId: Int? = null,
 ) {
     // null until the first load, so the map doesn't scroll to stage 1 and then jump.
     val progress by remember(progressRepository) { progressRepository.stageProgress() }
         .collectAsStateWithLifecycle(initialValue = null)
+    // The tapped stage, whose card is showing over the map.
+    var introStageId by rememberSaveable { mutableStateOf(initialIntroStageId) }
 
     StageMapScreen(
         stages = StageCatalog.stages,
         progress = progress,
-        onStageSelected = onStageSelected,
+        onStageSelected = { introStageId = it },
         onBack = onBack,
     )
+
+    introStageId?.let { stageId ->
+        StageIntroDialog(
+            stage = StageCatalog.stage(stageId),
+            progress = progress?.get(stageId),
+            onPlay = {
+                // Closed first, so coming back from the round shows the map.
+                introStageId = null
+                onPlayStage(stageId)
+            },
+            onDismiss = { introStageId = null },
+        )
+    }
 }
 
 /** [progress] is null while loading. */
@@ -106,25 +136,27 @@ fun StageMapScreen(
     onStageSelected: (Int) -> Unit,
     onBack: () -> Unit,
 ) {
+    // The map runs edge to edge; the top bar (and the app's bottom dock) float over it.
+    // The map's own top and bottom margins keep every stage reachable from under them.
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(GameColors.Scrim)
+            .background(LOADING_BACKGROUND),
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize().screenBottomPadding(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            GameTopBar(title = "Stages", onBack = onBack, actions = { StarCounter(showMax = true) })
-            if (progress != null) {
-                StageMap(
-                    stages = stages,
-                    progress = progress,
-                    onStageSelected = onStageSelected,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+        if (progress != null) {
+            StageMap(
+                stages = stages,
+                progress = progress,
+                onStageSelected = onStageSelected,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
+        GameTopBar(
+            title = "Stages",
+            onBack = onBack,
+            actions = { StarCounter(showMax = true) },
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
     }
 }
 
@@ -142,7 +174,11 @@ private fun StageMap(
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val layout = remember(stages, maxWidth) { MapLayout(stages, maxWidth) }
+        // The map runs under the top bar and the bottom dock, so its margins grow by their height.
+        val dockHeight = LocalBottomDockHeight.current
+        val layout = remember(stages, maxWidth, dockHeight) {
+            MapLayout(stages, maxWidth, bottomMargin = BOTTOM_PADDING + dockHeight, topMargin = TOP_PADDING + TOP_BAR_HEIGHT)
+        }
         val viewportHeight = maxHeight
         val scrollState = rememberScrollState()
         val density = LocalDensity.current
@@ -170,7 +206,7 @@ private fun StageMap(
             ) {
                 Canvas(modifier = Modifier.matchParentSize()) {
                     drawWorldBackgrounds(layout)
-                    drawClouds(layout)
+                    drawWorldScenery(layout)
                     drawRoad(layout, unlockedCount = stages.count { StageCatalog.isUnlocked(it.id, progress) })
                 }
 
@@ -225,7 +261,12 @@ private fun StageMap(
  * stage is [NODE_SPACING] higher, swinging left and right along a sine wave,
  * with an extra [WORLD_GAP] wherever a new world starts.
  */
-private class MapLayout(private val stages: List<StageConfig>, width: Dp) {
+private class MapLayout(
+    private val stages: List<StageConfig>,
+    width: Dp,
+    private val bottomMargin: Dp,
+    topMargin: Dp,
+) {
     private val centerX = width / 2
     private val amplitude = (width / 2 - NODE_SIZE) * 0.8f
 
@@ -238,14 +279,14 @@ private class MapLayout(private val stages: List<StageConfig>, width: Dp) {
         }
     }
 
-    val height: Dp = BOTTOM_PADDING +
+    val height: Dp = bottomMargin +
             NODE_SPACING * (stages.size - 1) +
             WORLD_GAP * worldBreaks.last() +
-            TOP_PADDING
+            topMargin
 
     fun nodeCenter(index: Int) = DpOffset(
         x = centerX + amplitude * sin(index * WAVE_STEP),
-        y = height - BOTTOM_PADDING - NODE_SPACING * index - WORLD_GAP * worldBreaks[index],
+        y = height - bottomMargin - NODE_SPACING * index - WORLD_GAP * worldBreaks[index],
     )
 
     val teaserCenterY: Dp get() = nodeCenter(stages.lastIndex).y - TEASER_ABOVE_LAST_NODE
@@ -275,8 +316,13 @@ private class MapLayout(private val stages: List<StageConfig>, width: Dp) {
 // Drawing
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Each world's section in its colours, with a soft blend where one world meets
+ * the next instead of a hard line.
+ */
 private fun DrawScope.drawWorldBackgrounds(layout: MapLayout) {
-    for ((world, top, bottom) in layout.worldSections()) {
+    val sections = layout.worldSections()
+    for ((world, top, bottom) in sections) {
         val topPx = top.toPx()
         val bottomPx = bottom.toPx()
         drawRect(
@@ -285,21 +331,37 @@ private fun DrawScope.drawWorldBackgrounds(layout: MapLayout) {
             size = Size(size.width, bottomPx - topPx),
         )
     }
-}
-
-/** Soft cloud puffs at fixed pseudo-random spots, so they don't move between visits. */
-private fun DrawScope.drawClouds(layout: MapLayout) {
-    val step = CLOUD_STEP.toPx()
-    val count = (layout.height.toPx() / step).toInt()
-    for (i in 0..count) {
-        val x = size.width * ((i * 37 % 100) / 100f)
-        val y = i * step + step / 3
-        val r = (26 + i * 13 % 20).dp.toPx()
-        drawCircle(MapCloudColor, r, Offset(x, y))
-        drawCircle(MapCloudColor, r * 0.75f, Offset(x + r * 0.9f, y + r * 0.2f))
-        drawCircle(MapCloudColor, r * 0.6f, Offset(x - r * 0.85f, y + r * 0.25f))
+    // Blend each border: the upper world's bottom colour fades into the lower world's top colour.
+    val blend = WORLD_BLEND.toPx()
+    sections.zipWithNext().forEach { (lower, upper) ->
+        val edge = lower.second.toPx()
+        drawRect(
+            brush = Brush.verticalGradient(
+                listOf(worldMapColors(upper.first).last(), worldMapColors(lower.first).first()),
+                startY = edge - blend,
+                endY = edge + blend,
+            ),
+            topLeft = Offset(0f, edge - blend),
+            size = Size(size.width, blend * 2f),
+        )
     }
 }
+
+/**
+ * Each world's scenery, at fixed seeded spots so it never moves between visits:
+ * Sky — sun glow, fluffy clouds, bubble rings; Ocean — light rays, wave lines,
+ * rising bubbles; Space — nebulae, stars, a ringed planet; Candy — polka dots,
+ * sprinkles, lollipop swirls.
+ */
+private fun DrawScope.drawWorldScenery(layout: MapLayout) {
+    for ((world, top, bottom) in layout.worldSections()) {
+        val area = SceneArea(top.toPx(), bottom.toPx(), size.width)
+        if (area.height <= 0f) continue
+        val random = Random(SCENERY_SEED + world.ordinal)
+        drawScenery(world, area, random)
+    }
+}
+
 
 /**
  * The road through every stage: a wide soft band with dashes on top. The
@@ -321,15 +383,16 @@ private fun DrawScope.drawRoad(layout: MapLayout, unlockedCount: Int) {
 
     val dashes = PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 10.dp.toPx()))
     val fullRoad = pathThrough(centers)
+    // A darker edge under the road, so it reads as a raised path.
+    drawPath(fullRoad, GameColors.ButtonOutline.copy(alpha = ROAD_EDGE_ALPHA), style = Stroke(width = 28.dp.toPx(), cap = StrokeCap.Round))
     drawPath(fullRoad, MapRoadColor, style = Stroke(width = 22.dp.toPx(), cap = StrokeCap.Round))
     drawPath(fullRoad, MapRoadDashColor, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, pathEffect = dashes))
 
     if (unlockedCount >= 2) {
-        drawPath(
-            pathThrough(centers.take(unlockedCount)),
-            MapRoadDoneColor,
-            style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round, pathEffect = dashes),
-        )
+        val done = pathThrough(centers.take(unlockedCount))
+        // Soft gold glow under the gold dashes.
+        drawPath(done, GameColors.Gold.copy(alpha = ROAD_GLOW_ALPHA), style = Stroke(width = 12.dp.toPx(), cap = StrokeCap.Round))
+        drawPath(done, MapRoadDoneColor, style = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round, pathEffect = dashes))
     }
 }
 
@@ -337,6 +400,13 @@ private fun DrawScope.drawRoad(layout: MapLayout, unlockedCount: Int) {
 // Nodes & banners
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * A stage on the map: a candy bubble (blue for the next stage, violet once
+ * cleared, slate while locked) with a dark outline and a soft shadow. Cleared
+ * stages get a gold ring, the next stage pulses with a glow, and a boss stage is
+ * bigger with a slowly turning gold starburst inside, behind its crown. Its stars sit on a small
+ * pill underneath.
+ */
 @Composable
 private fun StageNode(
     stage: StageConfig,
@@ -345,67 +415,125 @@ private fun StageNode(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val isBoss = stage.boss != null
+    val transition = rememberInfiniteTransition(label = "stage_node")
     // The stage to play next gently pulses.
     val pulse = if (state == NodeState.CURRENT) {
-        val transition = rememberInfiniteTransition(label = "current_stage")
         transition.animateFloat(
             initialValue = 1f,
-            targetValue = 1.12f,
+            targetValue = 1.1f,
             animationSpec = infiniteRepeatable(tween(durationMillis = 700), RepeatMode.Reverse),
             label = "pulse",
         ).value
     } else 1f
+    // Only bosses turn a starburst; read only while drawing, so it never recomposes the node.
+    val spin = if (isBoss) {
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(BURST_TURN_MS, easing = LinearEasing), RepeatMode.Restart),
+            label = "burst_spin",
+        )
+    } else null
     val feedback = LocalUiFeedback.current
-
-    // Candy bubbles: blue for the next stage, violet for cleared ones, dark glass when locked.
-    val (top, bottom) = when (state) {
-        NodeState.CURRENT -> GameColors.BlueTop to GameColors.BlueBottom
-        NodeState.DONE -> GameColors.VioletTop to GameColors.VioletBottom
-        NodeState.LOCKED -> GameColors.Ink.copy(alpha = 0.55f) to GameColors.Ink.copy(alpha = 0.75f)
+    val color = when (state) {
+        NodeState.CURRENT -> ButtonColor.BLUE
+        NodeState.DONE -> ButtonColor.VIOLET
+        NodeState.LOCKED -> ButtonColor.SLATE
     }
-    val rim = when (state) {
-        NodeState.CURRENT -> Color.White
-        NodeState.DONE -> GameColors.Gold
-        NodeState.LOCKED -> GameColors.GlassRim.copy(alpha = 0.5f)
-    }
+    val bubbleSize = if (isBoss) BOSS_NODE_SIZE else NODE_SIZE
 
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .scale(pulse)
-                .size(NODE_SIZE)
-                .clip(CircleShape)
-                .background(Brush.verticalGradient(listOf(top, bottom)))
-                .drawBehind {
-                    // Gloss highlight across the top.
-                    drawOval(
-                        color = Color.White.copy(alpha = 0.35f),
-                        topLeft = Offset(size.width * 0.2f, size.height * 0.08f),
-                        size = Size(size.width * 0.6f, size.height * 0.3f),
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(NODE_SIZE)) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .requiredSize(bubbleSize)
+                    .scale(pulse)
+                    .drawBehind {
+                        val r = size.minDimension / 2f
+                        if (state == NodeState.CURRENT) {
+                            drawCircle(Brush.radialGradient(listOf(GameColors.BlueTop.copy(alpha = 0.6f), Color.Transparent), center, r * 1.6f), r * 1.6f)
+                        }
+                        // Soft shadow on the ground, then the dark outline ring.
+                        drawOval(
+                            GameColors.ButtonShadow,
+                            topLeft = Offset(size.width * 0.12f, size.height * 0.78f),
+                            size = Size(size.width * 0.76f, size.height * 0.32f),
+                        )
+                        val outline = NODE_OUTLINE.toPx()
+                        drawCircle(GameColors.ButtonOutline, radius = r + outline / 2f, style = Stroke(outline))
+                    }
+                    .candyFace(color, CircleShape)
+                    .then(
+                        if (state == NodeState.DONE) {
+                            Modifier.border(NODE_GOLD_RING, Brush.verticalGradient(listOf(GameColors.GoldTop, GameColors.GoldLip)), CircleShape)
+                        } else Modifier
                     )
+                    .semantics { contentDescription = "Stage ${stage.id}" + (if (isBoss) ", boss" else "") + if (state == NodeState.LOCKED) ", locked" else "" }
+                    .clickable(enabled = state != NodeState.LOCKED) {
+                        feedback.click()
+                        onClick()
+                    },
+            ) {
+                // Boss: a gold starburst turning inside the bubble, behind the crown (or lock).
+                if (spin != null) {
+                    Canvas(Modifier.matchParentSize()) {
+                        val r = size.minDimension / 2f
+                        rotate(spin.value) { drawStarburst(r * BURST_REACH, r * BURST_INNER, dimmed = state == NodeState.LOCKED) }
+                    }
                 }
-                .border(3.dp, rim, CircleShape)
-                .semantics { contentDescription = "Stage ${stage.id}" + if (state == NodeState.LOCKED) ", locked" else "" }
-                .clickable(enabled = state != NodeState.LOCKED) {
-                    feedback.click()
-                    onClick()
-                },
-        ) {
-            when {
-                state == NodeState.LOCKED -> Image(GameIcons.Lock, contentDescription = null, modifier = Modifier.size(NODE_ICON))
-                stage.boss != null -> Image(GameIcons.Crown, contentDescription = null, modifier = Modifier.size(NODE_ICON))
-                else -> OutlinedText(stage.id.toString(), GameTheme.type.title, outlineWidth = 2.5.dp)
+                when {
+                    state == NodeState.LOCKED -> Image(GameIcons.Lock, contentDescription = null, modifier = Modifier.size(NODE_ICON))
+                    isBoss -> Image(GameIcons.Crown, contentDescription = null, modifier = Modifier.size(BOSS_ICON))
+                    else -> OutlinedText(stage.id.toString(), GameTheme.type.title, outlineColor = color.lip, outlineWidth = 2.5.dp)
+                }
             }
         }
         if (state != NodeState.LOCKED) {
-            StarRow(earned = stars, total = stage.maxStars, starSize = 16.dp, modifier = Modifier.padding(top = Spacing.xs))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .padding(top = if (isBoss) Spacing.m else Spacing.s)
+                    .enamelPill(GameColors.PillStar)
+                    .padding(horizontal = Spacing.s, vertical = 2.dp),
+            ) {
+                StarRow(earned = stars, total = stage.maxStars, starSize = STAR_SIZE)
+            }
         }
     }
 }
 
 /**
- * "Sky World". When [starsNeeded] is set the world is still locked and shows
+ * A faint starburst inside a boss stage, behind its crown: [BURST_POINTS] points
+ * between [inner] and [outer], a light gold wash fading out towards the tips with
+ * no outline — barely there, just enough to mark the stage as special. Fainter
+ * still while the boss is [dimmed] (locked).
+ */
+private fun DrawScope.drawStarburst(outer: Float, inner: Float, dimmed: Boolean) {
+    val path = Path()
+    for (i in 0 until BURST_POINTS * 2) {
+        val r = if (i % 2 == 0) outer else inner
+        val angle = (i * 180f / BURST_POINTS - 90f) * (PI.toFloat() / 180f)
+        val x = center.x + r * cos(angle)
+        val y = center.y + r * sin(angle)
+        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    path.close()
+    val strength = if (dimmed) BURST_ALPHA_LOCKED else BURST_ALPHA
+    drawPath(
+        path,
+        Brush.radialGradient(
+            listOf(GameColors.CardGlint.copy(alpha = strength), GameColors.GoldTop.copy(alpha = strength * 0.4f)),
+            center = center,
+            radius = outer,
+        ),
+    )
+}
+
+/**
+ * "Sky World" on a compact light-cyan enamel name plate. When
+ * [starsNeeded] is set the world is still locked, and a pill under the plate shows
  * its star requirement; [comingSoon] marks a world without stages yet.
  */
 @Composable
@@ -417,31 +545,44 @@ private fun WorldBanner(
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = modifier
-            .height(BANNER_HALF_HEIGHT * 2)
-            .clip(Corners.large)
-            .background(GameColors.Ink.copy(alpha = 0.55f))
-            .border(2.dp, GameColors.GlassRim, Corners.large)
-            .padding(horizontal = Spacing.xl),
+        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+        modifier = modifier,
     ) {
-        OutlinedText("${world.displayName} World", GameTheme.type.headline)
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .height(PLATE_HEIGHT)
+                .enamelPill(GameColors.OceanTint, EnamelTone.OCEAN)
+                .padding(horizontal = Spacing.l),
+        ) {
+            OutlinedText("${world.displayName} World", GameTheme.type.headline, maxLines = 1)
+        }
         if (starsNeeded != null) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                Image(if (comingSoon) GameIcons.Clock else GameIcons.Lock, contentDescription = null, modifier = Modifier.size(14.dp))
-                Image(GameIcons.Star, contentDescription = null, modifier = Modifier.size(14.dp))
-                Text(
-                    text = if (comingSoon) "Coming soon · $starsNeeded needed" else "$starsNeeded needed",
-                    style = GameTheme.type.caption,
-                    color = GameColors.Gold,
-                )
-            }
+            ResourcePill(
+                icon = if (comingSoon) GameIcons.Clock else GameIcons.Lock,
+                value = if (comingSoon) "Coming soon · $starsNeeded ★" else "$starsNeeded ★ needed",
+                tint = GameColors.PillStar,
+            )
         }
     }
 }
 
 private val NODE_ICON = 34.dp
 private val NODE_SIZE = 68.dp
+private val NODE_OUTLINE = 2.5.dp
+private val NODE_GOLD_RING = 3.dp
+/** Boss stages are bigger, with a bigger crown. */
+private val BOSS_NODE_SIZE = 84.dp
+private val BOSS_ICON = 44.dp
+private val STAR_SIZE = 14.dp
+private const val BURST_POINTS = 14
+/** Starburst point tips and notches, as fractions of the boss bubble's radius (inside it). */
+private const val BURST_REACH = 0.92f
+private const val BURST_INNER = 0.66f
+private const val BURST_TURN_MS = 16_000
+/** How visible the starburst is: faint on purpose. */
+private const val BURST_ALPHA = 0.22f
+private const val BURST_ALPHA_LOCKED = 0.1f
 private val NODE_SPACING = 130.dp
 /** Extra room between worlds, for the banner. */
 private val WORLD_GAP = 120.dp
@@ -450,11 +591,18 @@ private val BOTTOM_PADDING = 190.dp
 /** Room above the last stage for the next-world teaser. */
 private val TOP_PADDING = 240.dp
 private val BANNER_BELOW_NODE = 100.dp
-private val BANNER_HALF_HEIGHT = 28.dp
+private val BANNER_HALF_HEIGHT = 20.dp
+private val PLATE_HEIGHT = 40.dp
 private val TEASER_ABOVE_LAST_NODE = 130.dp
-private val CLOUD_STEP = 170.dp
+/** Height of the soft blend where one world meets the next. */
+private val WORLD_BLEND = 90.dp
+private const val SCENERY_SEED = 7
+/** Shown for the moment before progress loads; close to the map's own colours. */
+private val LOADING_BACKGROUND = Color(0xFF0D47A1)
 /** Radians between consecutive stages on the left–right sine wave. */
 private const val WAVE_STEP = 0.95f
+private const val ROAD_EDGE_ALPHA = 0.25f
+private const val ROAD_GLOW_ALPHA = 0.3f
 
 @Preview
 @Composable

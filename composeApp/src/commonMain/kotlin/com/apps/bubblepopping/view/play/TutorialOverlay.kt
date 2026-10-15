@@ -1,5 +1,14 @@
 package com.apps.bubblepopping.view.play
 
+import com.apps.bubblepopping.ui.theme.Corners
+import com.apps.bubblepopping.ui.components.goldInset
+import com.apps.bubblepopping.ui.components.candyFace
+import com.apps.bubblepopping.ui.components.GameDialogCard
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.border
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -13,7 +22,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -61,12 +69,14 @@ private data class TutorialStep(
     val text: String,
     /** Tap the bubble to continue; otherwise a button continues. */
     val tapToPop: Boolean,
+    /** Light behind the bubble in its socket. */
+    val glow: Color,
 )
 
 private val STEPS = listOf(
-    TutorialStep(BubbleType.NORMAL, "Pop this!", "Tap bubbles before they float away.\nBigger bubbles are worth more.", tapToPop = true),
-    TutorialStep(BubbleType.POISON, "Avoid this!", "Popping a skull ends the round.\nSwipe sideways to blow skulls away.", tapToPop = false),
-    TutorialStep(BubbleType.HEART, "This heals!", "Hearts give back a lost life.", tapToPop = true),
+    TutorialStep(BubbleType.NORMAL, "Pop this!", "Tap bubbles before they float away.\nBigger bubbles are worth more.", tapToPop = true, glow = GameColors.BlueTop),
+    TutorialStep(BubbleType.POISON, "Avoid this!", "Popping a skull ends the round.\nSwipe sideways to blow skulls away.", tapToPop = false, glow = GameColors.Danger),
+    TutorialStep(BubbleType.HEART, "This heals!", "Hearts give back a lost life.", tapToPop = true, glow = GameColors.PillHeart),
 )
 
 /**
@@ -127,13 +137,20 @@ fun TutorialOverlay(
             modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(Spacing.l),
         )
 
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(Spacing.m),
-            modifier = Modifier.align(Alignment.Center).padding(horizontal = Spacing.xxl),
-        ) {
-            OutlinedText(step.title, GameTheme.type.display, outlineWidth = 3.dp)
+        // The step on the game's dialog card: its title on the ribbon.
+        GameDialogCard(title = step.title, onClose = null, modifier = Modifier.align(Alignment.Center)) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(BUBBLE_AREA)) {
+                // Gold-framed socket, lit from behind in the step's colour.
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .goldInset(CircleShape)
+                        .drawBehind {
+                            drawCircle(
+                                Brush.radialGradient(listOf(step.glow.copy(alpha = SOCKET_GLOW_ALPHA), Color.Transparent), center, size.minDimension / 2f),
+                            )
+                        },
+                )
                 Canvas(
                     modifier = Modifier
                         .size(BUBBLE_AREA)
@@ -186,26 +203,35 @@ fun TutorialOverlay(
                 }
             }
             Text(step.text, style = GameTheme.type.body, color = GameColors.TextPrimary, textAlign = TextAlign.Center)
-            if (step.tapToPop) {
-                OutlinedText("Tap the bubble", GameTheme.type.label, color = GameColors.BlueTop)
-            } else {
-                GameButton("Got it", onClick = ::next, icon = GameIcons.Check)
+            // Same height whichever it is, so the card doesn't jump between steps.
+            Box(Modifier.fillMaxWidth().heightIn(min = ACTION_HEIGHT), contentAlignment = Alignment.Center) {
+                if (step.tapToPop) {
+                    OutlinedText("Tap the bubble", GameTheme.type.headline, color = GameColors.BlueTop)
+                } else {
+                    GameButton("Got it", onClick = ::next, icon = GameIcons.Check, modifier = Modifier.fillMaxWidth())
+                }
             }
             StepDots(current = stepIndex, total = STEPS.size)
         }
     }
 }
 
+/** Progress through the steps: the current one a gold candy pill, the rest small sunken dots. */
 @Composable
 private fun StepDots(current: Int, total: Int) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), verticalAlignment = Alignment.CenterVertically) {
         repeat(total) { index ->
-            Box(
-                Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(if (index == current) Color.White else Color.White.copy(alpha = 0.3f))
-            )
+            if (index == current) {
+                Box(Modifier.size(width = DOT_CURRENT_WIDTH, height = DOT_SIZE).candyFace(ButtonColor.GOLD, Corners.pill))
+            } else {
+                Box(
+                    Modifier
+                        .size(DOT_SIZE)
+                        .clip(CircleShape)
+                        .background(GameColors.ButtonOutline.copy(alpha = 0.6f))
+                        .border(1.dp, GameColors.GlassFill, CircleShape)
+                )
+            }
         }
     }
 }
@@ -214,6 +240,10 @@ private fun StepDots(current: Int, total: Int) {
 const val TUTORIAL_STAGE_ID = 1
 private val BUBBLE_AREA = 180.dp
 private val FINGER_SIZE = 48.dp
+private val ACTION_HEIGHT = 50.dp
+private val DOT_SIZE = 10.dp
+private val DOT_CURRENT_WIDTH = 26.dp
+private const val SOCKET_GLOW_ALPHA = 0.55f
 private const val SCRIM_ALPHA = 0.7f
 private const val POP_MS = 450
 private const val WOBBLE_MS = 2_400

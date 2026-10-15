@@ -1,5 +1,13 @@
 package com.apps.bubblepopping.view.meta
 
+import androidx.compose.foundation.layout.padding
+import com.apps.bubblepopping.view.stage.ObjectiveRow
+import com.apps.bubblepopping.ui.components.goldInset
+import com.apps.bubblepopping.ui.components.formatCount
+import com.apps.bubblepopping.ui.components.ResourcePill
+import com.apps.bubblepopping.ui.components.PanelDivider
+import com.apps.bubblepopping.ui.components.OutlinedText
+import com.apps.bubblepopping.ui.components.EnamelTone
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,12 +39,12 @@ import com.apps.bubblepopping.meta.currentEpochDay
 import com.apps.bubblepopping.stage.StageCatalog
 import com.apps.bubblepopping.stage.World
 import com.apps.bubblepopping.ui.components.ButtonColor
-import com.apps.bubblepopping.ui.components.CoinAmount
 import com.apps.bubblepopping.ui.components.CoinCounter
 import com.apps.bubblepopping.ui.components.GameButton
 import com.apps.bubblepopping.ui.components.GameProgressBar
 import com.apps.bubblepopping.ui.components.GameScreen
-import com.apps.bubblepopping.ui.components.GlassPanel
+import com.apps.bubblepopping.ui.components.EnamelPanel
+import com.apps.bubblepopping.ui.components.PanelSectionTitle
 import com.apps.bubblepopping.ui.icons.GameIcons
 import com.apps.bubblepopping.ui.theme.BubbleTheme
 import com.apps.bubblepopping.ui.theme.GameColors
@@ -97,7 +105,14 @@ fun TodayScreen(
 @Composable
 private fun LoginPanel(today: Long, player: PlayerState, onClaim: () -> Unit) {
     val canClaim = player.canClaimLogin(today)
-    GlassPanel(Modifier.fillMaxWidth(), title = "Daily reward", icon = GameIcons.Calendar) {
+    // Today's day of the week: the one to claim, or the one just claimed.
+    val day = if (canClaim || player.loginDaysClaimed == 0) Economy.loginWeekDay(player.loginDaysClaimed)
+    else (player.loginDaysClaimed - 1) % Economy.LOGIN_REWARDS.size + 1
+    EnamelPanel(Modifier.fillMaxWidth()) {
+        PanelSectionTitle(
+            "Daily reward",
+            trailing = { OutlinedText("Day $day/7", GameTheme.type.label, color = GameColors.Gold) },
+        )
         LoginWeek(claimedDays = player.loginDaysClaimed, canClaim = canClaim)
         if (canClaim) {
             GameButton(
@@ -108,20 +123,20 @@ private fun LoginPanel(today: Long, player: PlayerState, onClaim: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
             )
         } else {
-            Hint("Come back tomorrow! Missed days are never lost.")
+            Hint("Come back tomorrow! Missed days are never lost.", Modifier.fillMaxWidth())
         }
     }
 }
 
+/** Today's events stand out from the rest of the screen on the light enamel. */
 @Composable
 private fun DailyChallengePanel(today: Long, player: PlayerState, onPlay: (GameMode) -> Unit) {
     val best = player.dailyChallengeBest(today)
-    GlassPanel(
-        modifier = Modifier.fillMaxWidth(),
-        title = "Daily Challenge",
-        icon = GameIcons.Bubble,
-        trailing = { if (best != null) BestScore(best) },
-    ) {
+    EnamelPanel(Modifier.fillMaxWidth(), tone = EnamelTone.LIGHT) {
+        PanelSectionTitle(
+            "Daily Challenge",
+            trailing = { if (best != null) ResourcePill(GameIcons.Star, "Best ${formatCount(best)}", tint = GameColors.PillStar) },
+        )
         Body("One Endless round with the same bubbles for every player today. How far can you get?")
         if (best == null) Hint("Not played yet today")
         GameButton(
@@ -138,14 +153,21 @@ private fun DailyChallengePanel(today: Long, player: PlayerState, onPlay: (GameM
 private fun DailyStagePanel(today: Long, player: PlayerState, world: World, onPlay: (GameMode) -> Unit) {
     val stage = remember(today, world) { DailyStageGenerator.generate(today, world) }
     val cleared = player.dailyStageCleared(today)
-    GlassPanel(
-        modifier = Modifier.fillMaxWidth(),
-        title = "Daily Stage",
-        icon = GameIcons.Target,
-        trailing = { Text(world.displayName, style = GameTheme.type.label, color = GameColors.TextSecondary) },
-    ) {
-        GoalLine(GameIcons.Target, stage.goal.description, emphasised = true)
-        stage.bonusGoals.forEach { GoalLine(GameIcons.Star, it.description, emphasised = false) }
+    EnamelPanel(Modifier.fillMaxWidth(), tone = EnamelTone.LIGHT) {
+        PanelSectionTitle(
+            "Daily Stage",
+            trailing = { ResourcePill(GameIcons.Target, world.displayName, tint = GameColors.OceanTint) },
+        )
+        // The goal and bonus stars in a gold-framed box, like the stage card.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .goldInset()
+                .padding(horizontal = Spacing.m, vertical = Spacing.xs),
+        ) {
+            ObjectiveRow(description = stage.goal.description, progress = null, isBonus = false)
+            stage.bonusGoals.forEach { ObjectiveRow(description = it.description, progress = null, isBonus = true) }
+        }
         if (cleared) {
             GoalLine(GameIcons.Check, "Chest won today — play again for fun", emphasised = false)
         } else {
@@ -162,19 +184,32 @@ private fun DailyStagePanel(today: Long, player: PlayerState, world: World, onPl
 
 @Composable
 private fun MissionsPanel(missions: List<Mission>) {
-    GlassPanel(Modifier.fillMaxWidth(), title = "Missions", icon = GameIcons.Trophy) {
+    EnamelPanel(Modifier.fillMaxWidth()) {
+        PanelSectionTitle(
+            "Missions",
+            trailing = {
+                if (missions.isNotEmpty()) {
+                    OutlinedText("${missions.count { it.isComplete }}/${missions.size}", GameTheme.type.label, color = GameColors.Gold)
+                }
+            },
+        )
         if (missions.isEmpty()) Hint("Loading…")
-        missions.forEach { mission -> MissionRow(mission) }
+        missions.forEachIndexed { index, mission ->
+            if (index > 0) PanelDivider()
+            MissionRow(mission)
+        }
         Hint("Completed missions pay out at the end of a round and are replaced by new ones.")
     }
 }
 
+/** A mission: its task and coin reward, a progress bar, and the count. Done missions get a tick and a green bar. */
 @Composable
 private fun MissionRow(mission: Mission) {
-    Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+            if (mission.isComplete) Image(GameIcons.Check, contentDescription = "Done", modifier = Modifier.size(MISSION_ICON))
             Text(mission.description, style = GameTheme.type.label, color = GameColors.TextPrimary, modifier = Modifier.weight(1f))
-            CoinAmount("+${mission.reward}")
+            ResourcePill(GameIcons.Coin, "+${mission.reward}", tint = GameColors.PillCoin)
         }
         GameProgressBar(mission.fraction, color = if (mission.isComplete) GameColors.Success else GameColors.Gold)
         Text(
@@ -184,6 +219,8 @@ private fun MissionRow(mission: Mission) {
         )
     }
 }
+
+private val MISSION_ICON = 22.dp
 
 // ── Shared bits for menu screens ────────────────────────────────────────────
 
@@ -209,15 +246,6 @@ fun GoalLine(icon: ImageVector, text: String, emphasised: Boolean, modifier: Mod
             style = if (emphasised) GameTheme.type.label else GameTheme.type.body,
             color = if (emphasised) GameColors.TextPrimary else GameColors.TextSecondary,
         )
-    }
-}
-
-/** "★ 152" — a best score in a panel title row. */
-@Composable
-fun BestScore(score: Int, modifier: Modifier = Modifier) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-        Image(GameIcons.Star, contentDescription = null, modifier = Modifier.size(20.dp))
-        Text("Best $score", style = GameTheme.type.label, color = GameColors.Gold)
     }
 }
 

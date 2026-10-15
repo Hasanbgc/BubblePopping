@@ -24,7 +24,6 @@ import com.apps.bubblepopping.game.GameMode
 import com.apps.bubblepopping.stage.StageCatalog
 import com.apps.bubblepopping.view.BubbleGameViewModel
 import com.apps.bubblepopping.view.endless.EndlessScreenRoot
-import com.apps.bubblepopping.view.stage.StageIntroScreenRoot
 import com.apps.bubblepopping.view.stage.StageMapScreenRoot
 import com.apps.bubblepopping.view.home.HomeScreenRoot
 import com.apps.bubblepopping.view.leaderboard.LeaderboardScreenRoot
@@ -69,7 +68,6 @@ val config = SavedStateConfiguration {
             subclass(Routes.Ranking::class)
             subclass(Routes.Profile::class)
             subclass(Routes.Stages::class)
-            subclass(Routes.StageIntro::class)
             subclass(Routes.Endless::class)
             subclass(Routes.Today::class)
             subclass(Routes.Shop::class)
@@ -138,8 +136,9 @@ private fun AppNavigation(container: AppContainer, hapticFeedback: HapticFeedbac
                     entry<Routes.Home> {
                         HomeScreenRoot(
                             metaRepository = container.metaRepository,
+                            progressRepository = container.progressRepository,
                             onNavigateToStages = {
-                                backStack.add(Routes.Stages)
+                                backStack.add(Routes.Stages())
                             },
                             onNavigateToEndless = {
                                 backStack.add(Routes.Endless)
@@ -182,34 +181,22 @@ private fun AppNavigation(container: AppContainer, hapticFeedback: HapticFeedbac
                             onHome = {
                                 backStack.removeLastOrNull()
                             },
-                            // The play screen replaces itself with the next stage's card.
+                            // Back to the map with the next stage's card open.
                             onNextStage = nextStage?.let { next ->
                                 {
                                     backStack.removeLastOrNull()
-                                    backStack.add(Routes.StageIntro(next.id))
+                                    if (backStack.lastOrNull() is Routes.Stages) backStack.removeLastOrNull()
+                                    backStack.add(Routes.Stages(introStageId = next.id))
                                 }
                             },
                         )
                     }
-                    entry<Routes.Stages> {
+                    entry<Routes.Stages> { args ->
                         StageMapScreenRoot(
                             progressRepository = container.progressRepository,
-                            onStageSelected = { stageId ->
-                                backStack.add(Routes.StageIntro(stageId))
-                            },
-                            onBack = {
-                                backStack.removeLastOrNull()
-                            },
-                        )
-                    }
-                    entry<Routes.StageIntro> { args ->
-                        StageIntroScreenRoot(
-                            stage = StageCatalog.stage(args.stageId),
-                            progressRepository = container.progressRepository,
-                            // The card is replaced by the round, so leaving the round returns to the list.
-                            onPlay = {
-                                backStack.removeLastOrNull()
-                                backStack.add(Routes.Play(GameMode.Stage(args.stageId)))
+                            initialIntroStageId = args.introStageId,
+                            onPlayStage = { stageId ->
+                                backStack.add(Routes.Play(GameMode.Stage(stageId)))
                             },
                             onBack = {
                                 backStack.removeLastOrNull()
@@ -308,7 +295,7 @@ private fun dockTabFor(route: NavKey?): DockTab? = when (route) {
     Routes.Today -> DockTab.TODAY
     Routes.Ranking -> DockTab.RANKS
     Routes.Settings -> DockTab.SETTINGS
-    // Stages, Endless, the stage card and Profile are reached from Home.
+    // Stages, Endless and Profile are reached from Home.
     else -> DockTab.HOME
 }
 

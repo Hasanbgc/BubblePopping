@@ -1,7 +1,19 @@
 package com.apps.bubblepopping.view.endless
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
+import com.apps.bubblepopping.view.play.component.drawSoapBubble
+import com.apps.bubblepopping.view.play.component.NORMAL_SCHEME
+import com.apps.bubblepopping.view.home.ModeCard
+import com.apps.bubblepopping.ui.theme.Corners
+import com.apps.bubblepopping.ui.components.sunkenWell
+import com.apps.bubblepopping.ui.components.candyFace
+import com.apps.bubblepopping.ui.components.OutlinedText
+import com.apps.bubblepopping.ui.components.ButtonColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -19,25 +31,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.apps.bubblepopping.Res
-import com.apps.bubblepopping.card_easy
-import com.apps.bubblepopping.card_hard
-import com.apps.bubblepopping.card_medium
 import com.apps.bubblepopping.data.ProgressRepository
 import com.apps.bubblepopping.game.EndlessUnlocks
 import com.apps.bubblepopping.ui.components.CoinCounter
 import com.apps.bubblepopping.ui.components.GameBackground
 import com.apps.bubblepopping.ui.components.GameTopBar
 import com.apps.bubblepopping.ui.components.screenBottomPadding
-import com.apps.bubblepopping.ui.components.GlassPanel
-import com.apps.bubblepopping.ui.components.LocalUiFeedback
 import com.apps.bubblepopping.ui.components.ResourcePill
 import com.apps.bubblepopping.ui.components.formatCount
 import com.apps.bubblepopping.ui.icons.GameIcons
@@ -46,10 +50,10 @@ import com.apps.bubblepopping.ui.theme.GameColors
 import com.apps.bubblepopping.ui.theme.GameTheme
 import com.apps.bubblepopping.ui.theme.Spacing
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import com.apps.bubblepopping.view.home.Difficulty
 import kotlinx.coroutines.flow.combine
-import org.jetbrains.compose.resources.painterResource
 import kotlin.math.absoluteValue
 
 /** What each Endless difficulty card shows. */
@@ -103,12 +107,6 @@ fun EndlessScreen(
         initialPage = 1,
         pageCount = { Difficulty.entries.size }
     )
-    val cardImages = listOf<Painter>(
-        painterResource(Res.drawable.card_easy),
-        painterResource(Res.drawable.card_medium),
-        painterResource(Res.drawable.card_hard),
-    )
-
     GameBackground {
         Column(
             modifier = Modifier
@@ -123,7 +121,7 @@ fun EndlessScreen(
                 state = pagerState,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 480.dp)
+                    .heightIn(max = PAGER_MAX_HEIGHT)
                     .weight(4f, fill = false),
                 contentPadding = PaddingValues(horizontal = 80.dp),
                 pageSize = PageSize.Fill,
@@ -148,12 +146,13 @@ fun EndlessScreen(
 
                 val difficulty = Difficulty.entries[page]
                 DifficultyCard(
-                    image = cardImages[page],
                     difficulty = difficulty,
                     card = cards?.getOrNull(page),
                     onClick = { onDifficultySelected(difficulty) },
                     modifier = Modifier
                         .fillMaxSize()
+                        // Room for the card's outline and shadow, which sit just outside it.
+                        .padding(vertical = Spacing.s)
                         .graphicsLayer {
                             scaleX = scale
                             scaleY = scale
@@ -166,71 +165,124 @@ fun EndlessScreen(
     }
 }
 
-/** One difficulty: the card artwork, its best score below, and a lock while locked. */
+/**
+ * One difficulty as a premium card in its colour (green, gold, red): its name and
+ * pitch, soap bubbles that get busier and faster with the difficulty, a speed
+ * meter, the best score, and PLAY. Locked cards are dimmed with LOCKED and how to
+ * unlock; taps wait until progress has loaded.
+ */
 @Composable
 private fun DifficultyCard(
-    image: Painter,
     difficulty: Difficulty,
     card: DifficultyCardState?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val locked = card?.unlocked == false
-    val feedback = LocalUiFeedback.current
-    Column(
+    ModeCard(
+        title = difficulty.label.uppercase(),
+        subtitle = difficulty.description,
+        color = difficulty.cardColor,
+        // Taps wait until progress has loaded.
+        onClick = { if (card?.unlocked == true) onClick() },
+        locked = locked,
+        artSize = ART_SIZE,
         modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Spacing.s),
+        art = { artModifier -> DifficultyArt(difficulty, artModifier) },
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                // Taps wait until progress has loaded, and locked cards don't open.
-                .clickable(enabled = card?.unlocked == true) {
-                    feedback.click()
-                    onClick()
-                },
-        ) {
-            Image(
-                painter = image,
-                contentDescription = "${difficulty.label} card",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = if (locked) LOCKED_CARD_ALPHA else 1f },
-            )
-            if (locked) {
-                GlassPanel(strong = true) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(Spacing.s),
-                    ) {
-                        Image(GameIcons.Lock, contentDescription = "Locked", modifier = Modifier.size(48.dp))
-                        Text(
-                            text = EndlessUnlocks.unlockHint(difficulty),
-                            style = GameTheme.type.label,
-                            color = GameColors.TextPrimary,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
-            }
-        }
-        // Kept in the layout while loading or locked, so the cards don't shift.
-        Box(Modifier.graphicsLayer { alpha = if (card == null || locked) 0f else 1f }) {
-            val best = card?.bestScore
-            if (best != null) {
-                ResourcePill(GameIcons.Star, "Best ${formatCount(best)}")
-            } else {
-                ResourcePill(GameIcons.Bubble, "No best yet")
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+            SpeedMeter(level = difficulty.ordinal + 1, color = difficulty.cardColor)
+            when {
+                // Shown once loaded; the space is kept meanwhile, so the card never jumps.
+                card == null -> Box(Modifier.alpha(0f)) { ResourcePill(GameIcons.Star, "Best", tint = GameColors.PillStar) }
+                card.unlocked.not() -> Text(
+                    text = EndlessUnlocks.unlockHint(difficulty),
+                    style = GameTheme.type.caption,
+                    color = GameColors.TextPrimary,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                )
+                card.bestScore != null -> ResourcePill(GameIcons.Star, "Best ${formatCount(card.bestScore)}", tint = GameColors.PillStar)
+                else -> ResourcePill(GameIcons.Bubble, "No best yet", tint = GameColors.PillBubble)
             }
         }
     }
 }
 
-private const val LOCKED_CARD_ALPHA = 0.35f
+/** The card colour of each difficulty. */
+private val Difficulty.cardColor: ButtonColor
+    get() = when (this) {
+        Difficulty.EASY -> ButtonColor.GREEN
+        Difficulty.MEDIUM -> ButtonColor.GOLD
+        Difficulty.HARD -> ButtonColor.RED
+    }
+
+/** "SPEED" and three pips, [level] of them lit as candy, the rest sunken. */
+@Composable
+private fun SpeedMeter(level: Int, color: ButtonColor) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+        OutlinedText("SPEED", GameTheme.type.caption, outlineColor = color.lip, outlineWidth = 1.5.dp)
+        repeat(SPEED_LEVELS) { i ->
+            Box(
+                Modifier
+                    .size(width = PIP_WIDTH, height = PIP_HEIGHT)
+                    .then(if (i < level) Modifier.candyFace(ButtonColor.GOLD, Corners.pill) else Modifier.sunkenWell(Corners.pill)),
+            )
+        }
+    }
+}
+
+/**
+ * Soap bubbles showing the pace: Easy one calm bubble; Medium a big one with two
+ * small ones and short speed streaks; Hard a crowd with long streaks.
+ */
+@Composable
+private fun DifficultyArt(difficulty: Difficulty, modifier: Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val streak = Color.White.copy(alpha = 0.55f)
+        fun bubble(fx: Float, fy: Float, fr: Float, rot: Float, streakLength: Float) {
+            val c = Offset(w * fx, w * fy)
+            val r = w * fr
+            if (streakLength > 0f) {
+                // Speed streaks below the bubble: it's rising fast.
+                for (k in -1..1) {
+                    val x = c.x + k * r * 0.45f
+                    drawLine(
+                        streak,
+                        Offset(x, c.y + r * 1.15f),
+                        Offset(x, c.y + r * 1.15f + w * streakLength * (1f - kotlin.math.abs(k) * 0.3f)),
+                        strokeWidth = (r * 0.12f).coerceAtLeast(1.5f),
+                        cap = StrokeCap.Round,
+                    )
+                }
+            }
+            drawSoapBubble(c.x, c.y, r, rot, NORMAL_SCHEME)
+        }
+        when (difficulty) {
+            Difficulty.EASY -> bubble(0.5f, 0.48f, 0.34f, 30f, 0f)
+            Difficulty.MEDIUM -> {
+                bubble(0.24f, 0.3f, 0.12f, 120f, 0.08f)
+                bubble(0.8f, 0.52f, 0.1f, 220f, 0.08f)
+                bubble(0.5f, 0.45f, 0.28f, 30f, 0.12f)
+            }
+            Difficulty.HARD -> {
+                bubble(0.18f, 0.22f, 0.1f, 120f, 0.12f)
+                bubble(0.84f, 0.26f, 0.09f, 200f, 0.14f)
+                bubble(0.16f, 0.62f, 0.08f, 300f, 0.14f)
+                bubble(0.86f, 0.64f, 0.11f, 60f, 0.12f)
+                bubble(0.5f, 0.42f, 0.24f, 30f, 0.18f)
+            }
+        }
+    }
+}
+
+/** Taller than the screen allows on small phones; the pager shrinks it to fit. */
+private val PAGER_MAX_HEIGHT = 440.dp
+private val ART_SIZE = 150.dp
+private const val SPEED_LEVELS = 3
+private val PIP_WIDTH = 18.dp
+private val PIP_HEIGHT = 9.dp
 
 @Preview
 @Composable

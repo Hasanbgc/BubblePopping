@@ -18,7 +18,8 @@ import com.apps.bubblepopping.view.BubbleGameViewModel
 import com.apps.bubblepopping.view.home.Difficulty
 import com.apps.bubblepopping.view.leaderboard.leaderboardEntries
 import com.apps.bubblepopping.view.play.component.BubbleType
-import com.apps.bubblepopping.view.play.component.rimColorStops
+import com.apps.bubblepopping.view.play.component.NORMAL_SCHEME
+import com.apps.bubblepopping.view.play.component.filmRingColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -174,12 +175,11 @@ class PolishTest {
     // ── Rendering helpers ───────────────────────────────────────────────────
 
     @Test
-    fun rimGradient_coversExactlyTheArc() {
-        val stops = rimColorStops(10f, listOf(Color.Transparent, Color.Red, Color.Blue, Color.Transparent))
-        assertEquals(10f / 360f, stops.first().first, 0.0001f)
-        assertEquals(140f / 360f, stops.last().first, 0.0001f)
-        assertTrue(stops.toList().zipWithNext().all { (a, b) -> a.first < b.first })
-        assertEquals(Color.Red, stops[1].second)
+    fun filmRing_hasNoGaps_andNoSeam() {
+        val colors = filmRingColors(NORMAL_SCHEME)
+        assertTrue(colors.size >= 3)
+        assertTrue(colors.all { it.alpha > 0f })
+        assertEquals(colors.first(), colors.last())
     }
 
     // ── Small rules ─────────────────────────────────────────────────────────

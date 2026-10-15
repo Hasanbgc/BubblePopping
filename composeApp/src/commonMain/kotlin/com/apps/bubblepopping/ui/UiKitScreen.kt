@@ -60,7 +60,7 @@ fun UiKitScreen(onBack: () -> Unit) {
         title = "UI Kit",
         onBack = onBack,
         actions = {
-            ResourcePill(GameIcons.Coin, "1,240")
+            ResourcePill(GameIcons.Coin, "1,240", tint = GameColors.PillCoin)
         },
         bottomBar = {
             BottomDock(
@@ -124,8 +124,8 @@ fun UiKitScreen(onBack: () -> Unit) {
             GameProgressBar(0.65f)
             GameProgressBar(0.3f, color = GameColors.Success)
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m), verticalAlignment = Alignment.CenterVertically) {
-                ResourcePill(GameIcons.Coin, "1,240")
-                ResourcePill(GameIcons.Star, "34")
+                ResourcePill(GameIcons.Coin, "1,240", tint = GameColors.PillCoin)
+                ResourcePill(GameIcons.Star, "34", tint = GameColors.PillStar)
                 BadgeDot()
             }
         }

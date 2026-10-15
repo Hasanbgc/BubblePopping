@@ -4,8 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,7 +14,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -27,10 +24,13 @@ import com.apps.bubblepopping.meta.Cosmetics
 import com.apps.bubblepopping.meta.RewardLine
 import com.apps.bubblepopping.meta.RunRewards
 import com.apps.bubblepopping.ui.components.CoinAmount
+import com.apps.bubblepopping.ui.components.PanelDivider
+import com.apps.bubblepopping.ui.components.ResourcePill
+import com.apps.bubblepopping.ui.components.formatCount
+import com.apps.bubblepopping.ui.components.goldInset
 import com.apps.bubblepopping.ui.components.OutlinedText
 import com.apps.bubblepopping.ui.icons.GameIcons
 import com.apps.bubblepopping.ui.theme.BubbleTheme
-import com.apps.bubblepopping.ui.theme.Corners
 import com.apps.bubblepopping.ui.theme.GameColors
 import com.apps.bubblepopping.ui.theme.GameTheme
 import com.apps.bubblepopping.ui.theme.Spacing
@@ -47,15 +47,15 @@ fun RewardsSummary(rewards: RunRewards?, modifier: Modifier = Modifier) {
         modifier = modifier,
     ) {
         val shown = rewards ?: return@AnimatedVisibility
+        // A gold-framed well: heading, one row per reward, then the total on a gold pill.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(Corners.medium)
-                .background(GameColors.Ink.copy(alpha = 0.35f))
-                .border(1.5.dp, GameColors.Gold.copy(alpha = 0.6f), Corners.medium)
-                .padding(horizontal = Spacing.m, vertical = Spacing.s),
-            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                .goldInset()
+                .padding(horizontal = Spacing.m, vertical = Spacing.m),
+            verticalArrangement = Arrangement.spacedBy(Spacing.s),
         ) {
+            Text("REWARDS", style = GameTheme.type.caption, color = GameColors.Gold)
             shown.lines.take(MAX_LINES).forEach { line ->
                 RewardRow(icon = iconFor(line), text = line.label) { CoinAmount("+${line.coins}") }
             }
@@ -65,15 +65,48 @@ fun RewardsSummary(rewards: RunRewards?, modifier: Modifier = Modifier) {
                 }
             }
             if (shown.coins > 0) {
+                PanelDivider()
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = Spacing.xs),
-                    horizontalArrangement = Arrangement.End,
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.s),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Total  ", style = GameTheme.type.label, color = GameColors.TextSecondary)
-                    Image(GameIcons.Coin, contentDescription = null, modifier = Modifier.size(26.dp))
-                    OutlinedText(" +${shown.coins}", GameTheme.type.headline, color = GameColors.Gold)
+                    OutlinedText("Total", GameTheme.type.label, modifier = Modifier.weight(1f))
+                    ResourcePill(GameIcons.Coin, "+${formatCount(shown.coins)}", tint = GameColors.PillCoin)
                 }
+            }
+        }
+    }
+}
+
+/**
+ * The rewards in one line, for cards that must fit at a glance (stage results):
+ * "REWARDS", a chest for each cosmetic won, and the coin total on a gold pill.
+ * Slides in once paid out.
+ */
+@Composable
+fun RewardsStrip(rewards: RunRewards?, modifier: Modifier = Modifier) {
+    AnimatedVisibility(
+        visible = rewards != null && !rewards.isEmpty,
+        enter = fadeIn() + expandVertically(),
+        modifier = modifier,
+    ) {
+        val shown = rewards ?: return@AnimatedVisibility
+        val items = shown.chests.filterIsInstance<ChestReward.Item>()
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.s),
+            modifier = Modifier
+                .fillMaxWidth()
+                .goldInset()
+                .padding(horizontal = Spacing.m, vertical = Spacing.s),
+        ) {
+            Text("REWARDS", style = GameTheme.type.caption, color = GameColors.Gold, modifier = Modifier.weight(1f))
+            items.forEach { item ->
+                Image(GameIcons.Chest, contentDescription = "Won ${item.cosmetic.name}", modifier = Modifier.size(REWARD_ICON))
+            }
+            if (shown.coins > 0) {
+                ResourcePill(GameIcons.Coin, "+${formatCount(shown.coins)}", tint = GameColors.PillCoin)
             }
         }
     }
@@ -94,10 +127,10 @@ private fun RewardRow(icon: ImageVector, text: String, value: @Composable () -> 
         horizontalArrangement = Arrangement.spacedBy(Spacing.s),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Image(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        Image(icon, contentDescription = null, modifier = Modifier.size(REWARD_ICON))
         Text(
             text = text,
-            style = GameTheme.type.caption,
+            style = GameTheme.type.body,
             color = GameColors.TextPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -108,6 +141,7 @@ private fun RewardRow(icon: ImageVector, text: String, value: @Composable () -> 
 }
 
 private const val MAX_LINES = 6
+private val REWARD_ICON = 24.dp
 private const val MISSION_PREFIX = "Mission"
 private const val ACHIEVEMENT_PREFIX = "Achievement"
 private const val CHEST_WORD = "chest"

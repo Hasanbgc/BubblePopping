@@ -18,9 +18,9 @@ sealed class Routes: NavKey{
     @Serializable
     object Profile: Routes()
 
-    /** The stage map. */
+    /** The stage map; [introStageId] opens it with that stage's card showing. */
     @Serializable
-    object Stages: Routes()
+    data class Stages(val introStageId: Int? = null): Routes()
 
     /** Endless mode: pick a difficulty card. */
     @Serializable
@@ -37,8 +37,4 @@ sealed class Routes: NavKey{
     /** Cosmetics shop. */
     @Serializable
     object Shop: Routes()
-
-    /** The card shown before a stage starts: goal, bonus objectives, Play. */
-    @Serializable
-    data class StageIntro(val stageId: Int): Routes()
 }

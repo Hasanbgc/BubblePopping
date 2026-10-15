@@ -1,5 +1,14 @@
 package com.apps.bubblepopping.view.profile
 
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
+import com.apps.bubblepopping.ui.components.sunkenWell
+import com.apps.bubblepopping.ui.components.enamelPill
+import com.apps.bubblepopping.ui.components.EnamelTone
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,7 +48,6 @@ import com.apps.bubblepopping.meta.AchievementContext
 import com.apps.bubblepopping.meta.PlayerState
 import com.apps.bubblepopping.stage.StageCatalog
 import com.apps.bubblepopping.ui.components.ButtonColor
-import com.apps.bubblepopping.ui.components.CoinAmount
 import com.apps.bubblepopping.ui.components.DialogButtons
 import com.apps.bubblepopping.ui.components.GameButton
 import com.apps.bubblepopping.ui.components.GameDialog
@@ -47,13 +55,14 @@ import com.apps.bubblepopping.ui.components.GameIconButton
 import com.apps.bubblepopping.ui.components.GameProgressBar
 import com.apps.bubblepopping.ui.components.GameScreen
 import com.apps.bubblepopping.ui.components.GameTextField
-import com.apps.bubblepopping.ui.components.GlassPanel
+import com.apps.bubblepopping.ui.components.EnamelPanel
+import com.apps.bubblepopping.ui.components.PanelDivider
+import com.apps.bubblepopping.ui.components.PanelSectionTitle
 import com.apps.bubblepopping.ui.components.OutlinedText
 import com.apps.bubblepopping.ui.components.ResourcePill
 import com.apps.bubblepopping.ui.components.formatCount
 import com.apps.bubblepopping.ui.icons.GameIcons
 import com.apps.bubblepopping.ui.theme.BubbleTheme
-import com.apps.bubblepopping.ui.theme.Corners
 import com.apps.bubblepopping.ui.theme.GameColors
 import com.apps.bubblepopping.ui.theme.GameTheme
 import com.apps.bubblepopping.ui.theme.Spacing
@@ -123,7 +132,9 @@ fun ProfileScreen(
             onEditName = { editingName = true },
         )
 
-        GlassPanel(Modifier.fillMaxWidth(), title = "Stats", icon = GameIcons.Target) {
+        // Stats, best scores and achievements share one panel, split by dividers.
+        EnamelPanel(Modifier.fillMaxWidth()) {
+            PanelSectionTitle("Stats")
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
                 StatTile(GameIcons.Play, formatCount(stats.gamesPlayed), "Rounds played", Modifier.weight(1f))
                 StatTile(GameIcons.Bubble, formatCount(stats.bubblesPopped.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()), "Bubbles popped", Modifier.weight(1f))
@@ -132,32 +143,22 @@ fun ProfileScreen(
                 StatTile(GameIcons.Star, "${stats.bestCombo}", "Best combo", Modifier.weight(1f))
                 StatTile(GameIcons.Check, "${player.missionsCompleted}", "Missions done", Modifier.weight(1f))
             }
-        }
 
-        GlassPanel(Modifier.fillMaxWidth(), title = "Best scores", icon = GameIcons.Trophy) {
-            Difficulty.entries.forEach { difficulty ->
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.m)) {
-                    Box(Modifier.size(14.dp).clip(CircleShape).background(difficulty.glowColor).border(2.dp, GameColors.GlassRim, CircleShape))
-                    Text(difficulty.label, style = GameTheme.type.body, color = GameColors.TextPrimary, modifier = Modifier.weight(1f))
-                    val best = bestScores[difficulty]
-                    if (best != null) OutlinedText(formatCount(best), GameTheme.type.headline)
-                    else Text("—", style = GameTheme.type.headline, color = GameColors.TextMuted)
-                }
-            }
-        }
+            PanelDivider()
+            PanelSectionTitle("Best scores")
+            Difficulty.entries.forEach { difficulty -> BestScoreRow(difficulty, bestScores[difficulty]) }
 
-        GlassPanel(
-            modifier = Modifier.fillMaxWidth(),
-            title = "Achievements",
-            icon = GameIcons.Crown,
-            trailing = {
-                Text(
-                    "${unlockedAchievements.size} / ${Achievement.entries.size}",
-                    style = GameTheme.type.label,
-                    color = GameColors.TextSecondary,
-                )
-            },
-        ) {
+            PanelDivider()
+            PanelSectionTitle(
+                "Achievements",
+                trailing = {
+                    Text(
+                        "${unlockedAchievements.size} / ${Achievement.entries.size}",
+                        style = GameTheme.type.label,
+                        color = GameColors.TextSecondary,
+                    )
+                },
+            )
             // Reached ones first, then by how close the rest are.
             Achievement.entries
                 .sortedWith(
@@ -183,54 +184,90 @@ fun ProfileScreen(
     }
 }
 
-/** Avatar, name with an edit button, and the coin / star counters. */
+/**
+ * The hero card: the avatar in a gold ring, the name with an edit button, and
+ * the coin / star counters, on the light enamel so it leads the screen.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlayerHeader(name: String, coins: Int, stars: Int, onEditName: () -> Unit) {
-    GlassPanel(Modifier.fillMaxWidth(), strong = true) {
+    EnamelPanel(Modifier.fillMaxWidth(), tone = EnamelTone.LIGHT) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.l)) {
             // Replaced by the Google / Facebook photo once sign-in exists.
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(AVATAR_SIZE)
+                    .drawBehind {
+                        val outline = 2.dp.toPx()
+                        drawCircle(GameColors.ButtonOutline, radius = size.minDimension / 2f + outline / 2f, style = Stroke(outline))
+                    }
                     .clip(CircleShape)
-                    .background(GameColors.Ink.copy(alpha = 0.4f))
-                    .border(3.dp, GameColors.GlassRim, CircleShape),
+                    .background(Brush.verticalGradient(listOf(GameColors.PodiumAvatarTop, GameColors.PodiumAvatarBottom)))
+                    .border(AVATAR_RING, Brush.verticalGradient(listOf(GameColors.GoldTop, GameColors.GoldLip)), CircleShape),
             ) {
-                Image(GameIcons.Person, contentDescription = "Profile picture", modifier = Modifier.size(AVATAR_SIZE * 0.7f))
+                Image(GameIcons.Person, contentDescription = "Profile picture", modifier = Modifier.size(AVATAR_SIZE * 0.66f))
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
                     OutlinedText(name, GameTheme.type.title, outlineWidth = 3.dp, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
-                    GameIconButton(GameIcons.Pencil, contentDescription = "Edit name", onClick = onEditName, size = 36.dp)
+                    GameIconButton(GameIcons.Pencil, contentDescription = "Edit name", onClick = onEditName, color = ButtonColor.VIOLET, size = EDIT_BUTTON)
                 }
                 // Wraps onto two lines on narrow phones.
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.s), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                    ResourcePill(GameIcons.Coin, formatCount(coins))
-                    ResourcePill(GameIcons.Star, "$stars/${StageCatalog.maxStars}")
+                    ResourcePill(GameIcons.Coin, formatCount(coins), tint = GameColors.PillCoin)
+                    ResourcePill(GameIcons.Star, "$stars/${StageCatalog.maxStars}", tint = GameColors.PillStar)
                 }
             }
         }
     }
 }
 
-/** One number with an icon and a label, in a quarter of the Stats panel. */
+/** One number with an icon and a label, in a well sunk into the Stats section. */
 @Composable
 private fun StatTile(icon: ImageVector, value: String, label: String, modifier: Modifier = Modifier) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
         modifier = modifier
-            .clip(Corners.medium)
-            .background(GameColors.Ink.copy(alpha = 0.3f))
+            .sunkenWell()
             .padding(vertical = Spacing.m, horizontal = Spacing.s),
     ) {
-        Image(icon, contentDescription = null, modifier = Modifier.size(28.dp))
-        OutlinedText(value, GameTheme.type.headline, maxLines = 1)
+        Image(icon, contentDescription = null, modifier = Modifier.size(STAT_ICON))
+        OutlinedText(value, GameTheme.type.headline, color = GameColors.Gold, maxLines = 1)
         Hint(label)
     }
 }
 
+/** A difficulty on its own tinted pill, and its best score on the right. */
+@Composable
+private fun BestScoreRow(difficulty: Difficulty, best: Int?) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .height(DIFFICULTY_PILL_HEIGHT)
+                .enamelPill(difficulty.glowColor)
+                .padding(horizontal = Spacing.m),
+        ) {
+            OutlinedText(difficulty.label, GameTheme.type.label, maxLines = 1)
+        }
+        Spacer(Modifier.weight(1f))
+        if (best != null) {
+            OutlinedText(formatCount(best), GameTheme.type.headline, color = GameColors.Gold, maxLines = 1)
+        } else {
+            Text("—", style = GameTheme.type.headline, color = GameColors.TextMuted)
+        }
+    }
+}
+
+/**
+ * An achievement in a sunken row: a trophy (reached, washed green, with a tick)
+ * or a lock with progress and the coin reward on a pill.
+ */
 @Composable
 private fun AchievementRow(achievement: Achievement, progress: Int, unlocked: Boolean) {
     Row(
@@ -238,11 +275,14 @@ private fun AchievementRow(achievement: Achievement, progress: Int, unlocked: Bo
         horizontalArrangement = Arrangement.spacedBy(Spacing.m),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(Corners.medium)
-            .background(if (unlocked) GameColors.Success.copy(alpha = 0.18f) else GameColors.Ink.copy(alpha = 0.3f))
+            .sunkenWell(tint = if (unlocked) GameColors.Success else null)
             .padding(Spacing.m),
     ) {
-        Image(if (unlocked) GameIcons.Trophy else GameIcons.Lock, contentDescription = null, modifier = Modifier.size(36.dp))
+        Image(
+            imageVector = if (unlocked) GameIcons.Trophy else GameIcons.Lock,
+            contentDescription = null,
+            modifier = Modifier.size(ACHIEVEMENT_ICON).alpha(if (unlocked) 1f else LOCKED_ALPHA),
+        )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
             Text(achievement.title, style = GameTheme.type.label, color = GameColors.TextPrimary)
             Hint(achievement.description)
@@ -252,9 +292,9 @@ private fun AchievementRow(achievement: Achievement, progress: Int, unlocked: Bo
             }
         }
         if (unlocked) {
-            Image(GameIcons.Check, contentDescription = "Reached", modifier = Modifier.size(28.dp))
+            Image(GameIcons.Check, contentDescription = "Reached", modifier = Modifier.size(CHECK_ICON))
         } else {
-            CoinAmount("+${achievement.reward}")
+            ResourcePill(GameIcons.Coin, "+${achievement.reward}", tint = GameColors.PillCoin)
         }
     }
 }
@@ -286,6 +326,13 @@ private fun NameDialog(current: String, onSave: (String) -> Unit, onDismiss: () 
 }
 
 private val AVATAR_SIZE = 84.dp
+private val AVATAR_RING = 4.dp
+private val EDIT_BUTTON = 34.dp
+private val STAT_ICON = 30.dp
+private val DIFFICULTY_PILL_HEIGHT = 32.dp
+private val ACHIEVEMENT_ICON = 36.dp
+private val CHECK_ICON = 28.dp
+private const val LOCKED_ALPHA = 0.6f
 
 @Preview
 @Composable

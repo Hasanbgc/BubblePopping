@@ -57,14 +57,12 @@ val MapRoadColor = Color.White.copy(alpha = 0.16f)
 /** Dashes on the road; gold once the player has passed that stretch. */
 val MapRoadDashColor = Color.White.copy(alpha = 0.45f)
 val MapRoadDoneColor = Color(0xFFFFD54F)
-/** Soft cloud puffs drawn over the map background. */
-val MapCloudColor = Color.White.copy(alpha = 0.07f)
 
 // ── Cosmetics ───────────────────────────────────────────────────────────────
 
 /**
- * Play background for an equipped background cosmetic, top → bottom, drawn
- * over the default image. Null keeps the default daylight look.
+ * Play background for an equipped background cosmetic, top → bottom (its
+ * scenery is in PlayBackdrop). Null keeps the world's own colours.
  */
 fun playBackgroundColors(backgroundId: String): List<Color>? = when (backgroundId) {
     "bg_sunset" -> listOf(Color(0xFF4A148C), Color(0xFFD84315), Color(0xFFFFB74D))

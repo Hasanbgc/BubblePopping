@@ -1,5 +1,7 @@
 package com.apps.bubblepopping.ui.components
 
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -53,7 +55,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.apps.bubblepopping.Res
-import com.apps.bubblepopping.bg
+import com.apps.bubblepopping.home_bg
 import com.apps.bubblepopping.ui.icons.GameIcons
 import com.apps.bubblepopping.ui.theme.Corners
 import com.apps.bubblepopping.ui.theme.GameColors
@@ -87,13 +89,13 @@ fun GameBackground(
         when (style) {
             BackgroundStyle.ART -> {
                 Image(
-                    painter = painterResource(Res.drawable.bg),
+                    painter = painterResource(Res.drawable.home_bg),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
                 if (bubbles) DriftingBubbles(Modifier.fillMaxSize())
-                Box(
+                /*Box(
                     Modifier
                         .fillMaxSize()
                         .background(
@@ -103,7 +105,7 @@ fun GameBackground(
                                 1f to GameColors.Scrim.copy(alpha = 0.5f),
                             )
                         )
-                )
+                )*/
             }
             BackgroundStyle.NIGHT_SKY -> {
                 NightSky(Modifier.fillMaxSize())
@@ -220,9 +222,10 @@ data class DockItem(
 )
 
 /**
- * The bottom tab bar on every menu screen: a dark glass bar of icon tabs. The
- * current tab ([selectedIndex]) sits on a glossy blue highlight that slides
- * between tabs; its icon grows and its label gets the outline.
+ * The bottom tab bar on every menu screen: a dark enamel bar (outline, ink
+ * gradient, bevelled rim, soft shine) of icon tabs. The current tab
+ * ([selectedIndex]) sits on a blue candy tile, the same face as the buttons,
+ * that slides between tabs; its icon grows and its label gets the outline.
  */
 @Composable
 fun BottomDock(items: List<DockItem>, selectedIndex: Int, modifier: Modifier = Modifier) {
@@ -230,10 +233,50 @@ fun BottomDock(items: List<DockItem>, selectedIndex: Int, modifier: Modifier = M
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.screen, vertical = Spacing.s)
-            .clip(Corners.large)
-            .background(GameColors.Ink.copy(alpha = 0.7f))
-            .border(2.dp, GameColors.GlassRim, Corners.large)
+            .padding(start = Spacing.screen, end = Spacing.screen, top = Spacing.s, bottom = Spacing.m)
+            // Soft drop shadow and dark outline, like the buttons and pills.
+            .drawBehind {
+                val outline = DOCK_OUTLINE.toPx()
+                val radius = DOCK_CORNER.toPx()
+                drawRoundRect(
+                    color = GameColors.ButtonShadow,
+                    topLeft = Offset(0f, outline * 2f),
+                    size = Size(size.width, size.height + outline),
+                    cornerRadius = CornerRadius(radius),
+                )
+                drawRoundRect(
+                    color = GameColors.ButtonOutline,
+                    topLeft = Offset(-outline / 2f, -outline / 2f),
+                    size = Size(size.width + outline, size.height + outline),
+                    cornerRadius = CornerRadius(radius + outline / 2f),
+                    style = Stroke(outline),
+                )
+            }
+            .clip(DockShape)
+            .background(Brush.verticalGradient(listOf(GameColors.InkSoft, GameColors.Ink)))
+            .drawBehind {
+                // Soft glassy shine along the top.
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        0f to GameColors.GlassShine,
+                        1f to Color.Transparent,
+                        startY = 0f,
+                        endY = size.height * 0.45f,
+                    ),
+                    topLeft = Offset(DOCK_CORNER.toPx() * 0.6f, DOCK_INSET.toPx() * 0.5f),
+                    size = Size(size.width - DOCK_CORNER.toPx() * 1.2f, size.height * 0.45f),
+                    cornerRadius = CornerRadius(DOCK_CORNER.toPx() * 0.6f),
+                )
+            }
+            .border(
+                DOCK_RIM,
+                Brush.verticalGradient(
+                    0f to GameColors.GlassRim,
+                    0.5f to GameColors.GlassFill,
+                    1f to GameColors.InkSoft,
+                ),
+                DockShape,
+            )
             .padding(DOCK_INSET),
     ) {
         val slot = maxWidth / items.size
@@ -242,24 +285,24 @@ fun BottomDock(items: List<DockItem>, selectedIndex: Int, modifier: Modifier = M
             animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow),
             label = "dock_highlight",
         )
-        // The sliding highlight, drawn under the tabs.
+        // The sliding candy tile, drawn under the tabs, with a small gap to its neighbours.
         if (selectedIndex in items.indices) {
             Box(
                 Modifier
                     .offset(x = highlightX)
                     .size(width = slot, height = DOCK_HEIGHT)
-                    .clip(Corners.medium)
-                    .background(Brush.verticalGradient(listOf(GameColors.BlueTop, GameColors.BlueBottom)))
+                    .padding(horizontal = TILE_GAP)
                     .drawBehind {
-                        // Gloss across the top.
+                        val outline = TILE_OUTLINE.toPx()
                         drawRoundRect(
-                            brush = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.45f), Color.White.copy(alpha = 0.05f))),
-                            topLeft = Offset(size.width * 0.12f, size.height * 0.06f),
-                            size = Size(size.width * 0.76f, size.height * 0.36f),
-                            cornerRadius = CornerRadius(size.height * 0.2f),
+                            color = GameColors.ButtonOutline,
+                            topLeft = Offset(-outline / 2f, -outline / 2f),
+                            size = Size(size.width + outline, size.height + outline),
+                            cornerRadius = CornerRadius(TILE_CORNER.toPx() + outline / 2f),
+                            style = Stroke(outline),
                         )
                     }
-                    .border(2.dp, Color.White.copy(alpha = 0.6f), Corners.medium)
+                    .candyFace(ButtonColor.BLUE, TileShape),
             )
         }
         Row(Modifier.fillMaxWidth().height(DOCK_HEIGHT)) {
@@ -272,7 +315,7 @@ fun BottomDock(items: List<DockItem>, selectedIndex: Int, modifier: Modifier = M
                 )
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
+                    verticalArrangement = Arrangement.spacedBy(LABEL_GAP, Alignment.CenterVertically),
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
@@ -292,6 +335,8 @@ fun BottomDock(items: List<DockItem>, selectedIndex: Int, modifier: Modifier = M
                             modifier = Modifier.size(DOCK_ICON).graphicsLayer {
                                 scaleX = iconScale
                                 scaleY = iconScale
+                                // Other tabs step back a little so the current one leads.
+                                alpha = if (selected) 1f else UNSELECTED_ICON_ALPHA
                             },
                         )
                         if (item.showBadge) BadgeDot(Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-2).dp))
@@ -308,10 +353,23 @@ fun BottomDock(items: List<DockItem>, selectedIndex: Int, modifier: Modifier = M
 }
 
 val TOP_BAR_HEIGHT = 64.dp
-private val DOCK_ICON = 30.dp
-private val DOCK_HEIGHT = 58.dp
-private val DOCK_INSET = 4.dp
+private val DOCK_ICON = 28.dp
+private val DOCK_HEIGHT = 60.dp
+/** Space between the dock's rim and the tabs. */
+private val DOCK_INSET = 6.dp
+/** Corner of [Corners.large], needed in px for the outline and shine. */
+private val DOCK_CORNER = 28.dp
+private val DOCK_RIM = 1.5.dp
+private val DOCK_OUTLINE = 2.5.dp
+private val DockShape = Corners.large
+/** Gap between the selected tile and its neighbouring tabs. */
+private val TILE_GAP = 3.dp
+private val TILE_CORNER = DOCK_CORNER - DOCK_INSET
+private val TILE_OUTLINE = 2.dp
+private val TileShape = RoundedCornerShape(TILE_CORNER)
+private val LABEL_GAP = 2.dp
 private const val SELECTED_ICON_SCALE = 1.15f
+private const val UNSELECTED_ICON_ALPHA = 0.85f
 
 /**
  * How much of the bottom of the screen the bottom dock covers, including the

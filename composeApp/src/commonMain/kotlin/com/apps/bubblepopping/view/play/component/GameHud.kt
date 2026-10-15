@@ -1,15 +1,20 @@
 package com.apps.bubblepopping.view.play.component
 
+import com.apps.bubblepopping.ui.components.GameProgressBar
+import com.apps.bubblepopping.ui.components.candyFace
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.layout.Layout
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -21,13 +26,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -37,9 +38,9 @@ import androidx.compose.ui.unit.dp
 import com.apps.bubblepopping.ui.components.ButtonColor
 import com.apps.bubblepopping.ui.components.GameIconButton
 import com.apps.bubblepopping.ui.components.OutlinedText
+import com.apps.bubblepopping.ui.components.enamelPill
 import com.apps.bubblepopping.ui.icons.GameIcons
 import com.apps.bubblepopping.ui.theme.BubbleTheme
-import com.apps.bubblepopping.ui.theme.Corners
 import com.apps.bubblepopping.ui.theme.GameColors
 import com.apps.bubblepopping.ui.theme.GameTheme
 import com.apps.bubblepopping.ui.theme.Spacing
@@ -49,8 +50,8 @@ import kotlin.math.ceil
 internal val HUD_CONTENT_HEIGHT: Dp = 56.dp
 
 /**
- * The in-game HUD: lives and power-ups on the left, the score (with the combo
- * ring) in the middle, the pause button on the right. A soft indigo fade sits
+ * The in-game HUD: lives and power-ups on the left, the score capsule (with the combo
+ * bar) in the middle, the pause button on the right. A soft indigo fade sits
  * behind it so it reads over any background.
  */
 @Composable
@@ -76,18 +77,13 @@ fun GameHud(
                 )
             ),
     ) {
-        Box(
+        HudRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
                 .height(HUD_CONTENT_HEIGHT)
                 .padding(horizontal = Spacing.screen),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            start = {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Spacing.s),
@@ -95,6 +91,15 @@ fun GameHud(
                     LivesView(lives = lives)
                     PowerUpBadges(shieldActive = shieldActive, freezeTimeLeft = freezeTimeLeft)
                 }
+            },
+            center = {
+                ScoreView(
+                    score = score,
+                    comboTimeLeft = comboTimeLeft,
+                    comboMultiplier = comboMultiplier,
+                )
+            },
+            end = {
                 GameIconButton(
                     icon = if (isPaused) GameIcons.Play else GameIcons.Pause,
                     contentDescription = if (isPaused) "Resume" else "Pause",
@@ -102,25 +107,19 @@ fun GameHud(
                     color = ButtonColor.BLUE,
                     size = PAUSE_BUTTON_SIZE,
                 )
-            }
-            ScoreView(
-                score = score,
-                comboTimeLeft = comboTimeLeft,
-                comboMultiplier = comboMultiplier,
-                modifier = Modifier.align(Alignment.Center),
-            )
-        }
+            },
+        )
     }
 }
 
-/** A heart on a glass pill with the lives left. */
+/** A heart in a rose enamel pill with the lives left. */
 @Composable
 fun LivesView(lives: Int, modifier: Modifier = Modifier) {
-    HudPill(modifier.semantics { contentDescription = "$lives lives" }) {
+    HudPill(GameColors.PillHeart, modifier.semantics { contentDescription = "$lives lives" }) {
         Image(
             imageVector = GameIcons.Heart,
             contentDescription = null,
-            modifier = Modifier.size(24.dp).alpha(if (lives > 0) 1f else 0.4f),
+            modifier = Modifier.size(HUD_ICON).alpha(if (lives > 0) 1f else 0.4f),
         )
         OutlinedText("×$lives", GameTheme.type.label)
     }
@@ -131,41 +130,92 @@ fun LivesView(lives: Int, modifier: Modifier = Modifier) {
 fun PowerUpBadges(shieldActive: Boolean, freezeTimeLeft: Float, modifier: Modifier = Modifier) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.s),
         modifier = modifier,
     ) {
         if (shieldActive) {
-            HudPill(Modifier.semantics { contentDescription = "Shield ready" }) {
-                Image(GameIcons.Shield, contentDescription = null, modifier = Modifier.size(24.dp))
+            HudPill(GameColors.PillBubble, Modifier.semantics { contentDescription = "Shield ready" }, endPadding = Spacing.xs) {
+                Image(GameIcons.Shield, contentDescription = null, modifier = Modifier.size(HUD_ICON))
             }
         }
         if (freezeTimeLeft > 0f) {
             val seconds = ceil(freezeTimeLeft).toInt()
-            HudPill(Modifier.semantics { contentDescription = "Frozen, $seconds seconds left" }) {
-                Image(GameIcons.Snowflake, contentDescription = null, modifier = Modifier.size(22.dp))
-                OutlinedText("$seconds", GameTheme.type.label, color = Color(0xFFB3E5FC))
+            HudPill(GameColors.PillFreeze, Modifier.semantics { contentDescription = "Frozen, $seconds seconds left" }) {
+                Image(GameIcons.Snowflake, contentDescription = null, modifier = Modifier.size(HUD_ICON))
+                OutlinedText("$seconds", GameTheme.type.label, color = GameColors.FreezeText)
             }
         }
     }
 }
 
+/**
+ * A HUD pill: the same enamel pill as the coin and star counters, tinted by what
+ * it shows. The icon sits inside on the left; [endPadding] is smaller for an icon alone.
+ */
 @Composable
-private fun HudPill(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+private fun HudPill(
+    tint: Color,
+    modifier: Modifier = Modifier,
+    endPadding: Dp = Spacing.m,
+    content: @Composable () -> Unit,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
         modifier = modifier
-            .clip(Corners.pill)
-            .background(GameColors.Ink.copy(alpha = 0.5f))
-            .border(1.5.dp, GameColors.GlassRim, Corners.pill)
-            .padding(horizontal = Spacing.s, vertical = 2.dp),
+            .height(HUD_PILL_HEIGHT)
+            .enamelPill(tint)
+            .padding(start = Spacing.xs, end = endPadding),
     ) { content() }
 }
 
 /**
- * Centered score. The number springs towards [score] on each increase. While a
- * combo runs, a gold ring around it drains as [comboTimeLeft] goes 1 → 0, and
- * the active multiplier ("×3") shows beside it.
+ * The HUD's three slots: [start] on the left, [end] on the right, and [center]
+ * centred on the screen — unless the sides are wide (e.g. several power-ups),
+ * then it slides over so there is always at least [HUD_GAP] between it and
+ * either side. Everything is vertically centred.
+ */
+@Composable
+private fun HudRow(
+    start: @Composable () -> Unit,
+    center: @Composable () -> Unit,
+    end: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Layout(
+        contents = listOf(start, center, end),
+        modifier = modifier,
+    ) { (startMeasurables, centerMeasurables, endMeasurables), constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val gap = HUD_GAP.roundToPx()
+        val endPlaceables = endMeasurables.map { it.measure(loose) }
+        val endWidth = endPlaceables.maxOfOrNull { it.width } ?: 0
+        val startPlaceables = startMeasurables.map {
+            it.measure(loose.copy(maxWidth = (constraints.maxWidth - endWidth - gap).coerceAtLeast(0)))
+        }
+        val startWidth = startPlaceables.maxOfOrNull { it.width } ?: 0
+        val centerPlaceables = centerMeasurables.map { it.measure(loose) }
+        val centerWidth = centerPlaceables.maxOfOrNull { it.width } ?: 0
+        val width = constraints.maxWidth
+        val height = constraints.maxHeight
+        // Centred if it fits; otherwise pushed clear of the wider side.
+        val minX = if (startWidth > 0) startWidth + gap else 0
+        val maxX = width - centerWidth - (if (endWidth > 0) endWidth + gap else 0)
+        val centerX = ((width - centerWidth) / 2).coerceAtMost(maxX).coerceAtLeast(minX)
+        layout(width, height) {
+            startPlaceables.forEach { it.place(0, (height - it.height) / 2) }
+            centerPlaceables.forEach { it.place(centerX, (height - it.height) / 2) }
+            endPlaceables.forEach { it.place(width - it.width, (height - it.height) / 2) }
+        }
+    }
+}
+
+/**
+ * The score on a gold enamel capsule. The number springs towards [score] on
+ * each increase. While a combo runs, a gold bar under the capsule drains as
+ * [comboTimeLeft] goes 1 → 0, and a gold candy badge with the multiplier
+ * ("×3") sits on the capsule's corner. The bar's space is always kept, so the
+ * capsule never jumps.
  */
 @Composable
 fun ScoreView(
@@ -179,45 +229,63 @@ fun ScoreView(
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "score",
     )
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(COMBO_RING_RADIUS * 2)
-                .drawBehind {
-                    if (comboTimeLeft <= 0f) return@drawBehind
-                    val radius = COMBO_RING_RADIUS.toPx() - 2.dp.toPx()
-                    val stroke = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
-                    drawCircle(GameColors.Ink.copy(alpha = 0.5f), radius, center, style = Stroke(width = 6.dp.toPx()))
-                    drawArc(
-                        color = GameColors.Gold,
-                        startAngle = -90f,
-                        sweepAngle = 360f * comboTimeLeft,
-                        useCenter = false,
-                        topLeft = Offset(center.x - radius, center.y - radius),
-                        size = Size(radius * 2f, radius * 2f),
-                        style = stroke,
-                    )
-                }
-                .semantics { contentDescription = "Score $score" },
-        ) {
-            OutlinedText(displayed.toString(), GameTheme.type.title, outlineWidth = 3.dp, maxLines = 1)
-        }
-        if (comboMultiplier > 1 && comboTimeLeft > 0f) {
-            OutlinedText(
-                text = "×$comboMultiplier",
-                style = GameTheme.type.headline,
-                color = GameColors.Gold,
+    val comboRunning = comboTimeLeft > 0f
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(COMBO_BAR_GAP),
+        modifier = modifier.semantics(mergeDescendants = true) {
+            contentDescription = if (comboRunning && comboMultiplier > 1) "Score $score, combo times $comboMultiplier" else "Score $score"
+        },
+    ) {
+        Box {
+            Box(
+                contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .offset(x = COMBO_RING_RADIUS + Spacing.l),
-            )
+                    .height(SCORE_HEIGHT)
+                    .widthIn(min = SCORE_MIN_WIDTH)
+                    .enamelPill(GameColors.Gold)
+                    .padding(horizontal = Spacing.l),
+            ) {
+                OutlinedText(displayed.toString(), GameTheme.type.headline, outlineWidth = 2.5.dp, maxLines = 1)
+            }
+            if (comboRunning && comboMultiplier > 1) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = COMBO_BADGE / 2, y = -COMBO_BADGE / 3)
+                        .size(COMBO_BADGE)
+                        .drawBehind {
+                            val outline = 2.dp.toPx()
+                            drawCircle(GameColors.ButtonOutline, radius = size.minDimension / 2f + outline / 2f, style = Stroke(outline))
+                        }
+                        .candyFace(ButtonColor.GOLD, CircleShape),
+                ) {
+                    OutlinedText("×$comboMultiplier", GameTheme.type.caption, outlineColor = GameColors.GoldLip, outlineWidth = 1.5.dp, maxLines = 1)
+                }
+            }
         }
+        GameProgressBar(
+            fraction = comboTimeLeft,
+            height = COMBO_BAR_HEIGHT,
+            modifier = Modifier
+                .width(COMBO_BAR_WIDTH)
+                .alpha(if (comboRunning) 1f else 0f),
+        )
     }
 }
 
-private val COMBO_RING_RADIUS = 30.dp
 private val PAUSE_BUTTON_SIZE = 44.dp
+/** Least space between the score and the pills or pause button. */
+private val HUD_GAP = 12.dp
+private val SCORE_HEIGHT = 36.dp
+private val SCORE_MIN_WIDTH = 88.dp
+private val COMBO_BADGE = 28.dp
+private val COMBO_BAR_WIDTH = 64.dp
+private val COMBO_BAR_HEIGHT = 7.dp
+private val COMBO_BAR_GAP = 3.dp
+private val HUD_PILL_HEIGHT = 34.dp
+private val HUD_ICON = 26.dp
 
 @Preview
 @Composable

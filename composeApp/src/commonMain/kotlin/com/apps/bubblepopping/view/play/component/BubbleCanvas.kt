@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.PathEffect
@@ -81,114 +82,170 @@ private val POISON_SCHEME = BubbleScheme(
 // Shared soap-bubble renderer (parameterised by color scheme)
 // ─────────────────────────────────────────────────────────────────────────────
 
-private const val RIM_A_START = 10f
-private const val RIM_B_START = 190f
-private const val RIM_SWEEP = 130f
-
 /**
- * Colour stops for a sweep gradient centred on the origin that paints [stops]
- * evenly along the arc from [startDeg] to [startDeg] + [RIM_SWEEP]. Outside the
- * arc the gradient holds its end colours, which are transparent.
+ * The soap bubble, lit from the top-left. Only the soap film swirls ([rot]);
+ * the light and its reflections stay put, as on a real bubble. Layers, back to
+ * front:
+ *
+ * 1. a faint shadow on the scene below,
+ * 2. the body: clear in the middle, taking on [BubbleScheme.bodyTint] towards
+ *    the rim (glass and film catch more light at a glancing angle),
+ * 3. the soap film: a full ring of thin-film colours fading inwards, turned by [rot],
+ * 4. thicker, warmer film pooled along the bottom,
+ * 5. a crisp rim,
+ * 6. the window reflection (top-left), a soft bounce light (bottom-right) and a glint.
+ *
+ * [wobble] squashes and stretches the bubble a little (positive = wider), so it
+ * reads as soft soap. About ten draw calls, with every gradient cached per scheme.
  */
-internal fun rimColorStops(startDeg: Float, stops: List<Color>): Array<Pair<Float, Color>> =
-    Array(stops.size) { i ->
-        val t = i.toFloat() / (stops.size - 1)
-        (startDeg + t * RIM_SWEEP) / 360f to stops[i]
+internal fun DrawScope.drawSoapBubble(
+    cx: Float,
+    cy: Float,
+    r: Float,
+    rot: Float,
+    scheme: BubbleScheme,
+    wobble: Float = 0f,
+) {
+    val brushes = bubbleBrushes(scheme)
+
+    // 1. Shadow, a little below — lifts the bubble off the background. Not squashed.
+    withTransform({
+        translate(cx, cy + r * SHADOW_DROP)
+        scale(r, r, pivot = Offset.Zero)
+    }) {
+        drawCircle(ShadowBrush, radius = SHADOW_SIZE, center = Offset.Zero)
     }
 
-/** Sweep-gradient brushes for both rim arcs, built once per scheme. */
-private val rimBrushCache = HashMap<BubbleScheme, Pair<Brush, Brush>>()
-
-private fun rimBrushes(scheme: BubbleScheme): Pair<Brush, Brush> = rimBrushCache.getOrPut(scheme) {
-    Brush.sweepGradient(*rimColorStops(RIM_A_START, scheme.arcAStops), center = Offset.Zero) to
-        Brush.sweepGradient(*rimColorStops(RIM_B_START, scheme.arcBStops), center = Offset.Zero)
-}
-
-private fun DrawScope.drawSoapBubble(bubble: Bubble, scheme: BubbleScheme) =
-    drawSoapBubble(bubble.x, bubble.y, bubble.radius, bubble.shimmerAngle, scheme)
-
-internal fun DrawScope.drawSoapBubble(cx: Float, cy: Float, r: Float, rot: Float, scheme: BubbleScheme) {
-    val center = Offset(cx, cy)
-
-    // 1. Ghost fill
-    drawCircle(color = scheme.bodyTint.copy(alpha = 0.07f), radius = r, center = center)
-
-    // 2. Thin outline
-    drawCircle(
-        color  = scheme.outlineColor,
-        radius = r,
-        center = center,
-        style  = Stroke(width = 0.3f.dp.toPx()),
-    )
-
-    // 3. Two rainbow arc segments. Each is one arc with a cached sweep gradient
-    //    (drawn around the origin, then moved and turned into place) — this used
-    //    to be 26 solid-colour arcs per segment, 52 draw calls per bubble.
-    val rimWidth       = (r * 0.11f).coerceAtLeast(2.5f)
-    val gapFromOutline = 1.2f.dp.toPx()
-    val rimR           = r - gapFromOutline - rimWidth * 0.5f
-    val rimTopLeft     = Offset(-rimR, -rimR)
-    val rimSize        = Size(rimR * 2f, rimR * 2f)
-    val rimStroke      = Stroke(width = rimWidth, cap = StrokeCap.Butt)
-    val brushes        = rimBrushes(scheme)
+    // Everything else is drawn around the origin at unit radius, then moved, sized and squashed.
     withTransform({
         translate(cx, cy)
-        rotate(degrees = rot, pivot = Offset.Zero)
+        scale(scaleX = r * (1f + wobble), scaleY = r * (1f - wobble), pivot = Offset.Zero)
     }) {
-        drawArc(brushes.first, RIM_A_START, RIM_SWEEP, useCenter = false, topLeft = rimTopLeft, size = rimSize, style = rimStroke)
-        drawArc(brushes.second, RIM_B_START, RIM_SWEEP, useCenter = false, topLeft = rimTopLeft, size = rimSize, style = rimStroke)
-    }
+        // 2. Body.
+        drawCircle(brushes.body, radius = 1f, center = Offset.Zero)
 
-    // 4. Primary reflection blob
-    val blobAngleRad = (rot - 45f) * PI.toFloat() / 180f
-    val blobCX       = cx + r * 0.22f * cos(blobAngleRad)
-    val blobCY       = cy + r * 0.22f * sin(blobAngleRad)
-    val blobW        = r * 0.95f
-    val blobH        = r * 0.38f
-    val blobPivot    = Offset(blobCX, blobCY)
-    rotate(degrees = rot - 30f, pivot = blobPivot) {
-        drawOval(
-            brush   = Brush.radialGradient(
-                colors = listOf(Color.White.copy(alpha = 0.36f), Color.White.copy(alpha = 0.00f)),
-                center = blobPivot,
-                radius = blobW * 0.55f,
-            ),
-            topLeft = Offset(blobCX - blobW / 2f, blobCY - blobH / 2f),
-            size    = Size(blobW, blobH),
+        // 3. Soap film, swirling: a bright ring at the edge and a wide faint one fading inwards.
+        rotate(degrees = rot, pivot = Offset.Zero) {
+            drawCircle(brushes.film, radius = 0.86f, center = Offset.Zero, style = Stroke(width = 0.26f), alpha = FILM_INNER_ALPHA)
+            drawCircle(brushes.film, radius = 0.9f, center = Offset.Zero, style = Stroke(width = 0.13f), alpha = FILM_ALPHA)
+        }
+
+        // 4. Thicker, warmer film pooled along the bottom (fixed: gravity, not swirl).
+        drawArc(
+            brush = brushes.filmPool,
+            startAngle = 20f,
+            sweepAngle = 140f,
+            useCenter = false,
+            topLeft = Offset(-0.88f, -0.88f),
+            size = Size(1.76f, 1.76f),
+            style = Stroke(width = 0.16f, cap = StrokeCap.Round),
+            alpha = POOL_ALPHA,
         )
+
+        // 5. Crisp rim.
+        drawCircle(scheme.outlineColor, radius = 0.985f, center = Offset.Zero, style = Stroke(width = RIM_WIDTH))
+
+        // 6. Light, fixed top-left: the curved window reflection…
+        drawArc(
+            color = Color.White.copy(alpha = WINDOW_ALPHA),
+            startAngle = 196f,
+            sweepAngle = 58f,
+            useCenter = false,
+            topLeft = Offset(-0.7f, -0.7f),
+            size = Size(1.4f, 1.4f),
+            style = Stroke(width = 0.15f, cap = StrokeCap.Round),
+        )
+        // …a small bright spot beside it…
+        drawCircle(Color.White.copy(alpha = 0.9f), radius = 0.075f, center = Offset(-0.18f, -0.62f))
+        // …a soft bounce light opposite, tinted by the scheme…
+        drawArc(
+            color = scheme.crescentColor.copy(alpha = BOUNCE_ALPHA),
+            startAngle = 28f,
+            sweepAngle = 44f,
+            useCenter = false,
+            topLeft = Offset(-0.76f, -0.76f),
+            size = Size(1.52f, 1.52f),
+            style = Stroke(width = 0.07f, cap = StrokeCap.Round),
+        )
+        // …and a glint right on the rim.
+        drawCircle(scheme.sparkleColor.copy(alpha = 0.95f), radius = 0.05f, center = Offset(-0.69f, -0.69f))
     }
+}
 
-    // 5. Secondary crescent arc
-    val crescentR      = r * 0.60f
-    val crescentRect   = Offset(cx - crescentR, cy - crescentR)
-    val crescentSz     = Size(crescentR * 2f, crescentR * 2f)
-    val crescentStart  = rot + 150f
-    val crescentSweep  = 70f
-    val crescentStroke = (r * 0.055f).coerceAtLeast(2f)
-    drawArc(color = scheme.crescentColor.copy(alpha = 0.22f), startAngle = crescentStart - 6f,               sweepAngle = crescentSweep + 12f,            useCenter = false, topLeft = crescentRect, size = crescentSz, style = Stroke(width = crescentStroke * 2.4f, cap = StrokeCap.Round))
-    drawArc(color = scheme.crescentColor.copy(alpha = 0.82f), startAngle = crescentStart,                    sweepAngle = crescentSweep,                  useCenter = false, topLeft = crescentRect, size = crescentSz, style = Stroke(width = crescentStroke,       cap = StrokeCap.Round))
-    drawArc(color = scheme.crescentColor.copy(alpha = 0.95f), startAngle = crescentStart + crescentSweep * 0.3f, sweepAngle = crescentSweep * 0.4f,       useCenter = false, topLeft = crescentRect, size = crescentSz, style = Stroke(width = crescentStroke * 0.5f, cap = StrokeCap.Round))
+/**
+ * The soap film's colours around the ring: both of the scheme's rainbows without
+ * their transparent ends, then back to the first colour so the ring has no seam.
+ */
+internal fun filmRingColors(scheme: BubbleScheme): List<Color> {
+    val film = (scheme.arcAStops + scheme.arcBStops).filter { it.alpha > 0f }.ifEmpty { listOf(Color.White) }
+    return film + film.first()
+}
 
-    // 6. Sparkle dots
-    val aRad1 = (rot - 35f) * PI.toFloat() / 180f
-    drawCircle(
-        color  = scheme.sparkleColor.copy(alpha = 0.95f),
-        radius = r * 0.072f,
-        center = Offset(cx + r * cos(aRad1), cy + r * sin(aRad1)),
-    )
-    val aRad2 = (rot + 75f) * PI.toFloat() / 180f
-    drawCircle(
-        color  = scheme.sparkleColor.copy(alpha = 0.85f),
-        radius = r * 0.046f,
-        center = Offset(cx + r * cos(aRad2), cy + r * sin(aRad2)),
-    )
-    val aRad3 = (rot + 200f) * PI.toFloat() / 180f
-    drawCircle(
-        color  = scheme.sparkleColor.copy(alpha = 0.72f),
-        radius = r * 0.030f,
-        center = Offset(cx + r * cos(aRad3), cy + r * sin(aRad3)),
+/** The gradients a scheme needs, made once (at unit radius, around the origin) and reused. */
+private class BubbleBrushes(val body: Brush, val film: Brush, val filmPool: Brush)
+
+private val bubbleBrushCache = HashMap<BubbleScheme, BubbleBrushes>()
+
+private fun bubbleBrushes(scheme: BubbleScheme): BubbleBrushes = bubbleBrushCache.getOrPut(scheme) {
+    val filmStops = filmRingColors(scheme)
+    val film = filmStops.dropLast(1)
+    BubbleBrushes(
+        body = Brush.radialGradient(
+            0f to Color.Transparent,
+            0.55f to scheme.bodyTint.copy(alpha = 0.05f),
+            0.88f to scheme.bodyTint.copy(alpha = 0.2f),
+            1f to scheme.bodyTint.copy(alpha = 0.38f),
+            center = Offset.Zero,
+            radius = 1f,
+        ),
+        film = Brush.sweepGradient(filmStops, center = Offset.Zero),
+        // Warm film colours along the bottom: the second half of the palette.
+        filmPool = Brush.horizontalGradient(
+            film.takeLast((film.size / 2).coerceAtLeast(2)).let { if (it.size < 2) it + it else it },
+            startX = -0.9f,
+            endX = 0.9f,
+        ),
     )
 }
+
+private const val SHADOW_ALPHA = 0.16f
+private const val SHADOW_SIZE = 1.05f
+/** The shadow at unit radius, shared by every bubble. */
+private val ShadowBrush = Brush.radialGradient(
+    listOf(Color.Black.copy(alpha = SHADOW_ALPHA), Color.Transparent),
+    center = Offset.Zero,
+    radius = SHADOW_SIZE,
+)
+/** How far below its centre the shadow falls, in radii. */
+private const val SHADOW_DROP = 0.22f
+private const val FILM_ALPHA = 0.7f
+private const val FILM_INNER_ALPHA = 0.22f
+private const val POOL_ALPHA = 0.45f
+private const val WINDOW_ALPHA = 0.78f
+private const val BOUNCE_ALPHA = 0.45f
+/** The crisp outer edge, in radii. */
+private const val RIM_WIDTH = 0.03f
+
+/** How much a bubble's film turns as it rises, in degrees per pixel. */
+private const val SWIRL_PER_PX = 0.12f
+/** Squash-and-stretch: how far, and how many waves per pixel risen. */
+private const val WOBBLE_AMOUNT = 0.035f
+private const val WOBBLE_PER_PX = 0.02f
+
+/**
+ * Draws a live bubble. It has no clock of its own, so its height drives the
+ * motion: as it rises, the film swirls and it gently squashes and stretches,
+ * each bubble out of step with the others.
+ */
+private fun DrawScope.drawSoapBubble(bubble: Bubble, scheme: BubbleScheme) =
+    drawSoapBubble(
+        cx = bubble.x,
+        cy = bubble.y,
+        r = bubble.radius,
+        rot = bubble.shimmerAngle - bubble.y * SWIRL_PER_PX,
+        scheme = scheme,
+        wobble = WOBBLE_AMOUNT * sin(bubble.y * WOBBLE_PER_PX + bubble.phase),
+    )
 
 private fun DrawScope.drawBubbleIcon(bubble: Bubble, icon: ImageBitmap) {
     val iconSize = bubble.radius * 0.85f
@@ -370,21 +427,98 @@ fun DrawScope.drawGameBubble(
 ) {
     val center = Offset(bubble.x, bubble.y)
     val iconRadius = bubble.radius * 0.45f
+    if (bubble.type != BubbleType.NORMAL) {
+        // Special bubbles: the film, then a soft glow in their colour behind the icon.
+        drawSoapBubble(bubble, specialScheme(bubble.type))
+        drawCoreGlow(center, bubble.radius, CORE_GLOW_COLORS.getValue(bubble.type))
+    }
     when (bubble.type) {
         BubbleType.NORMAL -> drawSoapBubble(bubble, skinScheme(skinId) ?: normalScheme(world))
         BubbleType.POISON -> {
-            drawSoapBubble(bubble, POISON_SCHEME)
+            drawToxicSwirl(center, bubble.radius, rot = bubble.shimmerAngle - bubble.y * TOXIC_SWIRL_PER_PX)
             drawBubbleIcon(bubble, icons.skull)
             if (highContrastSkulls) drawHazardRing(center, bubble.radius)
         }
-        BubbleType.HEART -> { drawSoapBubble(bubble, HEART_SCHEME); drawBubbleIcon(bubble, icons.heart) }
-        BubbleType.GOLDEN -> { drawSoapBubble(bubble, GOLDEN_SCHEME); drawStarIcon(center, iconRadius) }
-        BubbleType.FREEZE -> { drawSoapBubble(bubble, FREEZE_SCHEME); drawSnowflakeIcon(center, iconRadius) }
-        BubbleType.BOMB -> { drawSoapBubble(bubble, BOMB_SCHEME); drawBombIcon(center, iconRadius) }
-        BubbleType.SPLITTER -> { drawSoapBubble(bubble, SPLITTER_SCHEME); drawSplitterIcon(center, iconRadius) }
-        BubbleType.SHIELD -> { drawSoapBubble(bubble, SHIELD_SCHEME); drawShieldIcon(center, iconRadius) }
+        BubbleType.HEART -> drawBubbleIcon(bubble, icons.heart)
+        BubbleType.GOLDEN -> drawStarIcon(center, iconRadius)
+        BubbleType.FREEZE -> drawSnowflakeIcon(center, iconRadius)
+        BubbleType.BOMB -> drawBombIcon(center, iconRadius)
+        BubbleType.SPLITTER -> drawSplitterIcon(center, iconRadius)
+        BubbleType.SHIELD -> drawShieldIcon(center, iconRadius)
     }
 }
+
+/** The film colours of a special bubble (normal bubbles use the skin or world instead). */
+private fun specialScheme(type: BubbleType): BubbleScheme = when (type) {
+    BubbleType.POISON -> POISON_SCHEME
+    BubbleType.HEART -> HEART_SCHEME
+    BubbleType.GOLDEN -> GOLDEN_SCHEME
+    BubbleType.FREEZE -> FREEZE_SCHEME
+    BubbleType.BOMB -> BOMB_SCHEME
+    BubbleType.SPLITTER -> SPLITTER_SCHEME
+    BubbleType.SHIELD -> SHIELD_SCHEME
+    BubbleType.NORMAL -> NORMAL_SCHEME
+}
+
+/** The glow behind each special bubble's icon, so its kind reads at a glance. */
+private val CORE_GLOW_COLORS: Map<BubbleType, Color> = mapOf(
+    BubbleType.POISON to Color(0xFF39FF14),
+    BubbleType.HEART to Color(0xFFFF4D8B),
+    BubbleType.GOLDEN to Color(0xFFFFD54F),
+    BubbleType.FREEZE to Color(0xFF80D8FF),
+    BubbleType.BOMB to Color(0xFFFF6E40),
+    BubbleType.SPLITTER to Color(0xFFEA80FC),
+    BubbleType.SHIELD to Color(0xFFECEFF1),
+)
+
+/** Unit-radius glow brushes, one per colour, built once. */
+private val coreGlowBrushes = HashMap<Color, Brush>()
+
+/** A soft glow in [color] filling the middle of a bubble, behind its icon. */
+private fun DrawScope.drawCoreGlow(center: Offset, r: Float, color: Color) {
+    val brush = coreGlowBrushes.getOrPut(color) {
+        Brush.radialGradient(
+            0f to color.copy(alpha = CORE_GLOW_ALPHA),
+            0.6f to color.copy(alpha = CORE_GLOW_ALPHA * 0.35f),
+            1f to Color.Transparent,
+            center = Offset.Zero,
+            radius = 1f,
+        )
+    }
+    withTransform({
+        translate(center.x, center.y)
+        scale(r * CORE_GLOW_SIZE, r * CORE_GLOW_SIZE, pivot = Offset.Zero)
+    }) {
+        drawCircle(brush, radius = 1f, center = Offset.Zero)
+    }
+}
+
+/** Swirling toxic greens inside a skull bubble, turning as it rises: dangerous at a glance. */
+private val ToxicSwirlBrush = Brush.sweepGradient(
+    listOf(
+        Color(0x0039FF14), Color(0x8839FF14), Color(0x00B2FF59),
+        Color(0x7700E676), Color(0x0039FF14), Color(0x88CCFF00), Color(0x0039FF14),
+    ),
+    center = Offset.Zero,
+)
+
+private fun DrawScope.drawToxicSwirl(center: Offset, r: Float, rot: Float) {
+    withTransform({
+        translate(center.x, center.y)
+        rotate(rot, pivot = Offset.Zero)
+        scale(r, r, pivot = Offset.Zero)
+    }) {
+        drawCircle(ToxicSwirlBrush, radius = TOXIC_SWIRL_SIZE, center = Offset.Zero, alpha = TOXIC_SWIRL_ALPHA)
+    }
+}
+
+private const val CORE_GLOW_ALPHA = 0.55f
+/** The core glow's reach, in bubble radii. */
+private const val CORE_GLOW_SIZE = 0.72f
+private const val TOXIC_SWIRL_SIZE = 0.78f
+private const val TOXIC_SWIRL_ALPHA = 0.85f
+/** The skull's swirl turns faster than normal film, so it looks restless. */
+private const val TOXIC_SWIRL_PER_PX = 0.5f
 
 /**
  * Accessibility: a black-and-yellow striped ring, so skulls stand out by shape
@@ -522,7 +656,6 @@ internal fun DrawScope.drawRainbowPop(anim: PopAnimation) {
     val p      = anim.progress
     val k      = anim.intensity
     val alpha  = (1f - p).coerceIn(0f, 1f)
-    val center = Offset(anim.x, anim.y)
 
     val ringR    = anim.radius * (1f + p * 3f * k)
     val strokeW  = ((3f * (1f - p) + 0.5f) * k).dp.toPx()
@@ -548,15 +681,81 @@ internal fun DrawScope.drawRainbowPop(anim: PopAnimation) {
         )
     }
 
-    if (p < 0.25f) {
-        drawCircle(
-            color  = Color.White.copy(alpha = ((0.25f - p) / 0.25f) * 0.5f),
-            radius = anim.radius * (1f - p * 3f).coerceAtLeast(0f),
-            center = center,
+}
+
+
+/**
+ * Shared by every pop style, drawn under it: the bubble's real burst — a bright
+ * flash, a ring of water droplets that fly out and fall, and a few curved shards
+ * of soap film spinning away. Bigger with [PopAnimation.intensity].
+ */
+internal fun DrawScope.drawPopBurst(anim: PopAnimation) {
+    val p = anim.progress
+    val k = anim.intensity
+    val r = anim.radius
+    val fade = (1f - p).coerceIn(0f, 1f)
+    val seed = anim.id.hashCode()
+
+    // Flash: a soft white glow that fills the bubble and fades fast.
+    if (p < FLASH_END) {
+        val flash = 1f - p / FLASH_END
+        withTransform({
+            translate(anim.x, anim.y)
+            val s = r * (1f + p * 2f)
+            scale(s, s, pivot = Offset.Zero)
+        }) {
+            drawCircle(FlashBrush, radius = 1f, center = Offset.Zero, alpha = flash * FLASH_ALPHA)
+        }
+    }
+
+    // Film shards: short curved strips of the bubble's skin, flying out and turning.
+    val shardR = r * (1f + p * 1.6f * k)
+    val shardStroke = Stroke(width = (r * 0.09f * fade).coerceAtLeast(0.5f), cap = StrokeCap.Round)
+    for (i in 0 until SHARD_COUNT) {
+        val start = i * (360f / SHARD_COUNT) + (seed % 60) + p * 50f
+        drawArc(
+            color = SHARD_COLORS[(i + seed).mod(SHARD_COLORS.size)],
+            startAngle = start,
+            sweepAngle = SHARD_SWEEP * (1f - p * 0.5f),
+            useCenter = false,
+            topLeft = Offset(anim.x - shardR, anim.y - shardR),
+            size = Size(shardR * 2f, shardR * 2f),
+            style = shardStroke,
+            alpha = fade * fade,
         )
+    }
+
+    // Droplets: fly out at slightly different speeds, then gravity pulls them down.
+    val dropR = (r * 0.065f * (1f - p * 0.6f)).coerceAtLeast(0.5f)
+    for (i in 0 until DROPLET_COUNT) {
+        val angle = (i.toFloat() / DROPLET_COUNT) * 2f * PI.toFloat() + (seed % 10) * 0.1f
+        val speed = 0.8f + ((i * 37 + seed).mod(10)) * 0.05f
+        val reach = r * (0.95f + p * 2.4f * k * speed)
+        val x = anim.x + cos(angle) * reach
+        val y = anim.y + sin(angle) * reach + p * p * r * DROPLET_FALL
+        drawCircle(DropletColor, radius = dropR, center = Offset(x, y), alpha = fade * 0.9f)
+        // A tiny highlight on each droplet.
+        drawCircle(Color.White, radius = dropR * 0.4f, center = Offset(x - dropR * 0.3f, y - dropR * 0.3f), alpha = fade)
     }
 }
 
+private val FlashBrush = Brush.radialGradient(
+    listOf(Color.White, Color.White.copy(alpha = 0.5f), Color.Transparent),
+    center = Offset.Zero,
+    radius = 1f,
+)
+/** The soap-film colours the shards take. */
+private val SHARD_COLORS = listOf(
+    Color(0xFFFF80CE), Color(0xFF80D8FF), Color(0xFFFFE57F), Color(0xFFB388FF), Color(0xFF69F0AE),
+)
+private val DropletColor = Color(0xFFE1F5FE)
+private const val FLASH_END = 0.18f
+private const val FLASH_ALPHA = 0.75f
+private const val SHARD_COUNT = 5
+private const val SHARD_SWEEP = 34f
+private const val DROPLET_COUNT = 10
+/** How far droplets fall by the end, in bubble radii. */
+private const val DROPLET_FALL = 1.4f
 // ─────────────────────────────────────────────────────────────────────────────
 // Near-miss warning
 // ─────────────────────────────────────────────────────────────────────────────

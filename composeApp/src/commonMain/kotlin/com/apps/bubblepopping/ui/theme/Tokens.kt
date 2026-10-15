@@ -55,6 +55,10 @@ object GameColors {
     val GlassButtonBottom = Color.White.copy(alpha = 0.14f)
     val GlassButtonLip = Color(0xFF231457).copy(alpha = 0.45f)
 
+    val SlateTop = Color(0xFF6A7396)
+    val SlateBottom = Color(0xFF424A6E)
+    val SlateLip = Color(0xFF262B45)
+
     // Accents
     val Gold = Color(0xFFFFD54F)
     val Pink = Color(0xFFFF6FD8)
@@ -74,8 +78,44 @@ object GameColors {
     val NightGlowCyan = Color(0xFF4FE3FF)
     val NightGlowViolet = Color(0xFF7E5BFF)
     val Starlight = Color(0xFFE8F4FF)
+    val NightNebulaPink = Color(0xFFFF6FD8)
+    val NightAurora = Color(0xFF4FFFC4)
     /** Black shade laid over the night sky, so cards and text are what stands out. */
     val BackgroundShade = Color.Black.copy(alpha = 0.4f)
+
+    // Buttons: dark outline (matches the icon art) and the soft shadow under them
+    val ButtonOutline = Color(0xFF0B0C24)
+    val ButtonShadow = Color.Black.copy(alpha = 0.25f)
+
+    // Resource pill tints: each counter is coloured by what it counts
+    val PillNeutral = Color(0xFF8E9BFF)
+    val PillCoin = Color(0xFFFFA81F)
+    val PillStar = Color(0xFFFFD54F)
+    val PillBubble = Color(0xFF5CC2FF)
+    val PillHeart = Color(0xFFFF6B8A)
+    val PillFreeze = Color(0xFF7FDBFF)
+    /** Seconds left on the freeze pill. */
+    val FreezeText = Color(0xFFB3E5FC)
+
+    // Shop cards: the common tier glow, and the near-white gold of rim glints
+    val TierCommon = Color(0xFFB8D4F0)
+    val CardGlint = Color(0xFFFFF6CC)
+
+    // Light enamel panels (Endless cards, stage intro): brighter violet-indigo body
+    val EnamelLightTop = Color(0xFF6E5CE6)
+    val EnamelLightBottom = Color(0xFF4A38B8)
+
+    // Ocean enamel (stage map world name plates): light cyan body and rim
+    val EnamelOceanTop = Color(0xFF3FC6D6)
+    val EnamelOceanBottom = Color(0xFF178AA6)
+    val OceanTint = Color(0xFF8CF0F5)
+
+    // Leaderboard podium: soft mid-violet cards (between the light enamel and the dialogs) and avatar backgrounds
+    val PodiumCardTop = Color(0xFF8A78EE)
+    val PodiumCardBottom = Color(0xFF5B48C9)
+    val PodiumCardRim = Color(0xFF4A38B8)
+    val PodiumAvatarTop = Color(0xFFE9E2FF)
+    val PodiumAvatarBottom = Color(0xFFB9ABF8)
 }
 
 /** The only spacing values used in layouts. */
