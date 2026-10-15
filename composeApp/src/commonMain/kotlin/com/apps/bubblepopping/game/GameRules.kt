@@ -104,6 +104,8 @@ object GameRules {
     // ── Bosses ──────────────────────────────────────────────────────────────
 
     const val BOSS_RADIUS_DP = 70f
+    /** A boss stage opens with normal bubbles; the boss arrives this long in. */
+    const val BOSS_ENTRY_DELAY_SECONDS = 5.5f
     /** A boss shrinks to this fraction of its size as its HP runs out. */
     const val BOSS_MIN_SCALE = 0.65f
     /** Each split copy is this fraction of its parent's size. */
@@ -114,18 +116,25 @@ object GameRules {
     const val BOSS_HIT_POINTS = 2
     const val BOSS_DEFEAT_POINTS = 100
     /** Damage a bomb blast deals to each boss it reaches. */
-    const val BOMB_BOSS_DAMAGE = 3
+    const val BOMB_BOSS_DAMAGE = 2
 
-    /** Movement speed by phase: above ⅔ HP, above ⅓, below ⅓. */
-    val BOSS_PHASE_SPEED = listOf(1f, 1.4f, 1.8f)
+    // A boss fight builds up over three phases: above ⅔ of its HP, above ⅓, below ⅓.
+    // Each list below has one value per phase.
+
+    /** Movement speed. */
+    val BOSS_PHASE_SPEED = listOf(1.4f, 2f, 2.8f)
+    /** Boss stages: the spawn interval is multiplied by this, so bubbles come faster. */
+    val BOSS_SPAWN_PACE = listOf(1f, 0.8f, 0.62f)
     /** Boss centre sits this far down the play area, bobbing by [BOSS_BOB_DP]. */
     const val BOSS_HEIGHT_FRACTION = 0.32f
     const val BOSS_BOB_DP = 24f
 
-    const val SKULL_EVERY_HITS = 3
-    const val STING_EVERY_HITS = 5
-    const val STING_SECONDS = 1f
-    const val NEBULA_BOMB_COUNT = 4
+    /** Cloud King: hits between thrown skulls. */
+    val SKULL_EVERY_HITS = listOf(4, 3, 2)
+    /** Jelly Queen: hits between stings, and how long each locks taps. */
+    val STING_EVERY_HITS = listOf(6, 5, 4)
+    val STING_SECONDS = listOf(1f, 1.25f, 1.5f)
+    const val NEBULA_BOMB_COUNT = 3
 
     const val BOSS_HIT_FLASH_SECONDS = 0.15f
     const val SHAKE_BOSS_HIT_DP = 1.5f

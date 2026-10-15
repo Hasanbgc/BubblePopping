@@ -1,5 +1,6 @@
 package com.apps.bubblepopping.view.meta
 
+import com.apps.bubblepopping.ui.icons.playIcon
 import androidx.compose.foundation.layout.padding
 import com.apps.bubblepopping.view.stage.ObjectiveRow
 import com.apps.bubblepopping.ui.components.goldInset
@@ -143,7 +144,7 @@ private fun DailyChallengePanel(today: Long, player: PlayerState, onPlay: (GameM
             text = "Play",
             onClick = { onPlay(GameMode.DailyChallenge(today)) },
             color = ButtonColor.VIOLET,
-            icon = GameIcons.Play,
+            icon = playIcon(),
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -176,7 +177,7 @@ private fun DailyStagePanel(today: Long, player: PlayerState, world: World, onPl
         GameButton(
             text = "Play",
             onClick = { onPlay(GameMode.DailyStage(today, world)) },
-            icon = GameIcons.Play,
+            icon = playIcon(),
             modifier = Modifier.fillMaxWidth(),
         )
     }

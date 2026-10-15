@@ -1,5 +1,7 @@
 package com.apps.bubblepopping.view.play.component
 
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import com.apps.bubblepopping.ui.icons.playIcon
 import com.apps.bubblepopping.ui.components.GameProgressBar
 import com.apps.bubblepopping.ui.components.candyFace
 import androidx.compose.foundation.shape.CircleShape
@@ -101,7 +103,7 @@ fun GameHud(
             },
             end = {
                 GameIconButton(
-                    icon = if (isPaused) GameIcons.Play else GameIcons.Pause,
+                    icon = if (isPaused) playIcon() else rememberVectorPainter(GameIcons.Pause),
                     contentDescription = if (isPaused) "Resume" else "Pause",
                     onClick = onPlayPauseClick,
                     color = ButtonColor.BLUE,

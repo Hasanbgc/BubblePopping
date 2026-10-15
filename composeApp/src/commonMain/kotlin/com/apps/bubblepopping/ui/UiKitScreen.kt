@@ -1,5 +1,6 @@
 package com.apps.bubblepopping.ui
 
+import com.apps.bubblepopping.ui.icons.playIcon
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -85,7 +86,7 @@ fun UiKitScreen(onBack: () -> Unit) {
         }
 
         GlassPanel(Modifier.fillMaxWidth(), title = "Buttons") {
-            GameButton("Play", onClick = {}, size = ButtonSize.LARGE, icon = GameIcons.Play, modifier = Modifier.fillMaxWidth())
+            GameButton("Play", onClick = {}, size = ButtonSize.LARGE, icon = playIcon(), modifier = Modifier.fillMaxWidth())
             GameButton("Daily Challenge", onClick = {}, color = ButtonColor.VIOLET, modifier = Modifier.fillMaxWidth())
             GameButton("Claim +40", onClick = {}, color = ButtonColor.GREEN, icon = GameIcons.Coin, modifier = Modifier.fillMaxWidth())
             GameButton("300", onClick = {}, color = ButtonColor.GOLD, icon = GameIcons.Coin, modifier = Modifier.fillMaxWidth())

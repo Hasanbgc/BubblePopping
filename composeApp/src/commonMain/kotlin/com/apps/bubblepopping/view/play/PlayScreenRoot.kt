@@ -1,5 +1,6 @@
 package com.apps.bubblepopping.view.play
 
+import com.apps.bubblepopping.ui.icons.playIcon
 import com.apps.bubblepopping.view.play.component.GoalBanner
 import kotlinx.coroutines.delay
 import com.apps.bubblepopping.ui.components.PanelDivider
@@ -638,7 +639,7 @@ private fun PauseOverlay(
     OverlayScrim(modifier = modifier, onScrimClick = onResume) {
         GameDialogCard(title = "Paused", onClose = onResume) {
             ScorePlaque(score = formatCount(score), celebrate = false)
-            GameButton("Resume", onClick = onResume, size = ButtonSize.LARGE, icon = GameIcons.Play, modifier = Modifier.fillMaxWidth())
+            GameButton("Resume", onClick = onResume, size = ButtonSize.LARGE, icon = playIcon(), modifier = Modifier.fillMaxWidth())
             // Secondary actions under a divider, as round buttons with labels, so Resume stays the obvious one.
             PanelDivider()
             RoundActions {

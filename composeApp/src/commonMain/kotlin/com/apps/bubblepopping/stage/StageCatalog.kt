@@ -33,8 +33,8 @@ object StageCatalog {
     )
     private val CANDY_SKULLS = CANDY + (BubbleType.POISON to 28) + (BubbleType.SHIELD to 8)
 
-    /** Boss stages: fewer, slower bubbles so the boss is the focus — but lives still matter. */
-    private val BOSS_SPAWN = SpawnConfig.MEDIUM.copy(spawnInterval = 1.4f)
+    /** Boss stages: bubbles start calm so the boss is the focus, then speed up with each phase ([GameRules.BOSS_SPAWN_PACE]). */
+    private val BOSS_SPAWN = SpawnConfig.MEDIUM.copy(spawnInterval = 1.25f)
 
     /** Faster than HARD, for the late stages of later worlds. */
     private val VERY_HARD = SpawnConfig.HARD.copy(spawnInterval = 0.4f, maxSpeed = 0.115f, maxSpeedCap = 0.22f)
@@ -123,9 +123,9 @@ object StageCatalog {
         StageConfig(
             id = 10,
             world = World.SKY,
-            introText = "👑 The Cloud King! Every few hits he throws a skull — don't tap it!",
+            introText = "👑 The Cloud King! Every few hits he sends a skull up from below — don't tap it!",
             goal = Objective.DefeatBoss(Bosses.CLOUD_KING),
-            bonusGoals = listOf(Objective.FinishUnder(60), Objective.NoLivesLost),
+            bonusGoals = listOf(Objective.FinishUnder(55), Objective.NoLivesLost),
             spawn = BOSS_SPAWN.copy(typeWeights = WITH_HEARTS),
         ),
 
@@ -215,7 +215,7 @@ object StageCatalog {
             world = World.OCEAN,
             introText = "👑 The Jelly Queen! Every few hits she stings — your taps stop working for a moment.",
             goal = Objective.DefeatBoss(Bosses.JELLY_QUEEN),
-            bonusGoals = listOf(Objective.FinishUnder(75), Objective.NoLivesLost),
+            bonusGoals = listOf(Objective.FinishUnder(70), Objective.NoLivesLost),
             spawn = BOSS_SPAWN.copy(typeWeights = OCEAN),
         ),
 
@@ -305,7 +305,7 @@ object StageCatalog {
             world = World.SPACE,
             introText = "👑 The Nebula Core! Bomb blasts hurt it — and it drops bombs when it's weak.",
             goal = Objective.DefeatBoss(Bosses.NEBULA_CORE),
-            bonusGoals = listOf(Objective.FinishUnder(90), Objective.NoLivesLost),
+            bonusGoals = listOf(Objective.FinishUnder(85), Objective.NoLivesLost),
             spawn = BOSS_SPAWN.copy(typeWeights = SPACE),
         ),
 

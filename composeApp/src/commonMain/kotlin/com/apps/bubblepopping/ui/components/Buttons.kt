@@ -147,6 +147,18 @@ fun GameIconButton(
     color: ButtonColor = ButtonColor.GLASS,
     size: Dp = 48.dp,
     enabled: Boolean = true,
+) = GameIconButton(rememberVectorPainter(icon), contentDescription, onClick, modifier, color, size, enabled)
+
+/** [GameIconButton] with an image icon, e.g. the Play art. */
+@Composable
+fun GameIconButton(
+    icon: Painter,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    color: ButtonColor = ButtonColor.GLASS,
+    size: Dp = 48.dp,
+    enabled: Boolean = true,
 ) {
     val lip = size / 12
     PressableSurface(
@@ -160,7 +172,7 @@ fun GameIconButton(
             .size(width = size, height = size + lip)
             .semantics { this.contentDescription = contentDescription },
     ) {
-        Image(imageVector = icon, contentDescription = null, modifier = Modifier.size(size * 0.55f))
+        Image(painter = icon, contentDescription = null, modifier = Modifier.size(size * 0.55f))
     }
 }
 

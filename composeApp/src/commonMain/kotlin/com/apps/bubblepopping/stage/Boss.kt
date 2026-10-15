@@ -50,26 +50,26 @@ object Bosses {
         id = "cloud_king",
         name = "Cloud King",
         gimmick = BossGimmick.THROWS_SKULLS,
-        hpPerGeneration = listOf(20),
+        hpPerGeneration = listOf(30),
     )
     val JELLY_QUEEN = BossConfig(
         id = "jelly_queen",
         name = "Jelly Queen",
         gimmick = BossGimmick.STINGS,
-        hpPerGeneration = listOf(26),
+        hpPerGeneration = listOf(38),
     )
     val NEBULA_CORE = BossConfig(
         id = "nebula_core",
         name = "Nebula Core",
         gimmick = BossGimmick.DROPS_BOMBS,
-        hpPerGeneration = listOf(32),
+        hpPerGeneration = listOf(46),
     )
-    /** 12 HP, then 3 copies × 4 HP, then 9 copies × 1 HP = 33 in total. */
+    /** 16 HP, then 3 copies × 6 HP, then 9 copies × 2 HP = 52 in total. */
     val GUMBALL_GIANT = BossConfig(
         id = "gumball_giant",
         name = "Gumball Giant",
         gimmick = BossGimmick.SPLITS,
-        hpPerGeneration = listOf(12, 4, 1),
+        hpPerGeneration = listOf(16, 6, 2),
         radiusDp = GameRules.BOSS_RADIUS_DP + 6f,
     )
 }

@@ -36,6 +36,8 @@ class BossTest {
     private companion object {
         const val FRAME = 0.016f
         const val DENSITY = 2.75f
+        /** Time for a freshly arrived boss to glide down into place. */
+        const val BOSS_SETTLE_SECONDS = 2f
 
         /** Practically no regular bubbles, so taps always land on the boss. */
         val NO_BUBBLES = SpawnConfig.MEDIUM.copy(
@@ -76,7 +78,8 @@ class BossTest {
             seed = 1L,
         ).apply {
             setCanvasBounds(1080f, 2340f, topOffset = 200f, density = DENSITY)
-            update(FRAME)   // the boss appears on the first frame
+            // Normal bubbles open the round; the boss arrives, then glides into place.
+            runFor(GameRules.BOSS_ENTRY_DELAY_SECONDS + BOSS_SETTLE_SECONDS)
         }
     }
 
@@ -155,23 +158,23 @@ class BossTest {
     }
 
     @Test
-    fun cloudKing_throwsASkull_everyThirdHit() = runTest {
+    fun cloudKing_throwsASkull_everyFewHits() = runTest {
         val viewModel = bossViewModel(boss(BossGimmick.THROWS_SKULLS, 20))
         collectEvents(viewModel)
 
-        repeat(GameRules.SKULL_EVERY_HITS - 1) { viewModel.tapBoss() }
+        repeat(GameRules.SKULL_EVERY_HITS.first() - 1) { viewModel.tapBoss() }
         assertTrue(viewModel.bubbles.none { it.type == BubbleType.POISON })
 
         viewModel.tapBoss()
         val skull = viewModel.bubbles.single { it.type == BubbleType.POISON }
-        assertTrue(skull.y < viewModel.bosses.single().y)   // thrown out of the top
+        assertTrue(skull.y > viewModel.bosses.single().y)   // sent up from the bottom
     }
 
     @Test
     fun jellyQueen_stingLocksTaps_withoutCountingMisses() = runTest {
         val viewModel = bossViewModel(boss(BossGimmick.STINGS, 20), bonusGoals = listOf(Objective.NoMisses))
         collectEvents(viewModel)
-        repeat(GameRules.STING_EVERY_HITS) { viewModel.tapBoss() }
+        repeat(GameRules.STING_EVERY_HITS.first()) { viewModel.tapBoss() }
         assertTrue(viewModel.tapLockLeft > 0f)
         val hpAfterSting = viewModel.bosses.single().hp
 
@@ -181,7 +184,7 @@ class BossTest {
         assertEquals(hpAfterSting, viewModel.bosses.single().hp)
         assertTrue(viewModel.objectives.last().satisfied)   // NoMisses still intact
 
-        viewModel.runFor(GameRules.STING_SECONDS + 0.1f)
+        viewModel.runFor(GameRules.STING_SECONDS.first() + 0.1f)
         assertTrue(viewModel.tapBoss())
     }
 
@@ -206,8 +209,12 @@ class BossTest {
     fun skullInFrontOfTheBoss_isTappedFirst() = runTest {
         val viewModel = bossViewModel(boss(BossGimmick.THROWS_SKULLS, 20))
         val events = collectEvents(viewModel)
-        repeat(GameRules.SKULL_EVERY_HITS) { viewModel.tapBoss() }
+        repeat(GameRules.SKULL_EVERY_HITS.first()) { viewModel.tapBoss() }
         val skull = viewModel.bubbles.single { it.type == BubbleType.POISON }
+        // Float it up in front of the boss.
+        val boss = viewModel.bosses.single()
+        skull.x = boss.x
+        skull.y = boss.y
 
         viewModel.tryPop(Offset(skull.x, skull.y))
 
@@ -223,14 +230,16 @@ class BossTest {
 
         viewModel.restartGame()
         viewModel.update(FRAME)
+        assertTrue(viewModel.bosses.isEmpty())   // normal bubbles open the round again
 
+        viewModel.runFor(GameRules.BOSS_ENTRY_DELAY_SECONDS + 0.1f)
         assertEquals(5, viewModel.bosses.single().hp)
         assertEquals(0, viewModel.objectives.first().current)
     }
 
     @Test
     fun bossTotals_includeEverySplitCopy() {
-        assertEquals(20, Bosses.CLOUD_KING.totalHp)
-        assertEquals(12 + 3 * 4 + 9 * 1, Bosses.GUMBALL_GIANT.totalHp)
+        assertEquals(30, Bosses.CLOUD_KING.totalHp)
+        assertEquals(16 + 3 * 6 + 9 * 2, Bosses.GUMBALL_GIANT.totalHp)
     }
 }

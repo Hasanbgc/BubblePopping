@@ -1,5 +1,6 @@
 package com.apps.bubblepopping.view.play
 
+import com.apps.bubblepopping.ui.icons.playIcon
 import com.apps.bubblepopping.ui.components.PanelDivider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.width
@@ -141,7 +142,7 @@ fun StageResultOverlay(
                 // Main action, then the rest as round buttons — like the pause card.
                 val showNext = result.won && onNext != null
                 if (showNext && onNext != null) {
-                    GameButton("Next stage", onClick = onNext, size = ButtonSize.LARGE, icon = GameIcons.Play, modifier = Modifier.fillMaxWidth())
+                    GameButton("Next stage", onClick = onNext, size = ButtonSize.LARGE, icon = playIcon(), modifier = Modifier.fillMaxWidth())
                 } else {
                     GameButton("Retry", onClick = onRetry, size = ButtonSize.LARGE, icon = GameIcons.Restart, modifier = Modifier.fillMaxWidth())
                 }

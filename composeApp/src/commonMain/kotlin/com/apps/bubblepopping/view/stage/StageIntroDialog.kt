@@ -1,5 +1,6 @@
 package com.apps.bubblepopping.view.stage
 
+import com.apps.bubblepopping.ui.icons.playIcon
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -106,7 +107,7 @@ fun StageIntroDialog(
             text = "PLAY",
             onClick = onPlay,
             size = ButtonSize.LARGE,
-            icon = GameIcons.Play,
+            icon = playIcon(),
             modifier = Modifier.fillMaxWidth(),
         )
     }

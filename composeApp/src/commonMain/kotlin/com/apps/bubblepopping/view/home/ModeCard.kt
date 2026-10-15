@@ -1,5 +1,9 @@
 package com.apps.bubblepopping.view.home
 
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import com.apps.bubblepopping.ui.icons.playIcon
+import com.apps.bubblepopping.ui.components.ButtonSize
+import com.apps.bubblepopping.ui.components.GameButton
 import androidx.compose.ui.unit.Dp
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.aspectRatio
@@ -20,9 +24,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -52,7 +54,6 @@ import androidx.compose.ui.unit.dp
 import com.apps.bubblepopping.ui.components.ButtonColor
 import com.apps.bubblepopping.ui.components.LocalUiFeedback
 import com.apps.bubblepopping.ui.components.OutlinedText
-import com.apps.bubblepopping.ui.components.candyFace
 import com.apps.bubblepopping.ui.icons.GameIcons
 import com.apps.bubblepopping.ui.theme.Corners
 import com.apps.bubblepopping.ui.theme.GameColors
@@ -62,7 +63,7 @@ import com.apps.bubblepopping.ui.theme.Spacing
 /**
  * A game mode on Home: a tall framed card in the mode's [color] — its title,
  * its [art] bobbing gently on a soft glow, its live progress ([info]), and a
- * PLAY tag. The whole card is the button: pressing squashes it like the
+ * standard PLAY button. The whole card plays too: pressing it squashes it like the
  * game's buttons, with the click sound and buzz.
  */
 @Composable
@@ -84,8 +85,8 @@ fun ModeCard(
 
 /**
  * [ModeCard] with drawn [art] (given the modifier that sizes and bobs it), an
- * optional [subtitle] under the title, and a [locked] state: dimmed art, a slate
- * LOCKED tag instead of PLAY, and no press.
+ * optional [subtitle] under the title, and a [locked] state: dimmed art, a greyed-out slate
+ * LOCKED button instead of PLAY, and no press.
  */
 @Composable
 fun ModeCard(
@@ -190,29 +191,16 @@ fun ModeCard(
         }
         info()
         Spacer(Modifier.height(Spacing.s))
-        // The PLAY tag (or LOCKED): looks like a button; the whole card is what's pressed.
-        val tag = if (locked) ButtonColor.SLATE else ButtonColor.GREEN
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.xs, Alignment.CenterHorizontally),
-            modifier = Modifier
-                .fillMaxWidth()
-                .drawBehind {
-                    val outline = 2.dp.toPx()
-                    drawRoundRect(
-                        GameColors.ButtonOutline,
-                        topLeft = Offset(-outline / 2f, -outline / 2f),
-                        size = Size(size.width + outline, size.height + outline),
-                        cornerRadius = CornerRadius(size.height / 2f + outline / 2f),
-                        style = Stroke(outline),
-                    )
-                }
-                .candyFace(tag, Corners.pill)
-                .padding(vertical = Spacing.xs),
-        ) {
-            Image(if (locked) GameIcons.Lock else GameIcons.Play, contentDescription = null, modifier = Modifier.size(PLAY_ICON))
-            OutlinedText(if (locked) "LOCKED" else "PLAY", GameTheme.type.label, outlineColor = tag.lip, maxLines = 1)
-        }
+        // The standard game button (or LOCKED, greyed out). Tapping it or anywhere on the card plays.
+        GameButton(
+            text = if (locked) "LOCKED" else "PLAY",
+            onClick = onClick,
+            color = if (locked) ButtonColor.SLATE else ButtonColor.GREEN,
+            size = ButtonSize.MEDIUM,
+            icon = if (locked) rememberVectorPainter(GameIcons.Lock) else playIcon(),
+            enabled = !locked,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -221,7 +209,6 @@ private val CARD_OUTLINE = 3.dp
 private val CARD_RIM = 3.dp
 private val ART_SIZE = 96.dp
 private val BOB_HEIGHT = 6.dp
-private val PLAY_ICON = 20.dp
 private val PRESS_SINK = 4.dp
 private const val SQUASH_X = 0.03f
 private const val SQUASH_Y = 0.05f

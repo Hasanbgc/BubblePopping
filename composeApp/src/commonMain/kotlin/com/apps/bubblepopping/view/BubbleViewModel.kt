@@ -88,8 +88,8 @@ class BubbleGameViewModel(
         /** Bomb blasts draw a much bigger burst than a normal pop. */
         private const val BLAST_INTENSITY = 3f
         private const val BOSS_POP_INTENSITY = 2.5f
-        /** Thrown skulls appear this far above the boss's edge. */
-        private const val SKULL_GAP_DP = 16f
+        /** "STUNG!" appears this far below the boss's edge. */
+        private const val BOSS_TEXT_GAP_DP = 16f
         private const val BOMB_DROP_SPACING_DP = 40f
         /** How quickly bosses catch up with their movement path (per second). */
         private const val BOSS_FOLLOW_RATE = 6f
@@ -241,7 +241,7 @@ class BubbleGameViewModel(
     // Boss state
     private var bossSpawned     = false
     private var bossClock       = 0f
-    private var bossTapHits     = 0
+    private var bossHitsSinceGimmick = 0
     private var bossDamageDealt = 0
     private var bossBombsDropped = false
     /** Slow-motion seconds left after the final blow; the stage ends when it runs out. */
@@ -407,7 +407,7 @@ class BubbleGameViewModel(
         confetti.clear()
         bossSpawned   = false
         bossClock     = 0f
-        bossTapHits   = 0
+        bossHitsSinceGimmick   = 0
         bossDamageDealt = 0
         bossBombsDropped = false
         celebrationLeft = 0f
@@ -576,10 +576,13 @@ class BubbleGameViewModel(
     // Bosses
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** The boss appears on the first frame of a boss stage (once the canvas size is known). */
+    /**
+     * The boss arrives [GameRules.BOSS_ENTRY_DELAY_SECONDS] into a boss stage — normal
+     * bubbles warm the round up first — and glides down into place from above the screen.
+     */
     private fun spawnBossIfNeeded() {
         val config = stage?.boss ?: return
-        if (bossSpawned) return
+        if (bossSpawned || playTime < GameRules.BOSS_ENTRY_DELAY_SECONDS) return
         bossSpawned = true
         bosses.add(
             BossBubble(
@@ -590,7 +593,8 @@ class BubbleGameViewModel(
                 fullRadius = config.radiusDp * density,
                 motionPhase = 0f,
                 x = canvasWidth / 2f,
-                y = bossBaseY(),
+                // Starts above the screen; [bossStep] glides it down to its path.
+                y = -config.radiusDp * density,
             )
         )
     }
@@ -636,12 +640,21 @@ class BubbleGameViewModel(
         addFloatingText("+$points", boss.x, boss.y - boss.radius, ScorePopupColor)
         emit(GameEvent.ComboChanged(newCombo, previous))
 
-        bossTapHits++
+        bossHitsSinceGimmick++
         damageBoss(boss, damage = 1, points = points)
         if (boss.hp <= 0) return
+        // The gimmick comes round sooner as the fight goes on.
+        val phase = bossPhase()
+        val every = when (boss.config.gimmick) {
+            BossGimmick.THROWS_SKULLS -> GameRules.SKULL_EVERY_HITS[phase]
+            BossGimmick.STINGS -> GameRules.STING_EVERY_HITS[phase]
+            BossGimmick.DROPS_BOMBS, BossGimmick.SPLITS -> return
+        }
+        if (bossHitsSinceGimmick < every) return
+        bossHitsSinceGimmick = 0
         when (boss.config.gimmick) {
-            BossGimmick.THROWS_SKULLS -> if (bossTapHits % GameRules.SKULL_EVERY_HITS == 0) throwSkull(boss)
-            BossGimmick.STINGS -> if (bossTapHits % GameRules.STING_EVERY_HITS == 0) sting(boss)
+            BossGimmick.THROWS_SKULLS -> throwSkull()
+            BossGimmick.STINGS -> sting(boss)
             BossGimmick.DROPS_BOMBS, BossGimmick.SPLITS -> Unit
         }
     }
@@ -710,14 +723,14 @@ class BubbleGameViewModel(
         emit(GameEvent.BossDefeated(GameRules.BOSS_DEFEAT_POINTS))
     }
 
-    private fun throwSkull(boss: BossBubble) {
-        val gap = SKULL_GAP_DP * density
-        bubbles.add(createBubble(forcedType = BubbleType.POISON, at = Offset(boss.x, boss.y - boss.radius - gap)))
+    /** The Cloud King sends a skull bubble up from the bottom, among the others. */
+    private fun throwSkull() {
+        bubbles.add(createBubble(forcedType = BubbleType.POISON))
     }
 
     private fun sting(boss: BossBubble) {
-        tapLockLeft = GameRules.STING_SECONDS
-        addFloatingText("STUNG!", boss.x, boss.y + boss.radius + SKULL_GAP_DP * density, StingColor, isMilestone = true)
+        tapLockLeft = GameRules.STING_SECONDS[bossPhase()]
+        addFloatingText("STUNG!", boss.x, boss.y + boss.radius + BOSS_TEXT_GAP_DP * density, StingColor, isMilestone = true)
     }
 
     /** Nebula Core: bombs drop out from under it once, when it falls below ⅓ HP. */
@@ -884,7 +897,9 @@ class BubbleGameViewModel(
         // Endless: nothing spawns between waves, and the wave sets the pace.
         if (waveDirector?.isCalm == true) return
         val interval = waveDirector?.spawnInterval
-            ?: (spawn.spawnInterval - score * spawn.spawnRampPerPoint).coerceAtLeast(spawn.minSpawnInterval)
+            ?: ((spawn.spawnInterval - score * spawn.spawnRampPerPoint).coerceAtLeast(spawn.minSpawnInterval) *
+                // Boss stages: the bubbles around the boss come faster as the fight goes on.
+                (if (stage?.boss != null) GameRules.BOSS_SPAWN_PACE[bossPhase()] else 1f))
         spawnTimer += dt
         if (spawnTimer >= interval) {
             spawnTimer = 0f
