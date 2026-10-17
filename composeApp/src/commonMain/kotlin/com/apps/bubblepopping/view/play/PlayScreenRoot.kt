@@ -531,7 +531,8 @@ fun BubblePoppingScreen(
                 viewModel.objectives.firstOrNull()?.let { goal ->
                     GoalBanner(
                         text = goal.objective.description,
-                        visible = goalBannerVisible,
+                        // Hidden while paused, so it never sits on top of the pause menu.
+                        visible = goalBannerVisible && !isPaused,
                         modifier = Modifier.align(Alignment.Center),
                     )
                 }
@@ -548,7 +549,9 @@ fun BubblePoppingScreen(
                 )
                 WaveBanner(
                     wave     = viewModel.wave,
-                    visible  = viewModel.isWaveCalm && !viewModel.isGameOver,
+                    // Hidden while paused, so it never sits on top of the pause menu;
+                    // back on resume if the calm is still going.
+                    visible  = viewModel.isWaveCalm && !viewModel.isGameOver && !isPaused,
                     modifier = Modifier.align(Alignment.Center),
                 )
             }
