@@ -21,6 +21,7 @@ import com.apps.bubblepopping.game.GameMode
 import com.apps.bubblepopping.game.GameOverReason
 import com.apps.bubblepopping.game.GameRules
 import com.apps.bubblepopping.game.ObjectiveTracker
+import com.apps.bubblepopping.game.ReviveOffer
 import com.apps.bubblepopping.game.RunTracker
 import com.apps.bubblepopping.meta.DailyStageGenerator
 import com.apps.bubblepopping.meta.RunRewards
@@ -159,6 +160,17 @@ class BubbleGameViewModel(
     var unlockedDifficulty by mutableStateOf<Difficulty?>(null); private set
     /** Why the round ended; null while it is running. */
     var gameOverReason by mutableStateOf<GameOverReason?>(null); private set
+    /**
+     * Set while the round is lost but a coin revive is on offer: [isGameOver] is
+     * true, yet nothing is saved until the player declines or the offer runs out.
+     */
+    var reviveOffer    by mutableStateOf<ReviveOffer?>(null); private set
+    /** True once a revive was offered this round (the result then appears without the slow-motion wait). */
+    var reviveWasOffered by mutableStateOf(false);   private set
+    /** True once this round's one revive was used. */
+    var hasRevived     by mutableStateOf(false);     private set
+    /** Seconds of protection left after a revive: bubbles are slowed and nothing can end the round. */
+    var reviveGraceLeft by mutableStateOf(0f);       private set
 
     /** Theme for backgrounds and bubble colours. Endless uses the first world. */
     val world: World = stage?.world ?: World.SKY
@@ -202,6 +214,10 @@ class BubbleGameViewModel(
     val settings: StateFlow<GameSettings> = settingsRepository.settings
         .stateIn(viewModelScope, SharingStarted.Eagerly, GameSettings())
 
+    /** The player's coins (for the revive offer); null while loading. */
+    val coins: StateFlow<Int?> = metaRepository.player().map { it.coins }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     /** Stage progress decides which bubble types and difficulties Endless has unlocked. */
     private val stageProgress: StateFlow<Map<Int, StageProgress>> = progressRepository.stageProgress()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
@@ -227,7 +243,11 @@ class BubbleGameViewModel(
     private val waveDirector    = if (stage == null) WaveDirector(spawn) else null
     /** Seconds of slow drift left after the round ends. */
     private var gameOverSlowmoLeft = 0f
-    private var random          = newRandom()
+    /** Stage only: seconds a revive added to the timer. */
+    private var bonusSeconds    = 0
+    /** True while a revive's coins are being taken (the offer stops counting down). */
+    private var revivePending   = false
+    private var random         = newRandom()
     private var spawnTimer      = 0f
     private var playTime        = 0f
     private var lastTickSec     = 0
@@ -287,6 +307,7 @@ class BubbleGameViewModel(
         effectsStep(dt)
         if (isGameOver) {
             gameOverSlowmoStep(dt)
+            reviveCountdownStep(dt)
             return
         }
         if (hitStopLeft > 0f) {
@@ -299,6 +320,10 @@ class BubbleGameViewModel(
         if (celebrationLeft > 0f) {
             bubbleDt *= GameRules.CELEBRATION_SLOWMO
             celebrationLeft = (celebrationLeft - dt).coerceAtLeast(0f)
+        }
+        if (reviveGraceLeft > 0f) {
+            bubbleDt *= GameRules.REVIVE_GRACE_SLOWDOWN
+            reviveGraceLeft = (reviveGraceLeft - dt).coerceAtLeast(0f)
         }
         freezeTimeLeft = (freezeTimeLeft - dt).coerceAtLeast(0f)
         tapLockLeft = (tapLockLeft - dt).coerceAtLeast(0f)
@@ -376,6 +401,30 @@ class BubbleGameViewModel(
         if (!sameDirection || abs(strength) > abs(breeze)) breeze = strength
     }
 
+    /**
+     * Pays for the [reviveOffer] and plays on. If the coins can't be taken after
+     * all, the round ends as if declined.
+     */
+    fun revive() {
+        val offer = reviveOffer ?: return
+        if (revivePending) return
+        revivePending = true
+        viewModelScope.launch {
+            val paid = metaRepository.spendCoins(offer.cost)
+            revivePending = false
+            if (reviveOffer != offer) return@launch
+            if (paid) resumeAfterRevive(offer.reason) else declineRevive()
+        }
+    }
+
+    /** Turns down the [reviveOffer]: the round ends and is saved as usual. */
+    fun declineRevive() {
+        val offer = reviveOffer ?: return
+        if (revivePending) return
+        reviveOffer = null
+        finishRound(offer.reason)
+    }
+
     fun restartGame() {
         bubbles.clear()
         popAnimations.clear()
@@ -417,6 +466,12 @@ class BubbleGameViewModel(
         isWaveCalm    = false
         waveProgress  = 0f
         gameOverReason = null
+        reviveOffer   = null
+        reviveWasOffered = false
+        hasRevived    = false
+        reviveGraceLeft = 0f
+        revivePending = false
+        bonusSeconds  = 0
         rewards       = null
         runTracker    = RunTracker()
         unlockedDifficulty = null
@@ -481,9 +536,10 @@ class BubbleGameViewModel(
         }
     }
 
-    /** A skull ends the round — unless a shield absorbs it. */
+    /** A skull ends the round — unless a shield absorbs it or a revive's grace is still on. */
     private fun popPoison(bubble: Bubble) {
         addPopAnimation(bubble, intensity = 1f)
+        if (reviveGraceLeft > 0f) return
         if (useShield(bubble)) return
         breakCombo()
         startShake(GameRules.SHAKE_POISON_DP, GameRules.SHAKE_POISON_SECONDS)
@@ -565,7 +621,7 @@ class BubbleGameViewModel(
         startShake(GameRules.SHAKE_BOMB_DP, GameRules.SHAKE_BOMB_SECONDS)
         emit(GameEvent.BombExploded(chain))
 
-        hitSkull?.let { skull ->
+        hitSkull?.takeIf { reviveGraceLeft <= 0f }?.let { skull ->
             breakCombo()
             emit(GameEvent.Popped(skull, points = 0, combo = 0))
             endGame(GameOverReason.POISON)
@@ -939,7 +995,8 @@ class BubbleGameViewModel(
         if (escaped.isEmpty()) return
         bubbles.removeAll(escaped.toSet())
         for (bubble in escaped) {
-            val lifeLost = bubble.type == BubbleType.NORMAL
+            // Right after a revive, escaping bubbles cost nothing.
+            val lifeLost = bubble.type == BubbleType.NORMAL && reviveGraceLeft <= 0f
             if (lifeLost) {
                 missedCount++
                 breakCombo()
@@ -970,7 +1027,7 @@ class BubbleGameViewModel(
 
     private fun timerStep() {
         val duration = stage?.durationSec ?: return
-        timeLeftSec = ceil(duration - playTime).toInt().coerceAtLeast(0)
+        timeLeftSec = ceil(duration + bonusSeconds - playTime).toInt().coerceAtLeast(0)
     }
 
     /**
@@ -989,23 +1046,75 @@ class BubbleGameViewModel(
         when {
             goalMet && (duration == null || stage.allObjectives.all(tracker::isSatisfied)) ->
                 endGame(GameOverReason.GOAL_COMPLETE)
-            duration != null && playTime >= duration ->
+            duration != null && playTime >= duration + bonusSeconds ->
                 endGame(GameOverReason.TIME_UP)
         }
     }
 
+    /**
+     * Stops the round. A loss the player can afford to undo first offers a revive
+     * ([reviveOffer]); otherwise — or once that is declined — [finishRound] saves it.
+     */
     private fun endGame(reason: GameOverReason) {
         if (isGameOver) return
         isGameOver = true
         gameOverReason = reason
+        gameOverSlowmoLeft = GameRules.GAME_OVER_SLOWMO_SECONDS
+        if (canRevive(reason)) {
+            reviveOffer = ReviveOffer(reason, GameRules.REVIVE_COST, GameRules.REVIVE_OFFER_SECONDS)
+            reviveWasOffered = true
+            emit(GameEvent.ReviveOffered(reason))
+        } else {
+            finishRound(reason)
+        }
+    }
 
+    /** Once per round, after a loss (a stage with a star already earned is a win), with coins to pay. */
+    private fun canRevive(reason: GameOverReason): Boolean {
+        if (hasRevived || reason == GameOverReason.GOAL_COMPLETE) return false
+        if ((coins.value ?: 0) < GameRules.REVIVE_COST) return false
+        val stars = stage?.let { objectiveTracker?.stars(it) } ?: 0
+        return stars == 0
+    }
+
+    private fun reviveCountdownStep(dt: Float) {
+        val offer = reviveOffer ?: return
+        if (revivePending) return
+        val left = offer.timeLeft - dt
+        if (left <= 0f) declineRevive() else reviveOffer = offer.copy(timeLeft = left)
+    }
+
+    /** Undoes what ended the round, then plays on with a short grace period. */
+    private fun resumeAfterRevive(reason: GameOverReason) {
+        when (reason) {
+            GameOverReason.OUT_OF_LIVES -> missedCount = (maxLives - GameRules.REVIVE_LIVES).coerceAtLeast(0)
+            // Every skull on screen bursts harmlessly.
+            GameOverReason.POISON -> bubbles.filter { it.type == BubbleType.POISON }.forEach { skull ->
+                bubbles.remove(skull)
+                addPopAnimation(skull, intensity = 1f)
+            }
+            GameOverReason.TIME_UP -> bonusSeconds += GameRules.REVIVE_EXTRA_SECONDS
+            GameOverReason.GOAL_COMPLETE -> Unit
+        }
+        reviveOffer = null
+        hasRevived = true
+        isGameOver = false
+        gameOverReason = null
+        gameOverSlowmoLeft = 0f
+        reviveGraceLeft = GameRules.REVIVE_GRACE_SECONDS
+        timerStep()
+        addFloatingText("REVIVED!", canvasWidth / 2f, canvasHeight / 2f, ComboColor, isMilestone = true)
+        emit(GameEvent.Revived(reason))
+    }
+
+    /** Saves the round and pays out its rewards. */
+    private fun finishRound(reason: GameOverReason) {
         // Stars come from the objectives at this moment, whatever ended the round.
         val stars = stage?.let { objectiveTracker?.stars(it) } ?: 0
         stage?.let { stageResult = StageResult(won = stars > 0, stars = stars, objectives = objectives) }
         isNewBest = score > 0 && score > (bestScore.value ?: 0) && (stage == null || stars > 0) &&
                 mode !is GameMode.DailyStage
         unlockedDifficulty = newlyUnlockedDifficulty()
-        gameOverSlowmoLeft = GameRules.GAME_OVER_SLOWMO_SECONDS
         // Stages celebrate on their result card; Endless throws confetti for a new best.
         if (isNewBest && stage == null) burstConfetti(canvasWidth / 2f, canvasHeight * NEW_BEST_CONFETTI_Y)
         emit(GameEvent.GameOver(reason, score, isNewBest))

@@ -46,6 +46,9 @@ interface MetaRepository {
     /** Buys [cosmetic]; false if not for sale, already owned or too expensive. */
     suspend fun buy(cosmetic: Cosmetic): Boolean
 
+    /** Takes [amount] coins; false (and nothing taken) if the player has fewer. */
+    suspend fun spendCoins(amount: Int): Boolean
+
     /** Pays out a finished round. Call after the round itself was saved to [ProgressRepository]. */
     suspend fun onRunFinished(run: RunSummary): RunRewards
 
@@ -81,6 +84,9 @@ class RoomMetaRepository(
         val progress = progressRepository.stageProgress().first()
         return update { state -> MetaRules.buy(state, cosmetic, progress)?.let { it to true } ?: (state to false) }
     }
+
+    override suspend fun spendCoins(amount: Int): Boolean =
+        update { state -> MetaRules.spendCoins(state, amount)?.let { it to true } ?: (state to false) }
 
     override suspend fun onRunFinished(run: RunSummary): RunRewards {
         val snapshot = snapshot()

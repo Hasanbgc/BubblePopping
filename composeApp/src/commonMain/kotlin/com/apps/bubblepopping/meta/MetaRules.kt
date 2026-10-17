@@ -167,4 +167,11 @@ object MetaRules {
             purchased = state.purchased + cosmetic.id,
         )
     }
+
+    /** Takes [amount] coins (e.g. a revive); null if the player has fewer. */
+    fun spendCoins(state: MetaState, amount: Int): MetaState? {
+        require(amount > 0) { "amount must be positive" }
+        if (state.player.coins < amount) return null
+        return state.copy(player = state.player.copy(coins = state.player.coins - amount))
+    }
 }

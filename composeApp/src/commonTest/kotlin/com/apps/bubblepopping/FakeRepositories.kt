@@ -161,6 +161,12 @@ class FakeMetaRepository(
         return true
     }
 
+    override suspend fun spendCoins(amount: Int): Boolean {
+        val next = MetaRules.spendCoins(state.value, amount) ?: return false
+        state.value = next
+        return true
+    }
+
     override suspend fun resetProgress() {
         state.value = MetaState()
     }

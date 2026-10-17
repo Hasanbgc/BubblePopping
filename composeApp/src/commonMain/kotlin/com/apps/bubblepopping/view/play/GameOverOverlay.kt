@@ -80,7 +80,7 @@ fun GameOverOverlay(
     onRestart: () -> Unit,
     onHome: (() -> Unit)?,
     modifier: Modifier = Modifier,
-    appearDelayMs: Long = APPEAR_DELAY_MS,
+    appearDelayMs: Long = RESULT_APPEAR_DELAY_MS,
     /** Small line above the title, e.g. "DAILY CHALLENGE". */
     label: String? = null,
 ) {
@@ -236,7 +236,7 @@ private fun reasonText(reason: GameOverReason?): String? = when (reason) {
 }
 
 /** Lets the slow-motion drift play before the card appears. */
-private const val APPEAR_DELAY_MS = 900L
+internal const val RESULT_APPEAR_DELAY_MS = 900L
 private const val FADE_IN_MS = 250
 private const val SCORE_COUNT_MS = 800
 private const val SCORE_SCALE = 1.4f

@@ -81,7 +81,7 @@ fun StageResultOverlay(
     /** Label of the [onStages] button. */
     backLabel: String = "Stages",
     /** Lets the slow-motion drift play before the card appears. */
-    appearDelayMs: Long = APPEAR_DELAY_MS,
+    appearDelayMs: Long = RESULT_APPEAR_DELAY_MS,
 ) {
     var visible by remember(result) { mutableStateOf(false) }
     var shownStars by remember(result) { mutableIntStateOf(0) }
@@ -246,8 +246,6 @@ private fun AnimatedStars(shown: Int, total: Int) {
     }
 }
 
-/** Same pause as the Endless game-over card. */
-private const val APPEAR_DELAY_MS = 900L
 private const val FADE_IN_MS = 250
 private const val STAR_START_DELAY_MS = 400L
 private const val STAR_INTERVAL_MS = 350L

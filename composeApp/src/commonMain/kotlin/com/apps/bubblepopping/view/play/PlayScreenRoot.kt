@@ -194,14 +194,20 @@ fun BubblePoppingScreen(
     val isPaused by viewModel.isPaused.collectAsStateWithLifecycle()
 
     // ── System back ──────────────────────────────────────────────────────────
-    // Playing → pause. Paused → leave. After game over the handler is disabled,
-    // so back falls through to the navigation and leaves straight away.
+    // Playing → pause. Paused → leave. Revive offer → decline it (so the round is
+    // saved). After game over the handler is disabled, so back falls through to
+    // the navigation and leaves straight away.
+    val reviveOffer = viewModel.reviveOffer
     NavigationBackHandler(
         state = rememberNavigationEventState(NavigationEventInfo.None),
-        isBackEnabled = !viewModel.isGameOver,
+        isBackEnabled = !viewModel.isGameOver || reviveOffer != null,
         onBackCompleted = {
-            // Before the round starts (tutorial), or when already paused, back leaves.
-            if (isPaused || holdRound) onBack?.invoke() else viewModel.togglePause()
+            when {
+                viewModel.reviveOffer != null -> viewModel.declineRevive()
+                // Before the round starts (tutorial), or when already paused, back leaves.
+                isPaused || holdRound -> onBack?.invoke()
+                else -> viewModel.togglePause()
+            }
         },
     )
 
@@ -308,8 +314,16 @@ fun BubblePoppingScreen(
                 is GameEvent.ComboChanged -> {
                     if (event.broken && event.previous >= COMBO_BREAK_SOUND_MIN) sounds?.comboBreak()
                 }
-                is GameEvent.GameOver -> {
+                is GameEvent.ReviveOffered -> {
                     if (event.reason == GameOverReason.OUT_OF_LIVES) haptics?.heavy()
+                }
+                is GameEvent.Revived -> {
+                    sounds?.shield()
+                    haptics?.success()
+                }
+                is GameEvent.GameOver -> {
+                    // A declined revive already buzzed when the round was lost.
+                    if (event.reason == GameOverReason.OUT_OF_LIVES && !viewModel.reviveWasOffered) haptics?.heavy()
                     if (event.isNewBest) {
                         haptics?.success()
                         sounds?.let { launch { it.newBest() } }
@@ -556,7 +570,18 @@ fun BubblePoppingScreen(
                 )
             }
 
-            if (viewModel.isGameOver) {
+            if (reviveOffer != null) {
+                val coins by viewModel.coins.collectAsStateWithLifecycle()
+                ReviveOverlay(
+                    offer     = reviveOffer,
+                    coins     = coins,
+                    onRevive  = { viewModel.revive() },
+                    onDecline = { viewModel.declineRevive() },
+                    modifier  = Modifier.fillMaxSize(),
+                )
+            } else if (viewModel.isGameOver) {
+                // After a declined revive the slow-motion drift is long over, so no wait.
+                val resultDelayMs = if (viewModel.reviveWasOffered) 0L else RESULT_APPEAR_DELAY_MS
                 val stage = viewModel.stage
                 val stageResult = viewModel.stageResult
                 if (stage != null && stageResult != null) {
@@ -576,6 +601,7 @@ fun BubblePoppingScreen(
                             if (settings.soundEnabled) gameSounds?.pop(combo = star * STAR_PITCH_STEP)
                             if (settings.hapticsEnabled) hapticFeedback.medium()
                         },
+                        appearDelayMs = resultDelayMs,
                         modifier    = Modifier.fillMaxSize(),
                     )
                 } else {
@@ -590,6 +616,7 @@ fun BubblePoppingScreen(
                         label     = if (viewModel.mode is GameMode.DailyChallenge) "DAILY CHALLENGE" else null,
                         onRestart = { viewModel.restartGame() },
                         onHome    = onHome,
+                        appearDelayMs = resultDelayMs,
                         modifier  = Modifier.fillMaxSize(),
                     )
                 }

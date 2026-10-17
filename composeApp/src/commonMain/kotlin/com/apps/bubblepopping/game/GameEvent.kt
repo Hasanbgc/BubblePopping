@@ -52,6 +52,12 @@ sealed interface GameEvent {
     /** Emitted once per whole second of (unpaused) play time. */
     data class Tick(val elapsedSec: Int) : GameEvent
 
+    /** The round was lost and a coin revive is on offer; [GameOver] follows only if it's declined. */
+    data class ReviveOffered(val reason: GameOverReason) : GameEvent
+
+    /** The player paid to continue after losing to [reason]. */
+    data class Revived(val reason: GameOverReason) : GameEvent
+
     data class GameOver(
         val reason: GameOverReason,
         val score: Int,

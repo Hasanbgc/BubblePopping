@@ -52,7 +52,8 @@ class ObjectiveTracker {
             }
             is GameEvent.Tick -> elapsedSec = event.elapsedSec
             GameEvent.ShieldUsed, is GameEvent.GameOver,
-            is GameEvent.WaveCleared, is GameEvent.WaveStarted -> Unit
+            is GameEvent.WaveCleared, is GameEvent.WaveStarted,
+            is GameEvent.ReviveOffered, is GameEvent.Revived -> Unit
         }
     }
 

@@ -150,6 +150,19 @@ object GameRules {
     const val GAME_OVER_SLOWMO_SECONDS = 0.8f
     const val CONFETTI_COUNT = 90
 
+    // ── Revive ────────────────────────────────────────────────────────────────
+    /** Coins a revive costs. One revive per round. */
+    const val REVIVE_COST = 50
+    /** How long the "Continue?" offer waits before the round ends anyway. */
+    const val REVIVE_OFFER_SECONDS = 5f
+    /** Out of lives: a revive gives back this many. */
+    const val REVIVE_LIVES = 2
+    /** Stage timer ran out: a revive adds this many seconds. */
+    const val REVIVE_EXTRA_SECONDS = 15
+    /** After a revive, bubbles move slowly and nothing can end the round for this long. */
+    const val REVIVE_GRACE_SECONDS = 2.5f
+    const val REVIVE_GRACE_SLOWDOWN = 0.4f
+
     // ── Music intensity (Phase 9) ─────────────────────────────────────────────
     /** A combo this long plays the drums at full volume. */
     const val MUSIC_FULL_COMBO = 15
