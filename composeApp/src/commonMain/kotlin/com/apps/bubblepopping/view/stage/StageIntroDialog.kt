@@ -4,8 +4,6 @@ import com.apps.bubblepopping.ui.icons.playIcon
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -19,10 +17,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.apps.bubblepopping.data.StageProgress
-import com.apps.bubblepopping.game.GameRules
 import com.apps.bubblepopping.stage.StageCatalog
 import com.apps.bubblepopping.stage.StageConfig
+import com.apps.bubblepopping.ui.components.ButtonColor
 import com.apps.bubblepopping.ui.components.ButtonSize
+import com.apps.bubblepopping.ui.components.OutlinedText
 import com.apps.bubblepopping.ui.components.GameButton
 import com.apps.bubblepopping.ui.components.EnamelTone
 import com.apps.bubblepopping.ui.components.GameDialog
@@ -38,9 +37,8 @@ import com.apps.bubblepopping.ui.theme.Spacing
 /**
  * Shown over the stage map when a stage is tapped, built to be read in one
  * glance: stars earned, a one-line story, the goal and bonus stars in one box,
- * the limits and best score as small pills, and Play.
+ * the best score once played, and Play.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StageIntroDialog(
     stage: StageConfig,
@@ -72,40 +70,33 @@ fun StageIntroDialog(
             verticalArrangement = Arrangement.spacedBy(Spacing.xs),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("GOAL", style = GameTheme.type.label, color = GameColors.Gold)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                Image(GameIcons.Target, contentDescription = null, modifier = Modifier.size(GOAL_TITLE_ICON))
+                OutlinedText("GOAL", GameTheme.type.headline, color = GameColors.Gold)
+            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .goldInset()
                     .padding(horizontal = Spacing.m, vertical = Spacing.xs),
             ) {
-                ObjectiveRow(description = stage.goal.description, progress = null, isBonus = false)
+                ObjectiveRow(description = stage.goal.description, progress = null, isBonus = false, goalIcon = goalIcon(stage.goal))
                 stage.bonusGoals.forEach { objective ->
                     ObjectiveRow(description = objective.description, progress = null, isBonus = true)
                 }
             }
         }
 
-        // Limits and best score; wraps onto two lines on narrow phones.
-        val best = progress?.bestScore?.takeIf { it > 0 }
-        val hasLimits = stage.durationSec != null || stage.lives != GameRules.MAX_LIVES
-        if (hasLimits || best != null) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(Spacing.s, Alignment.CenterHorizontally),
-                verticalArrangement = Arrangement.spacedBy(Spacing.s),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                stage.durationSec?.let { ResourcePill(GameIcons.Clock, "${it}s", tint = GameColors.OceanTint, tone = EnamelTone.OCEAN) }
-                if (stage.lives != GameRules.MAX_LIVES) {
-                    ResourcePill(GameIcons.Heart, "${stage.lives} lives", tint = GameColors.PillHeart)
-                }
-                best?.let { ResourcePill(GameIcons.Star, "Best ${formatCount(it)}", tint = GameColors.VioletTop, tone = EnamelTone.VIOLET) }
-            }
+        // The best score, once the stage has been played.
+        progress?.bestScore?.takeIf { it > 0 }?.let { best ->
+            ResourcePill(GameIcons.Star, "Best ${formatCount(best)}", tint = GameColors.VioletTop, tone = EnamelTone.VIOLET)
         }
 
         GameButton(
             text = "PLAY",
             onClick = onPlay,
+            // Same green PLAY as everywhere else.
+            color = ButtonColor.GREEN,
             size = ButtonSize.LARGE,
             icon = playIcon(),
             modifier = Modifier.fillMaxWidth(),
@@ -114,6 +105,7 @@ fun StageIntroDialog(
 }
 
 private val BOSS_ICON = 28.dp
+private val GOAL_TITLE_ICON = 26.dp
 private val STAR_SIZE = 38.dp
 /** The story is one short line or two; anything longer is cut, so the card stays a glance. */
 private const val STORY_LINES = 2

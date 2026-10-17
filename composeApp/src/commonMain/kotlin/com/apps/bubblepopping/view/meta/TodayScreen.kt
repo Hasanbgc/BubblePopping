@@ -3,6 +3,7 @@ package com.apps.bubblepopping.view.meta
 import com.apps.bubblepopping.ui.icons.playIcon
 import androidx.compose.foundation.layout.padding
 import com.apps.bubblepopping.view.stage.ObjectiveRow
+import com.apps.bubblepopping.view.stage.goalIcon
 import com.apps.bubblepopping.ui.components.goldInset
 import com.apps.bubblepopping.ui.components.formatCount
 import com.apps.bubblepopping.ui.components.ResourcePill
@@ -167,7 +168,7 @@ private fun DailyStagePanel(today: Long, player: PlayerState, world: World, onPl
                 .goldInset()
                 .padding(horizontal = Spacing.m, vertical = Spacing.xs),
         ) {
-            ObjectiveRow(description = stage.goal.description, progress = null, isBonus = false)
+            ObjectiveRow(description = stage.goal.description, progress = null, isBonus = false, goalIcon = goalIcon(stage.goal))
             stage.bonusGoals.forEach { ObjectiveRow(description = it.description, progress = null, isBonus = true) }
         }
         if (cleared) {

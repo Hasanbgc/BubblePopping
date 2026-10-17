@@ -13,6 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.apps.bubblepopping.stage.Objective
 import com.apps.bubblepopping.stage.ObjectiveProgress
 import com.apps.bubblepopping.ui.icons.GameIcons
 import com.apps.bubblepopping.ui.theme.GameColors
@@ -42,9 +44,16 @@ fun StarRow(
 
 private const val UNEARNED_ALPHA = 0.3f
 
+/** The icon for a stage's main goal: a clock to survive, a crown for a boss, a target otherwise. */
+fun goalIcon(goal: Objective): ImageVector = when (goal) {
+    is Objective.Survive -> GameIcons.Clock
+    is Objective.DefeatBoss -> GameIcons.Crown
+    else -> GameIcons.Target
+}
+
 /**
- * One objective line: an icon (target / star before play, ✓ or ✗ after), its
- * description and, for goals in progress, "current / target".
+ * One objective line: an icon (the goal's [goalIcon] or a star before play, ✓ or
+ * ✗ after), its description and, for goals in progress, "current / target".
  */
 @Composable
 fun ObjectiveRow(
@@ -52,9 +61,11 @@ fun ObjectiveRow(
     progress: ObjectiveProgress?,
     isBonus: Boolean,
     modifier: Modifier = Modifier,
+    /** The main goal's icon before play; pass [goalIcon]. */
+    goalIcon: ImageVector = GameIcons.Target,
 ) {
     val icon = when {
-        progress == null -> if (isBonus) GameIcons.Star else GameIcons.Target
+        progress == null -> if (isBonus) GameIcons.Star else goalIcon
         progress.satisfied -> GameIcons.Check
         else -> GameIcons.Close
     }
