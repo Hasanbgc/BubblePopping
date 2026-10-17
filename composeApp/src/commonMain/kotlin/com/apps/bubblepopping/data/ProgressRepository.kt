@@ -40,8 +40,8 @@ interface ProgressRepository {
     fun stageProgress(): Flow<Map<Int, StageProgress>>
     fun stats(): Flow<PlayerStats>
 
-    /** The best Endless rounds on this device, highest score first. */
-    fun topEndlessRuns(limit: Int): Flow<List<EndlessRun>>
+    /** The best Endless rounds on this device, highest score first; only [difficulty]'s when given. */
+    fun topEndlessRuns(limit: Int, difficulty: Difficulty? = null): Flow<List<EndlessRun>>
 
     /** Saves a finished Endless round and updates lifetime stats. */
     suspend fun recordEndlessGame(difficulty: Difficulty, score: Int, bubblesPopped: Int, bestCombo: Int)
@@ -81,8 +81,8 @@ class RoomProgressRepository(
             row?.let { PlayerStats(it.gamesPlayed, it.bubblesPopped, it.bestCombo) } ?: PlayerStats()
         }
 
-    override fun topEndlessRuns(limit: Int): Flow<List<EndlessRun>> =
-        endlessDao.observeTopScores(limit).map { rows ->
+    override fun topEndlessRuns(limit: Int, difficulty: Difficulty?): Flow<List<EndlessRun>> =
+        (if (difficulty == null) endlessDao.observeTopScores(limit) else endlessDao.observeTopScoresFor(difficulty.name, limit)).map { rows ->
             rows.mapNotNull { row ->
                 Difficulty.entries.firstOrNull { it.name == row.difficulty }
                     ?.let { EndlessRun(it, row.score, row.playedAt) }

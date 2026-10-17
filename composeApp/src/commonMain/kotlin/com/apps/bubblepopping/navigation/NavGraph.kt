@@ -77,11 +77,16 @@ val config = SavedStateConfiguration {
 }
 
 @Composable
-fun NavGraph(container: AppContainer, hapticFeedback: HapticFeedback) {
+fun NavGraph(
+    container: AppContainer,
+    hapticFeedback: HapticFeedback,
+    /** Closes the app from Home; null where an app can't close itself (iOS). */
+    onExitApp: (() -> Unit)? = null,
+) {
     BubbleTheme {
         UiFeedbackProvider(container.settingsRepository, hapticFeedback) {
             PlayerResourcesProvider(container) {
-                AppNavigation(container, hapticFeedback)
+                AppNavigation(container, hapticFeedback, onExitApp)
             }
         }
     }
@@ -105,7 +110,7 @@ private fun PlayerResourcesProvider(container: AppContainer, content: @Composabl
 }
 
 @Composable
-private fun AppNavigation(container: AppContainer, hapticFeedback: HapticFeedback) {
+private fun AppNavigation(container: AppContainer, hapticFeedback: HapticFeedback, onExitApp: (() -> Unit)?) {
     val backStack = rememberNavBackStack(config, Routes.Home)
 
     // Menu screens share one bottom dock; it hides during a round.
@@ -146,6 +151,7 @@ private fun AppNavigation(container: AppContainer, hapticFeedback: HapticFeedbac
                             onNavigateToProfile = {
                                 backStack.add(Routes.Profile)
                             },
+                            onExitApp = onExitApp,
                         )
                     }
                     entry<Routes.Endless> {

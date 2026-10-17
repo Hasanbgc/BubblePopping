@@ -141,9 +141,10 @@ private fun DailyChallengePanel(today: Long, player: PlayerState, onPlay: (GameM
         Body("One Endless round with the same bubbles for every player today. How far can you get?")
         if (best == null) Hint("Not played yet today")
         GameButton(
-            text = "Play",
+            text = "PLAY",
             onClick = { onPlay(GameMode.DailyChallenge(today)) },
-            color = ButtonColor.VIOLET,
+            // Same green PLAY as the Home mode cards.
+            color = ButtonColor.GREEN,
             icon = playIcon(),
             modifier = Modifier.fillMaxWidth(),
         )
@@ -175,8 +176,9 @@ private fun DailyStagePanel(today: Long, player: PlayerState, world: World, onPl
             GoalLine(GameIcons.Chest, "Clear it to win a reward chest", emphasised = true)
         }
         GameButton(
-            text = "Play",
+            text = "PLAY",
             onClick = { onPlay(GameMode.DailyStage(today, world)) },
+            color = ButtonColor.GREEN,
             icon = playIcon(),
             modifier = Modifier.fillMaxWidth(),
         )

@@ -66,35 +66,22 @@ import com.apps.bubblepopping.view.meta.Hint
 // Data model
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** One ranked player on a difficulty's board. */
 data class LeaderboardEntry(
     val rank: Int,
     val name: String,
-    val easyScore: Int?,
-    val mediumScore: Int?,
-    val hardScore: Int?,
+    val score: Int,
     val isCurrentUser: Boolean = false,
-) {
-    val totalScore: Int get() = (easyScore ?: 0) + (mediumScore ?: 0) + (hardScore ?: 0)
-
-    /** The difficulty this entry's round was played on (local rounds have exactly one). */
-    val difficulty: Difficulty?
-        get() = when {
-            hardScore != null -> Difficulty.HARD
-            mediumScore != null -> Difficulty.MEDIUM
-            easyScore != null -> Difficulty.EASY
-            else -> null
-        }
-}
-
-enum class LeaderboardTab(val title: String) { LOCAL("Local"), GLOBAL("Global") }
+)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LeaderboardScreenRoot
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Local: the best Endless rounds played on this device. Global: kept as a tab,
- * shown as "coming soon" until an online backend exists (§8.7).
+ * The global Endless rankings, one tab per difficulty (scores on different
+ * difficulties aren't comparable). Until the online backend exists (§8.7) each
+ * tab lists the best rounds played on this device.
  */
 @Composable
 fun LeaderboardScreenRoot(
@@ -102,52 +89,52 @@ fun LeaderboardScreenRoot(
     settingsRepository: SettingsRepository,
     onBack: () -> Unit,
 ) {
-    val runs by remember(progressRepository) { progressRepository.topEndlessRuns(LOCAL_ENTRIES) }
+    var difficulty by rememberSaveable { mutableStateOf(Difficulty.EASY) }
+    val runs by remember(progressRepository, difficulty) { progressRepository.topEndlessRuns(ENTRIES, difficulty) }
         .collectAsStateWithLifecycle(null)
     val settings by remember(settingsRepository) { settingsRepository.settings }
         .collectAsStateWithLifecycle(GameSettings())
-    LeaderboardScreen(runs = runs, playerName = settings.playerName, onBack = onBack)
+    LeaderboardScreen(
+        difficulty = difficulty,
+        onDifficultyChange = { difficulty = it },
+        runs = runs,
+        playerName = settings.playerName,
+        onBack = onBack,
+    )
 }
 
-/** One row per round, its score in its difficulty's column. */
+/** One row per round on this device, best first; they're all the player's own. */
 fun leaderboardEntries(runs: List<EndlessRun>, playerName: String): List<LeaderboardEntry> =
     runs.mapIndexed { index, run ->
-        LeaderboardEntry(
-            rank        = index + 1,
-            name        = playerName,
-            easyScore   = run.score.takeIf { run.difficulty == Difficulty.EASY },
-            mediumScore = run.score.takeIf { run.difficulty == Difficulty.MEDIUM },
-            hardScore   = run.score.takeIf { run.difficulty == Difficulty.HARD },
-        )
+        LeaderboardEntry(rank = index + 1, name = playerName, score = run.score, isCurrentUser = true)
     }
 
+/** [runs] are [difficulty]'s, best first; null while loading. */
 @Composable
 fun LeaderboardScreen(
+    difficulty: Difficulty,
+    onDifficultyChange: (Difficulty) -> Unit,
     runs: List<EndlessRun>?,
     playerName: String,
     onBack: () -> Unit,
 ) {
-    var activeTab by rememberSaveable { mutableStateOf(LeaderboardTab.LOCAL) }
     val entries = remember(runs, playerName) { leaderboardEntries(runs.orEmpty(), playerName) }
 
     // The list scrolls itself, so the screen column doesn't.
     GameScreen(title = "Leaderboard", onBack = onBack, scrollable = false) {
         GameTabs(
-            options = LeaderboardTab.entries.map { it.title },
-            selected = activeTab.ordinal,
-            onSelect = { activeTab = LeaderboardTab.entries[it] },
+            options = Difficulty.entries.map { it.label },
+            selected = difficulty.ordinal,
+            onSelect = { onDifficultyChange(Difficulty.entries[it]) },
         )
+        Hint("Global rankings arrive with online play. For now, these are your best rounds.", Modifier.fillMaxWidth())
         when {
-            activeTab == LeaderboardTab.GLOBAL -> EmptyMessage(
-                icon = GameIcons.Crown,
-                title = "Coming soon!",
-                text = "Global rankings arrive with online play.\nFor now, beat your own best.",
-                modifier = Modifier.weight(1f),
-            )
-            runs != null && entries.isEmpty() -> EmptyMessage(
+            // Loading (also briefly on a tab switch): nothing, so the old tab's podium doesn't flash.
+            runs == null -> Spacer(Modifier.weight(1f))
+            entries.isEmpty() -> EmptyMessage(
                 icon = GameIcons.Bubble,
                 title = "No scores yet",
-                text = "Play an Endless round to set your first score!",
+                text = "Play an Endless round on ${difficulty.label} to set your first score!",
                 modifier = Modifier.weight(1f),
             )
             // The top three on a podium; everyone else in one panel below, rows split by dividers.
@@ -241,9 +228,6 @@ private fun PodiumCard(entry: LeaderboardEntry) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = Spacing.s),
         )
-        entry.difficulty?.let {
-            Text(it.label, style = GameTheme.type.caption, color = GameColors.TextSecondary, maxLines = 1)
-        }
         Spacer(Modifier.weight(1f))
         // The score on a gold candy pill.
         Row(
@@ -254,7 +238,7 @@ private fun PodiumCard(entry: LeaderboardEntry) {
                 .padding(horizontal = Spacing.s, vertical = 2.dp),
         ) {
             Image(GameIcons.Star, contentDescription = null, modifier = Modifier.size(SCORE_STAR))
-            OutlinedText(formatCount(entry.totalScore), GameTheme.type.label, outlineColor = GameColors.GoldLip, outlineWidth = 1.5.dp, maxLines = 1)
+            OutlinedText(formatCount(entry.score), GameTheme.type.label, outlineColor = GameColors.GoldLip, outlineWidth = 1.5.dp, maxLines = 1)
         }
     }
 }
@@ -317,9 +301,8 @@ fun LeaderboardItem(entry: LeaderboardEntry) {
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
-        entry.difficulty?.let { DifficultyChip(it) }
         OutlinedText(
-            text = formatCount(entry.totalScore),
+            text = formatCount(entry.score),
             style = GameTheme.type.headline,
             textAlign = TextAlign.End,
             modifier = Modifier.padding(start = Spacing.xs),
@@ -345,20 +328,6 @@ private fun RankBadge(rank: Int) {
     }
 }
 
-@Composable
-private fun DifficultyChip(difficulty: Difficulty) {
-    Text(
-        text = difficulty.label,
-        style = GameTheme.type.caption,
-        color = GameColors.TextPrimary,
-        modifier = Modifier
-            .clip(Corners.pill)
-            .background(difficulty.glowColor.copy(alpha = 0.55f))
-            .border(1.dp, difficulty.glowColor, Corners.pill)
-            .padding(horizontal = Spacing.s, vertical = 2.dp),
-    )
-}
-
 private fun medalColor(rank: Int): Color = when (rank) {
     1 -> GameColors.Gold
     2 -> Color(0xFFD5DBF0)
@@ -382,8 +351,8 @@ private fun EmptyMessage(icon: ImageVector, title: String, text: String, modifie
     }
 }
 
-/** How many local rounds the Local tab lists. */
-private const val LOCAL_ENTRIES = 20
+/** How many rounds each difficulty's tab lists. */
+private const val ENTRIES = 20
 private val RANK_SIZE = 36.dp
 private const val PODIUM_PLACES = 3
 /** 2nd and 3rd are the same height; 1st is a little taller. */
@@ -403,12 +372,9 @@ private const val PODIUM_WASH = 0.14f
 fun LeaderboardScreenPreview() {
     BubbleTheme {
         LeaderboardScreen(
-            runs = listOf(
-                EndlessRun(Difficulty.MEDIUM, score = 212, playedAt = 0),
-                EndlessRun(Difficulty.HARD, score = 156, playedAt = 0),
-                EndlessRun(Difficulty.EASY, score = 98, playedAt = 0),
-                EndlessRun(Difficulty.EASY, score = 61, playedAt = 0),
-            ),
+            difficulty = Difficulty.MEDIUM,
+            onDifficultyChange = {},
+            runs = listOf(212, 156, 98, 61).map { EndlessRun(Difficulty.MEDIUM, score = it, playedAt = 0) },
             playerName = "Player",
             onBack = {},
         )

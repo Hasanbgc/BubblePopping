@@ -30,6 +30,9 @@ interface EndlessScoreDao {
     @Query("SELECT * FROM endless_scores ORDER BY score DESC, playedAt ASC LIMIT :limit")
     fun observeTopScores(limit: Int): Flow<List<EndlessScoreEntity>>
 
+    @Query("SELECT * FROM endless_scores WHERE difficulty = :difficulty ORDER BY score DESC, playedAt ASC LIMIT :limit")
+    fun observeTopScoresFor(difficulty: String, limit: Int): Flow<List<EndlessScoreEntity>>
+
     @Insert
     suspend fun insert(score: EndlessScoreEntity)
 

@@ -122,7 +122,7 @@ fun SettingsScreen(
             GameButton(
                 text = "Replay tutorial",
                 onClick = onReplayTutorial,
-                color = ButtonColor.GLASS,
+                color = ButtonColor.BLUE,
                 icon = GameIcons.Restart,
                 enabled = settings.tutorialSeen,
                 modifier = Modifier.fillMaxWidth(),

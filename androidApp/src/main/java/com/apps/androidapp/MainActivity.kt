@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
         val container = appContainer(applicationContext)
         setContent {
             val hapticFeedback = remember { HapticFeedback(this) }
-            NavGraph(container, hapticFeedback)
+            NavGraph(container, hapticFeedback, onExitApp = ::finish)
         }
     }
 }
@@ -102,11 +102,9 @@ private fun GameHudPausedPreview() {
 private fun LeaderboardDialogPreview() {
     MaterialTheme {
         LeaderboardScreen(
-            runs = listOf(
-                EndlessRun(Difficulty.MEDIUM, score = 212, playedAt = 0),
-                EndlessRun(Difficulty.HARD, score = 156, playedAt = 0),
-                EndlessRun(Difficulty.EASY, score = 98, playedAt = 0),
-            ),
+            difficulty = Difficulty.MEDIUM,
+            onDifficultyChange = {},
+            runs = listOf(212, 156, 98).map { EndlessRun(Difficulty.MEDIUM, score = it, playedAt = 0) },
             playerName = "Player",
             onBack = {},
         )
@@ -122,19 +120,10 @@ private fun LeaderboardItemsPreview() {
                 .background(Color(0xFF08172A))
                 .padding(8.dp),
         ) {
-            LeaderboardItem(LeaderboardEntry(rank = 1, name = "BubbleMaster", easyScore = 212, mediumScore = 312, hardScore = 156))
-            LeaderboardItem(LeaderboardEntry(rank = 2, name = "PopKing",      easyScore = 185, mediumScore = 285, hardScore = 198))
-            LeaderboardItem(LeaderboardEntry(rank = 3, name = "BurstQueen",   easyScore = 161, mediumScore = 261, hardScore = null))
-            LeaderboardItem(
-                LeaderboardEntry(
-                    rank          = 9,
-                    name          = "You",
-                    easyScore     = 55,
-                    mediumScore   = null,
-                    hardScore     = null,
-                    isCurrentUser = true,
-                )
-            )
+            LeaderboardItem(LeaderboardEntry(rank = 1, name = "BubbleMaster", score = 312))
+            LeaderboardItem(LeaderboardEntry(rank = 2, name = "PopKing",      score = 285))
+            LeaderboardItem(LeaderboardEntry(rank = 3, name = "BurstQueen",   score = 261))
+            LeaderboardItem(LeaderboardEntry(rank = 9, name = "You",          score = 55, isCurrentUser = true))
         }
     }
 }

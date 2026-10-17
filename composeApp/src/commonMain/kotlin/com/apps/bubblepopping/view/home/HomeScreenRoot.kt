@@ -34,6 +34,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
 import com.apps.bubblepopping.Res
 import com.apps.bubblepopping.bp_logo
 import com.apps.bubblepopping.infinity
@@ -57,6 +60,8 @@ import com.apps.bubblepopping.ui.components.ButtonSize
 import com.apps.bubblepopping.ui.components.DialogButtons
 import com.apps.bubblepopping.ui.components.GameButton
 import com.apps.bubblepopping.ui.components.GameDialog
+import com.apps.bubblepopping.ui.components.GameIconButton
+import androidx.compose.ui.text.style.TextAlign
 import com.apps.bubblepopping.ui.components.OutlinedText
 import com.apps.bubblepopping.ui.icons.GameIcons
 import com.apps.bubblepopping.ui.theme.GameColors
@@ -72,8 +77,17 @@ fun HomeScreenRoot(
     onNavigateToStages: () -> Unit,
     onNavigateToEndless: () -> Unit,
     onNavigateToProfile: () -> Unit,
+    /** Closes the app; null where an app can't close itself (iOS), which hides the close button. */
+    onExitApp: (() -> Unit)? = null,
 ) {
     val today = remember { currentEpochDay() }
+    // Close button and system back both ask first.
+    var confirmExit by rememberSaveable { mutableStateOf(false) }
+    NavigationBackHandler(
+        state = rememberNavigationEventState(NavigationEventInfo.None),
+        isBackEnabled = onExitApp != null,
+        onBackCompleted = { confirmExit = true },
+    )
     val scope = rememberCoroutineScope()
     // null until loaded, so the daily-reward popup never flashes for a claimed day.
     val player by remember(metaRepository) { metaRepository.player() }.collectAsStateWithLifecycle(null)
@@ -93,7 +107,12 @@ fun HomeScreenRoot(
         onStagesClick = onNavigateToStages,
         onEndlessClick = onNavigateToEndless,
         onProfileClick = onNavigateToProfile,
+        onCloseClick = onExitApp?.let { { confirmExit = true } },
     )
+
+    if (confirmExit && onExitApp != null) {
+        ExitDialog(onQuit = onExitApp, onStay = { confirmExit = false })
+    }
 
     val current = player
     if (current != null && current.canClaimLogin(today) && !loginDismissed) {
@@ -113,6 +132,8 @@ fun HomeContent(
     onEndlessClick: () -> Unit,
     onProfileClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Shows the close button; null hides it. */
+    onCloseClick: (() -> Unit)? = null,
 ) {
     GameBackground(modifier, style = BackgroundStyle.ART) {
         Column(
@@ -121,14 +142,22 @@ fun HomeContent(
                 .screenBottomPadding(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Avatar on the left (the photo arrives with Google / Facebook sign-in), counters on the right.
+            // Avatar on the left (the photo arrives with Google / Facebook sign-in), the star and
+            // coin counters centred, and the close button on the right.
             GameTopBar(
                 title = null,
                 onBack = null,
                 leading = { AvatarButton(onClick = onProfileClick) },
+                center = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), verticalAlignment = Alignment.CenterVertically) {
+                        StarCounter()
+                        CoinCounter()
+                    }
+                },
                 actions = {
-                    StarCounter()
-                    CoinCounter()
+                    if (onCloseClick != null) {
+                        GameIconButton(GameIcons.Close, contentDescription = "Quit game", onClick = onCloseClick, color = ButtonColor.RED)
+                    }
                 },
             )
 
@@ -231,6 +260,24 @@ private fun DailyRewardDialog(player: PlayerState, onClaim: () -> Unit, onDismis
         DialogButtons {
             GameButton("Claim", onClick = onClaim, color = ButtonColor.GREEN, size = ButtonSize.LARGE, modifier = Modifier.fillMaxWidth())
             GameButton("Later", onClick = onDismiss, color = ButtonColor.GLASS, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+/** Asked before the app closes (close button or system back on Home). Staying is the big, easy choice. */
+@Composable
+private fun ExitDialog(onQuit: () -> Unit, onStay: () -> Unit) {
+    GameDialog(title = "Leaving?", onDismiss = onStay) {
+        Image(GameIcons.Bubble, contentDescription = null, modifier = Modifier.size(64.dp))
+        Text(
+            text = "The bubbles will miss you! Your progress is saved.",
+            style = GameTheme.type.body,
+            color = GameColors.TextPrimary,
+            textAlign = TextAlign.Center,
+        )
+        DialogButtons {
+            GameButton("Keep playing", onClick = onStay, color = ButtonColor.GREEN, size = ButtonSize.LARGE, modifier = Modifier.fillMaxWidth())
+            GameButton("Quit", onClick = onQuit, color = ButtonColor.RED, modifier = Modifier.fillMaxWidth())
         }
     }
 }

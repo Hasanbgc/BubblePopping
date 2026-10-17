@@ -45,7 +45,7 @@ class FakeProgressRepository(best: Int? = null) : ProgressRepository {
     override fun bestEndlessScore(difficulty: Difficulty): Flow<Int?> = bestScore
     override fun stageProgress(): Flow<Map<Int, StageProgress>> = stages
     override fun stats(): Flow<PlayerStats> = flowOf(PlayerStats())
-    override fun topEndlessRuns(limit: Int): Flow<List<EndlessRun>> = flowOf(emptyList())
+    override fun topEndlessRuns(limit: Int, difficulty: Difficulty?): Flow<List<EndlessRun>> = flowOf(emptyList())
 
     override suspend fun recordEndlessGame(
         difficulty: Difficulty,

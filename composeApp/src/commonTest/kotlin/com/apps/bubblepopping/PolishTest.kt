@@ -192,16 +192,14 @@ class PolishTest {
     }
 
     @Test
-    fun leaderboard_putsEachScoreInItsDifficultyColumn() {
+    fun leaderboard_ranksRoundsInOrder_asThePlayer() {
         val entries = leaderboardEntries(
-            listOf(EndlessRun(Difficulty.HARD, 200, 0), EndlessRun(Difficulty.EASY, 150, 0)),
+            listOf(EndlessRun(Difficulty.HARD, 200, 0), EndlessRun(Difficulty.HARD, 150, 0)),
             playerName = "Ana",
         )
         assertEquals(listOf(1, 2), entries.map { it.rank })
-        assertEquals(200, entries[0].hardScore)
-        assertNull(entries[0].easyScore)
-        assertEquals(150, entries[1].easyScore)
-        assertTrue(entries.all { it.name == "Ana" })
+        assertEquals(listOf(200, 150), entries.map { it.score })
+        assertTrue(entries.all { it.name == "Ana" && it.isCurrentUser })
     }
 
     @Test

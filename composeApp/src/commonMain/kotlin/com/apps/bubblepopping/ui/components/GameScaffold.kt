@@ -137,6 +137,8 @@ fun GameTopBar(
     /** Shown on the left when there is no back button (Home's avatar). */
     leading: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
+    /** Centred in place of the [title] (Home's star and coin pills). */
+    center: (@Composable () -> Unit)? = null,
 ) {
     Layout(
         modifier = modifier
@@ -158,8 +160,9 @@ fun GameTopBar(
                 content = actions,
             )
             Box {
-                if (title != null) {
-                    OutlinedText(text = title, style = GameTheme.type.title, outlineWidth = 3.dp, maxLines = 1)
+                when {
+                    center != null -> center()
+                    title != null -> OutlinedText(text = title, style = GameTheme.type.title, outlineWidth = 3.dp, maxLines = 1)
                 }
             }
         },
