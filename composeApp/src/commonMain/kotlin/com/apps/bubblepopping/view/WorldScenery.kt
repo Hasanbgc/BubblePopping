@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.apps.bubblepopping.stage.World
 import kotlin.math.PI
@@ -23,11 +24,35 @@ import kotlin.random.Random
 
 /** Draws [world]'s scenery over [area], placed by [random] (seed it for a stable look). */
 internal fun DrawScope.drawScenery(world: World, area: SceneArea, random: Random) {
+    sceneryDecorations(world, area, random).forEach { it.draw(this) }
+}
+
+/**
+ * One piece of scenery: its vertical extent in px, so a caller drawing only part of
+ * the area (a stage-map slice) can skip the pieces outside it, and how to draw it.
+ */
+internal class Decoration(val top: Float, val bottom: Float, val draw: DrawScope.() -> Unit)
+
+/**
+ * [world]'s scenery over [area] as separate pieces, placed by [random]. Pure maths, no
+ * drawing, so it can run off the main thread (the stage map works it out in the background).
+ */
+internal fun Density.sceneryDecorations(world: World, area: SceneArea, random: Random): List<Decoration> {
+    val scenery = SceneryBuilder(this)
     when (world) {
-        World.SKY -> drawSkyScenery(area, random)
-        World.OCEAN -> drawOceanScenery(area, random)
-        World.SPACE -> drawSpaceScenery(area, random)
-        World.CANDY -> drawCandyScenery(area, random)
+        World.SKY -> scenery.sky(area, random)
+        World.OCEAN -> scenery.ocean(area, random)
+        World.SPACE -> scenery.space(area, random)
+        World.CANDY -> scenery.candy(area, random)
+    }
+    return scenery.pieces
+}
+
+private class SceneryBuilder(density: Density) : Density by density {
+    val pieces = mutableListOf<Decoration>()
+
+    fun add(top: Float, bottom: Float, draw: DrawScope.() -> Unit) {
+        pieces += Decoration(top, bottom, draw)
     }
 }
 
@@ -71,24 +96,27 @@ internal class SceneArea(val top: Float, val bottom: Float, val width: Float) {
     fun x(random: Random) = random.nextFloat() * width
 }
 
-private fun DrawScope.drawSkyScenery(area: SceneArea, random: Random) {
+// Each world below draws the same pieces in the same order (and so with the same random
+// numbers) as when it was drawn directly, so the scenery looks exactly as before.
+
+private fun SceneryBuilder.sky(area: SceneArea, random: Random) {
     // Sun glow near the top of the world.
     val sun = Offset(area.width * 0.82f, area.top + area.height * 0.08f)
-    drawCircle(
-        Brush.radialGradient(listOf(Color(0x66FFF3C4), Color.Transparent), center = sun, radius = area.width * 0.6f),
-        radius = area.width * 0.6f,
-        center = sun,
-    )
+    val sunRadius = area.width * 0.6f
+    val sunGlow = Brush.radialGradient(listOf(Color(0x66FFF3C4), Color.Transparent), center = sun, radius = sunRadius)
+    add(sun.y - sunRadius, sun.y + sunRadius) { drawCircle(sunGlow, radius = sunRadius, center = sun) }
     // Fluffy clouds: a cluster of puffs with a lighter top.
     repeat(area.count(260.dp.toPx())) {
         val c = Offset(area.x(random), area.y(random))
         val r = (28 + random.nextInt(26)).dp.toPx()
-        drawCloud(c, r)
+        add(c.y - r, c.y + r) { drawCloud(c, r) }
     }
     // Drifting bubble rings.
+    val ring = Stroke(1.5.dp.toPx())
     repeat(area.count(110.dp.toPx())) {
         val r = (4 + random.nextInt(10)).dp.toPx()
-        drawCircle(Color.White.copy(alpha = 0.22f), radius = r, center = Offset(area.x(random), area.y(random)), style = Stroke(1.5.dp.toPx()))
+        val c = Offset(area.x(random), area.y(random))
+        add(c.y - r - ring.width, c.y + r + ring.width) { drawCircle(Color.White.copy(alpha = 0.22f), radius = r, center = c, style = ring) }
     }
 }
 
@@ -102,7 +130,7 @@ private fun DrawScope.drawCloud(c: Offset, r: Float) {
     drawCircle(top, r * 0.55f, Offset(c.x - r * 0.15f, c.y - r * 0.35f))
 }
 
-private fun DrawScope.drawOceanScenery(area: SceneArea, random: Random) {
+private fun SceneryBuilder.ocean(area: SceneArea, random: Random) {
     // Light rays slanting down from the surface.
     repeat(5) { i ->
         val x = area.width * (0.05f + i * 0.22f + random.nextFloat() * 0.06f)
@@ -115,7 +143,8 @@ private fun DrawScope.drawOceanScenery(area: SceneArea, random: Random) {
             lineTo(x + length * 0.18f, area.top + length)
             close()
         }
-        drawPath(ray, Brush.verticalGradient(listOf(Color(0x33E0F7FA), Color.Transparent), startY = area.top, endY = area.top + length))
+        val light = Brush.verticalGradient(listOf(Color(0x33E0F7FA), Color.Transparent), startY = area.top, endY = area.top + length)
+        add(area.top, area.top + length) { drawPath(ray, light) }
     }
     // Gentle wave lines.
     val wave = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
@@ -134,87 +163,102 @@ private fun DrawScope.drawOceanScenery(area: SceneArea, random: Random) {
                 x += step
             }
         }
-        drawPath(path, Color.White.copy(alpha = 0.12f), style = wave)
+        add(y - amp - wave.width, y + amp + wave.width) { drawPath(path, Color.White.copy(alpha = 0.12f), style = wave) }
     }
     // Rising bubbles, each with a little highlight.
+    val outline = Stroke(1.5.dp.toPx())
     repeat(area.count(70.dp.toPx())) {
         val r = (3 + random.nextInt(9)).dp.toPx()
         val c = Offset(area.x(random), area.y(random))
-        drawCircle(Color.White.copy(alpha = 0.25f), radius = r, center = c, style = Stroke(1.5.dp.toPx()))
-        drawCircle(Color.White.copy(alpha = 0.45f), radius = r * 0.25f, center = Offset(c.x - r * 0.35f, c.y - r * 0.35f))
+        add(c.y - r - outline.width, c.y + r + outline.width) {
+            drawCircle(Color.White.copy(alpha = 0.25f), radius = r, center = c, style = outline)
+            drawCircle(Color.White.copy(alpha = 0.45f), radius = r * 0.25f, center = Offset(c.x - r * 0.35f, c.y - r * 0.35f))
+        }
     }
 }
 
-private fun DrawScope.drawSpaceScenery(area: SceneArea, random: Random) {
+private fun SceneryBuilder.space(area: SceneArea, random: Random) {
     // Nebula glows.
     listOf(Color(0x40B388FF), Color(0x33FF80CE), Color(0x3380D8FF)).forEach { tint ->
         val c = Offset(area.x(random), area.y(random))
         val r = area.width * (0.45f + random.nextFloat() * 0.3f)
-        drawCircle(Brush.radialGradient(listOf(tint, Color.Transparent), center = c, radius = r), radius = r, center = c)
+        val glow = Brush.radialGradient(listOf(tint, Color.Transparent), center = c, radius = r)
+        add(c.y - r, c.y + r) { drawCircle(glow, radius = r, center = c) }
     }
     // Stars: many small dots, a few brighter ones with a cross glint.
+    val glintWidth = 1.dp.toPx()
     repeat(area.count(9.dp.toPx())) {
         val c = Offset(area.x(random), area.y(random))
         val bright = random.nextFloat() < 0.08f
         val r = if (bright) 1.8.dp.toPx() else (0.6f + random.nextFloat() * 0.9f).dp.toPx()
-        drawCircle(Color.White.copy(alpha = 0.35f + random.nextFloat() * 0.5f), radius = r, center = c)
-        if (bright) {
-            val glint = r * 3.5f
-            drawLine(Color.White.copy(alpha = 0.6f), Offset(c.x - glint, c.y), Offset(c.x + glint, c.y), strokeWidth = 1.dp.toPx(), cap = StrokeCap.Round)
-            drawLine(Color.White.copy(alpha = 0.6f), Offset(c.x, c.y - glint), Offset(c.x, c.y + glint), strokeWidth = 1.dp.toPx(), cap = StrokeCap.Round)
+        val color = Color.White.copy(alpha = 0.35f + random.nextFloat() * 0.5f)
+        val glint = if (bright) r * 3.5f else 0f
+        val reach = maxOf(r, glint)
+        add(c.y - reach, c.y + reach) {
+            drawCircle(color, radius = r, center = c)
+            if (bright) {
+                drawLine(Color.White.copy(alpha = 0.6f), Offset(c.x - glint, c.y), Offset(c.x + glint, c.y), strokeWidth = glintWidth, cap = StrokeCap.Round)
+                drawLine(Color.White.copy(alpha = 0.6f), Offset(c.x, c.y - glint), Offset(c.x, c.y + glint), strokeWidth = glintWidth, cap = StrokeCap.Round)
+            }
         }
     }
     // A ringed planet near the top.
     val planet = Offset(area.width * 0.2f, area.top + area.height * 0.15f)
     val pr = 30.dp.toPx()
-    drawCircle(
-        Brush.linearGradient(listOf(Color(0xFFB39DDB), Color(0xFF5E35B1)), start = Offset(planet.x - pr, planet.y - pr), end = Offset(planet.x + pr, planet.y + pr)),
-        radius = pr,
-        center = planet,
-        alpha = 0.75f,
-    )
-    rotate(-18f, pivot = planet) {
-        drawOval(
-            Color(0xAAE1BEE7),
-            topLeft = Offset(planet.x - pr * 1.8f, planet.y - pr * 0.35f),
-            size = Size(pr * 3.6f, pr * 0.7f),
-            style = Stroke(3.dp.toPx()),
-        )
-    }
-}
-
-private val SPRINKLE_COLORS = listOf(Color(0xFFFFF59D), Color(0xFF80DEEA), Color(0xFFFFFFFF), Color(0xFFB9F6CA), Color(0xFFFFCC80))
-
-private fun DrawScope.drawCandyScenery(area: SceneArea, random: Random) {
-    // Soft polka dots.
-    repeat(area.count(60.dp.toPx())) {
-        drawCircle(Color.White.copy(alpha = 0.08f), radius = (6 + random.nextInt(10)).dp.toPx(), center = Offset(area.x(random), area.y(random)))
-    }
-    // Sprinkles: short rounded strokes at random angles.
-    val sprinkle = 9.dp.toPx()
-    repeat(area.count(28.dp.toPx())) {
-        val c = Offset(area.x(random), area.y(random))
-        val a = random.nextFloat() * 2f * PI.toFloat()
-        val d = Offset(cos(a) * sprinkle / 2f, sin(a) * sprinkle / 2f)
-        drawLine(SPRINKLE_COLORS[random.nextInt(SPRINKLE_COLORS.size)].copy(alpha = 0.5f), c - d, c + d, strokeWidth = 3.5.dp.toPx(), cap = StrokeCap.Round)
-    }
-    // Lollipop swirls: a soft disc with a pink spiral stripe.
-    repeat(area.count(420.dp.toPx())) {
-        val c = Offset(area.x(random), area.y(random))
-        val r = (20 + random.nextInt(14)).dp.toPx()
-        drawCircle(Color.White.copy(alpha = 0.16f), radius = r, center = c)
-        for (k in 0 until 3) {
-            val rr = r * (0.35f + k * 0.25f)
-            drawArc(
-                Color(0x55FF4081),
-                startAngle = k * 120f,
-                sweepAngle = 220f,
-                useCenter = false,
-                topLeft = Offset(c.x - rr, c.y - rr),
-                size = Size(rr * 2f, rr * 2f),
-                style = Stroke(3.dp.toPx(), cap = StrokeCap.Round),
+    val planetFace = Brush.linearGradient(listOf(Color(0xFFB39DDB), Color(0xFF5E35B1)), start = Offset(planet.x - pr, planet.y - pr), end = Offset(planet.x + pr, planet.y + pr))
+    val ringStroke = Stroke(3.dp.toPx())
+    // The tilted ring reaches further than the planet; 2 radii covers it.
+    add(planet.y - pr * 2f, planet.y + pr * 2f) {
+        drawCircle(planetFace, radius = pr, center = planet, alpha = 0.75f)
+        rotate(-18f, pivot = planet) {
+            drawOval(
+                Color(0xAAE1BEE7),
+                topLeft = Offset(planet.x - pr * 1.8f, planet.y - pr * 0.35f),
+                size = Size(pr * 3.6f, pr * 0.7f),
+                style = ringStroke,
             )
         }
     }
 }
 
+private val SPRINKLE_COLORS = listOf(Color(0xFFFFF59D), Color(0xFF80DEEA), Color(0xFFFFFFFF), Color(0xFFB9F6CA), Color(0xFFFFCC80))
+
+private fun SceneryBuilder.candy(area: SceneArea, random: Random) {
+    // Soft polka dots.
+    repeat(area.count(60.dp.toPx())) {
+        val r = (6 + random.nextInt(10)).dp.toPx()
+        val c = Offset(area.x(random), area.y(random))
+        add(c.y - r, c.y + r) { drawCircle(Color.White.copy(alpha = 0.08f), radius = r, center = c) }
+    }
+    // Sprinkles: short rounded strokes at random angles.
+    val sprinkle = 9.dp.toPx()
+    val sprinkleWidth = 3.5.dp.toPx()
+    repeat(area.count(28.dp.toPx())) {
+        val c = Offset(area.x(random), area.y(random))
+        val a = random.nextFloat() * 2f * PI.toFloat()
+        val d = Offset(cos(a) * sprinkle / 2f, sin(a) * sprinkle / 2f)
+        val color = SPRINKLE_COLORS[random.nextInt(SPRINKLE_COLORS.size)].copy(alpha = 0.5f)
+        add(c.y - sprinkle, c.y + sprinkle) { drawLine(color, c - d, c + d, strokeWidth = sprinkleWidth, cap = StrokeCap.Round) }
+    }
+    // Lollipop swirls: a soft disc with a pink spiral stripe.
+    val stripe = Stroke(3.dp.toPx(), cap = StrokeCap.Round)
+    repeat(area.count(420.dp.toPx())) {
+        val c = Offset(area.x(random), area.y(random))
+        val r = (20 + random.nextInt(14)).dp.toPx()
+        add(c.y - r, c.y + r) {
+            drawCircle(Color.White.copy(alpha = 0.16f), radius = r, center = c)
+            for (k in 0 until 3) {
+                val rr = r * (0.35f + k * 0.25f)
+                drawArc(
+                    Color(0x55FF4081),
+                    startAngle = k * 120f,
+                    sweepAngle = 220f,
+                    useCenter = false,
+                    topLeft = Offset(c.x - rr, c.y - rr),
+                    size = Size(rr * 2f, rr * 2f),
+                    style = stripe,
+                )
+            }
+        }
+    }
+}

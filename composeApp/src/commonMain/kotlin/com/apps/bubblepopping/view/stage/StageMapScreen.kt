@@ -1,6 +1,7 @@
 package com.apps.bubblepopping.view.stage
 
-import com.apps.bubblepopping.view.drawScenery
+import com.apps.bubblepopping.view.Decoration
+import com.apps.bubblepopping.view.sceneryDecorations
 import com.apps.bubblepopping.view.SceneArea
 import com.apps.bubblepopping.ui.components.TOP_BAR_HEIGHT
 import com.apps.bubblepopping.ui.components.LocalBottomDockHeight
@@ -12,11 +13,15 @@ import com.apps.bubblepopping.ui.components.enamelPill
 import com.apps.bubblepopping.ui.components.candyFace
 import com.apps.bubblepopping.ui.components.ResourcePill
 import com.apps.bubblepopping.ui.components.ButtonColor
-import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -36,17 +41,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -56,13 +58,16 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.apps.bubblepopping.data.ProgressRepository
+import androidx.compose.ui.zIndex
 import com.apps.bubblepopping.data.StageProgress
 import com.apps.bubblepopping.stage.StageCatalog
 import com.apps.bubblepopping.stage.StageConfig
@@ -70,6 +75,7 @@ import com.apps.bubblepopping.stage.World
 import com.apps.bubblepopping.view.MapRoadColor
 import com.apps.bubblepopping.view.MapRoadDashColor
 import com.apps.bubblepopping.view.MapRoadDoneColor
+import com.apps.bubblepopping.view.MapLoadingColor
 import com.apps.bubblepopping.ui.components.GameTopBar
 import com.apps.bubblepopping.ui.components.LocalUiFeedback
 import com.apps.bubblepopping.ui.components.OutlinedText
@@ -86,7 +92,16 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.apps.bubblepopping.ui.components.StarCounter
 import com.apps.bubblepopping.view.worldMapColors
-import kotlinx.coroutines.flow.first
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.SideEffect
+import androidx.compose.foundation.layout.width
+import com.apps.bubblepopping.ui.components.GameProgressBar
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.sin
 
 /**
@@ -95,15 +110,17 @@ import kotlin.math.sin
  */
 @Composable
 fun StageMapScreenRoot(
-    progressRepository: ProgressRepository,
+    /**
+     * The player's stage results, collected app-wide so they're ready the moment the
+     * map opens; null only before the database first answers (then the map waits,
+     * rather than opening on stage 1 and jumping).
+     */
+    progress: Map<Int, StageProgress>?,
     onPlayStage: (Int) -> Unit,
     onBack: () -> Unit,
     /** Opens with this stage's card showing (e.g. after "Next stage"). */
     initialIntroStageId: Int? = null,
 ) {
-    // null until the first load, so the map doesn't scroll to stage 1 and then jump.
-    val progress by remember(progressRepository) { progressRepository.stageProgress() }
-        .collectAsStateWithLifecycle(initialValue = null)
     // The tapped stage, whose card is showing over the map.
     var introStageId by rememberSaveable { mutableStateOf(initialIntroStageId) }
 
@@ -143,14 +160,12 @@ fun StageMapScreen(
             .fillMaxSize()
             .background(LOADING_BACKGROUND),
     ) {
-        if (progress != null) {
-            StageMap(
-                stages = stages,
-                progress = progress,
-                onStageSelected = onStageSelected,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
+        StageMap(
+            stages = stages,
+            progress = progress,
+            onStageSelected = onStageSelected,
+            modifier = Modifier.fillMaxSize(),
+        )
         GameTopBar(
             title = "Stages",
             onBack = onBack,
@@ -166,104 +181,259 @@ fun StageMapScreen(
 
 private enum class NodeState { LOCKED, CURRENT, DONE }
 
+/** What a stage's node shows; a data class, so an unchanged stage skips recomposition. */
+private data class MapNode(val stars: Int, val state: NodeState)
+
+/**
+ * The map, shown once both the player's progress and every world's scenery are
+ * ready, so it never appears half drawn. The scenery is worked out while the
+ * progress loads; after the first visit it is cached and the map shows at once.
+ * Until then [MapLoading] covers the wait (only if it lasts long enough to notice),
+ * and the map fades in.
+ */
 @Composable
 private fun StageMap(
     stages: List<StageConfig>,
-    progress: Map<Int, StageProgress>,
+    progress: Map<Int, StageProgress>?,
     onStageSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         // The map runs under the top bar and the bottom dock, so its margins grow by their height.
-        val dockHeight = LocalBottomDockHeight.current
+        // The dock hides (height 0) the moment a round is pushed, while this screen is still
+        // fading out: keep the last real height, so the map doesn't re-lay out as it leaves.
+        val liveDockHeight = LocalBottomDockHeight.current
+        var keptDockHeight by remember { mutableStateOf(liveDockHeight) }
+        SideEffect { if (liveDockHeight > 0.dp) keptDockHeight = liveDockHeight }
+        val dockHeight = if (liveDockHeight > 0.dp) liveDockHeight else keptDockHeight
         val layout = remember(stages, maxWidth, dockHeight) {
             MapLayout(stages, maxWidth, bottomMargin = BOTTOM_PADDING + dockHeight, topMargin = TOP_PADDING + TOP_BAR_HEIGHT)
         }
-        val viewportHeight = maxHeight
-        val scrollState = rememberScrollState()
-        val density = LocalDensity.current
-        val currentId = StageCatalog.currentStageId(progress)
-        val currentIndex = stages.indexOfFirst { it.id == currentId }
+        val scenery = rememberMapScenery(layout)
+        // Once shown, the map stays: a later layout change (a new screen size) fills its
+        // scenery in place rather than going back to the loader.
+        var shownOnce by remember { mutableStateOf(false) }
+        val ready = progress != null && (shownOnce || layout.sections.all { it.world in scenery })
+        // Already ready on the first frame (a later visit): no loader, no fade, the map is just there.
+        val readyAtStart = remember { ready }
+        // On a first visit the bar fills over at least MIN_LOADER_MS, so it reads as a loader
+        // rather than a flicker; if loading is slower, the bar waits for it.
+        val clock = remember { Animatable(if (readyAtStart) 1f else 0f) }
+        LaunchedEffect(Unit) { clock.animateTo(1f, tween(MIN_LOADER_MS, easing = LinearEasing)) }
+        // derivedStateOf: the clock ticks every frame, but this only flips once.
+        val showMap by remember { derivedStateOf { clock.value >= 1f } }
 
-        // Start with the current stage in the middle of the screen.
-        LaunchedEffect(layout) {
-            snapshotFlow { scrollState.maxValue }.first { it in 1 until Int.MAX_VALUE }
-            val target = with(density) {
-                (layout.nodeCenter(currentIndex).y - viewportHeight / 2).toPx()
+        if (ready && showMap) {
+            val fade = remember { Animatable(if (readyAtStart) 1f else 0f) }
+            LaunchedEffect(Unit) {
+                shownOnce = true
+                fade.animateTo(1f, tween(MAP_FADE_MS))
             }
-            scrollState.scrollTo(target.toInt().coerceIn(0, scrollState.maxValue))
+            StageList(
+                stages = stages,
+                progress = progress,
+                layout = layout,
+                scenery = scenery,
+                viewportHeight = maxHeight,
+                onStageSelected = onStageSelected,
+                modifier = Modifier.graphicsLayer { alpha = fade.value },
+            )
         }
+        // One step for the progress, one per world's scenery.
+        val stepsDone = (if (progress != null) 1 else 0) + layout.sections.count { it.world in scenery }
+        val loaded = stepsDone / (layout.sections.size + 1f)
+        MapLoading(
+            loading = !(ready && showMap),
+            // The bar never runs ahead of the real loading, nor of the minimum time.
+            fraction = { minOf(clock.value, loaded) },
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(layout.height)
+/**
+ * The map as a lazy list of slices, one per stage, bottom to top: only the stages
+ * on screen and [CACHE_WINDOW] around them (about five each way) are built; the
+ * rest are built in idle frames as they come near and released when far away.
+ * It opens with the current stage in the middle of the screen, with no jump.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun StageList(
+    stages: List<StageConfig>,
+    progress: Map<Int, StageProgress>,
+    layout: MapLayout,
+    scenery: Map<World, List<Decoration>>,
+    viewportHeight: Dp,
+    onStageSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // Each stage's state, worked out once per progress change rather than in every slice.
+    val nodes = remember(stages, progress) {
+        val currentId = StageCatalog.currentStageId(progress)
+        stages.map { stage ->
+            val stars = progress[stage.id]?.stars ?: 0
+            val state = when {
+                !StageCatalog.isUnlocked(stage.id, progress) -> NodeState.LOCKED
+                stage.id == currentId && stars == 0 -> NodeState.CURRENT
+                else -> NodeState.DONE
+            }
+            MapNode(stars, state)
+        }
+    }
+    val unlockedCount = nodes.count { it.state != NodeState.LOCKED }
+    val worldStarsNeeded = remember(progress) {
+        StageCatalog.worlds.associateWith { world -> world.starsToUnlock.takeIf { !StageCatalog.isWorldUnlocked(world, progress) } }
+    }
+    val density = LocalDensity.current
+
+    // Not saved: every visit opens on the current stage, as the stage you just cleared moves it on.
+    val listState = remember(layout) {
+        val currentIndex = stages.indexOfFirst { it.id == StageCatalog.currentStageId(progress) }.coerceAtLeast(0)
+        val (index, offset) = layout.startPosition(currentIndex, viewportHeight)
+        LazyListState(CACHE_WINDOW, index, with(density) { offset.roundToPx() })
+    }
+
+    // Stage 1 is the first item, at the bottom.
+    LazyColumn(state = listState, reverseLayout = true, modifier = modifier.fillMaxSize()) {
+        items(count = stages.size, key = { stages[it].id }, contentType = { "stage" }) { index ->
+            val stage = stages[index]
+            MapSlice(
+                index = index,
+                stage = stage,
+                node = nodes[index],
+                // The gold road only matters up to this slice's top, so slices well
+                // below the last unlocked stage keep the same value and skip.
+                roadDone = minOf(unlockedCount, index + 2),
+                worldStarsNeeded = worldStarsNeeded[stage.world],
+                layout = layout,
+                scenery = scenery,
+                onStageSelected = onStageSelected,
+            )
+        }
+    }
+}
+
+/**
+ * The map's first-visit loader: a solid blue screen (the Sky world's deep blue)
+ * with "Loading map…" over a gold progress bar filled to [fraction] (read here, so
+ * its per-frame changes only recompose the loader). It fades out as the map fades in.
+ */
+@Composable
+private fun MapLoading(loading: Boolean, fraction: () -> Float, modifier: Modifier = Modifier) {
+    AnimatedVisibility(
+        visible = loading,
+        enter = fadeIn(),
+        exit = fadeOut(tween(MAP_FADE_MS)),
+        modifier = modifier,
+    ) {
+        Box(Modifier.fillMaxSize().background(MapLoadingColor)) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(Spacing.m),
+                modifier = Modifier.align(Alignment.Center),
             ) {
-                Canvas(modifier = Modifier.matchParentSize()) {
-                    drawWorldBackgrounds(layout)
-                    drawWorldScenery(layout)
-                    drawRoad(layout, unlockedCount = stages.count { StageCatalog.isUnlocked(it.id, progress) })
-                }
-
-                // World banners sit just below each world's first stage.
-                StageCatalog.worlds.forEach { world ->
-                    val firstIndex = stages.indexOfFirst { it.world == world }
-                    WorldBanner(
-                        world = world,
-                        starsNeeded = world.starsToUnlock
-                            .takeIf { !StageCatalog.isWorldUnlocked(world, progress) },
-                        comingSoon = false,
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .offset(y = layout.nodeCenter(firstIndex).y + BANNER_BELOW_NODE - BANNER_HALF_HEIGHT),
-                    )
-                }
-                // Teaser for the next world, above the last stage.
-                StageCatalog.upcomingWorld?.let { world ->
-                    WorldBanner(
-                        world = world,
-                        starsNeeded = world.starsToUnlock,
-                        comingSoon = true,
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .offset(y = layout.teaserCenterY - BANNER_HALF_HEIGHT),
-                    )
-                }
-
-                stages.forEachIndexed { index, stage ->
-                    val center = layout.nodeCenter(index)
-                    val stars = progress[stage.id]?.stars ?: 0
-                    val state = when {
-                        !StageCatalog.isUnlocked(stage.id, progress) -> NodeState.LOCKED
-                        stage.id == currentId && stars == 0 -> NodeState.CURRENT
-                        else -> NodeState.DONE
-                    }
-                    StageNode(
-                        stage = stage,
-                        stars = stars,
-                        state = state,
-                        onClick = { onStageSelected(stage.id) },
-                        modifier = Modifier.offset(x = center.x - NODE_SIZE / 2, y = center.y - NODE_SIZE / 2),
-                    )
-                }
+                OutlinedText("Loading map…", GameTheme.type.headline)
+                GameProgressBar(fraction = fraction(), modifier = Modifier.width(LOADER_BAR_WIDTH))
             }
         }
     }
 }
 
 /**
- * Where everything sits on the map, in dp. Stage 1 is at the bottom; each
- * stage is [NODE_SPACING] higher, swinging left and right along a sine wave,
- * with an extra [WORLD_GAP] wherever a new world starts.
+ * One stage's band of the map: its piece of the world colours, scenery and road,
+ * drawn once into its own layer (scrolling just moves the layer), with the stage
+ * node on top, plus the world banner under a world's first stage and the
+ * next-world teaser above the last. Higher slices draw over lower ones, so a node's
+ * star pill can hang into the slice below.
+ */
+@Composable
+private fun MapSlice(
+    index: Int,
+    stage: StageConfig,
+    node: MapNode,
+    roadDone: Int,
+    worldStarsNeeded: Int?,
+    layout: MapLayout,
+    scenery: Map<World, List<Decoration>>,
+    onStageSelected: (Int) -> Unit,
+) {
+    val top = layout.sliceTop(index)
+    val bottom = layout.sliceBottom(index)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(bottom - top)
+            .zIndex(index.toFloat())
+            .graphicsLayer()
+            .drawWithCache {
+                val topPx = top.toPx()
+                val bottomPx = bottom.toPx()
+                // The road always starts at stage 1, so the dashes line up across slices.
+                val roadEnd = minOf(index + 1, layout.nodeCount - 1)
+                val centers = (0..roadEnd).map { layout.nodeCenter(it).let { c -> Offset(c.x.toPx(), c.y.toPx()) } }
+                val road = roadPath(centers)
+                val doneRoad = if (roadDone >= 2) roadPath(centers.take(roadDone)) else null
+                val dashes = PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 10.dp.toPx()))
+                // Reading the scenery here rebuilds this cache when a world's scenery arrives.
+                val pieces = layout.sections.flatMap { scenery[it.world].orEmpty() }
+                    .filter { it.bottom > topPx && it.top < bottomPx }
+                onDrawBehind {
+                    clipRect {
+                        translate(top = -topPx) {
+                            drawWorldBackgrounds(layout)
+                            pieces.forEach { it.draw(this) }
+                            drawRoad(road, doneRoad, dashes)
+                        }
+                    }
+                }
+            },
+    ) {
+        if (layout.isFirstOfWorld(index)) {
+            WorldBanner(
+                world = stage.world,
+                starsNeeded = worldStarsNeeded,
+                comingSoon = false,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .offset(y = layout.nodeCenter(index).y - top + BANNER_BELOW_NODE - BANNER_HALF_HEIGHT),
+            )
+        }
+        if (index == layout.nodeCount - 1) {
+            StageCatalog.upcomingWorld?.let { world ->
+                WorldBanner(
+                    world = world,
+                    starsNeeded = world.starsToUnlock,
+                    comingSoon = true,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .offset(y = layout.teaserCenterY - top - BANNER_HALF_HEIGHT),
+                )
+            }
+        }
+        val center = layout.nodeCenter(index)
+        StageNode(
+            stage = stage,
+            stars = node.stars,
+            state = node.state,
+            onClick = { onStageSelected(stage.id) },
+            modifier = Modifier.offset(x = center.x - NODE_SIZE / 2, y = center.y - top - NODE_SIZE / 2),
+        )
+    }
+}
+
+/** A world's map section, in dp from the top of the map. */
+private class MapSection(val world: World, val top: Dp, val bottom: Dp)
+
+/**
+ * Where everything sits on the map, in dp from its top. Stage 1 is at the bottom;
+ * each stage is [NODE_SPACING] higher, swinging left and right along a sine wave,
+ * with an extra [WORLD_GAP] wherever a new world starts. The map is cut into one
+ * slice per stage for the lazy list.
  */
 private class MapLayout(
     private val stages: List<StageConfig>,
-    width: Dp,
+    val width: Dp,
     private val bottomMargin: Dp,
     topMargin: Dp,
 ) {
@@ -289,11 +459,32 @@ private class MapLayout(
         y = height - bottomMargin - NODE_SPACING * index - WORLD_GAP * worldBreaks[index],
     )
 
+    fun isFirstOfWorld(index: Int) = index == 0 || stages[index].world != stages[index - 1].world
+
     val teaserCenterY: Dp get() = nodeCenter(stages.lastIndex).y - TEASER_ABOVE_LAST_NODE
 
-    /** Vertical span (top, bottom) of each world's section, plus the upcoming world's teaser area. */
-    fun worldSections(): List<Triple<World, Dp, Dp>> {
-        val sections = mutableListOf<Triple<World, Dp, Dp>>()
+    /**
+     * Top of stage [index]'s slice: [SLICE_ABOVE_NODE] above its node, so the node's
+     * glow fits; the last slice runs to the top of the map (the teaser).
+     */
+    fun sliceTop(index: Int): Dp = if (index == stages.lastIndex) 0.dp else nodeCenter(index).y - SLICE_ABOVE_NODE
+
+    /** Bottom of stage [index]'s slice: the top of the one below; the first runs to the bottom. */
+    fun sliceBottom(index: Int): Dp = if (index == 0) height else sliceTop(index - 1)
+
+    /**
+     * The list position — the bottom item and how much of it is scrolled off the
+     * bottom — that puts stage [index] in the middle of a [viewportHeight] screen.
+     */
+    fun startPosition(index: Int, viewportHeight: Dp): Pair<Int, Dp> {
+        val viewportBottom = nodeCenter(index).y + viewportHeight / 2
+        if (viewportBottom >= height) return 0 to 0.dp
+        val bottomItem = stages.indices.first { sliceTop(it) < viewportBottom }
+        return bottomItem to (sliceBottom(bottomItem) - viewportBottom)
+    }
+
+    /** Vertical span of each world's section, plus the upcoming world's teaser area. */
+    val sections: List<MapSection> = buildList {
         val worldsInOrder = stages.map { it.world }.distinct()
         val upcoming = StageCatalog.upcomingWorld
         // With no teaser, the last world's colours run to the top of the map.
@@ -303,13 +494,67 @@ private class MapLayout(
             val last = stages.indexOfLast { it.world == world }
             val bottom = if (i == 0) height else midpoint(nodeCenter(first).y, nodeCenter(first - 1).y)
             val top = if (i == worldsInOrder.lastIndex) teaserBottom else midpoint(nodeCenter(last).y, nodeCenter(last + 1).y)
-            sections += Triple(world, top, bottom)
+            add(MapSection(world, top, bottom))
         }
-        upcoming?.let { sections += Triple(it, 0.dp, teaserBottom) }
-        return sections
+        upcoming?.let { add(MapSection(it, 0.dp, teaserBottom)) }
     }
 
     private fun midpoint(a: Dp, b: Dp) = (a + b) / 2
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scenery
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Each world's scenery pieces, worked out on a background thread and kept for the
+ * session, so the next visit has them on its first frame.
+ */
+@Composable
+private fun rememberMapScenery(layout: MapLayout): Map<World, List<Decoration>> {
+    val density = LocalDensity.current
+    val keys = remember(layout, density) {
+        val widthPx = with(density) { layout.width.toPx() }
+        layout.sections.map { section ->
+            with(density) { SceneryKey(section.world, section.top.toPx(), section.bottom.toPx(), widthPx, density.density) }
+        }
+    }
+    val scenery = remember(keys) {
+        mutableStateMapOf<World, List<Decoration>>().apply {
+            keys.forEach { key -> MapSceneryCache[key]?.let { put(key.world, it) } }
+        }
+    }
+    LaunchedEffect(keys) {
+        for (key in keys) {
+            if (key.world in scenery) continue
+            val pieces = withContext(Dispatchers.Default) { key.build(density) }
+            MapSceneryCache[key] = pieces
+            scenery[key.world] = pieces
+        }
+    }
+    return scenery
+}
+
+/** A world section's scenery inputs, in px. */
+private data class SceneryKey(val world: World, val top: Float, val bottom: Float, val width: Float, val density: Float) {
+    fun build(density: Density): List<Decoration> {
+        val area = SceneArea(top, bottom, width)
+        if (area.height <= 0f) return emptyList()
+        return density.sceneryDecorations(world, area, Random(SCENERY_SEED + world.ordinal))
+    }
+}
+
+/** Scenery kept across visits to the map. Only touched on the main thread. */
+private object MapSceneryCache {
+    private val entries = LinkedHashMap<SceneryKey, List<Decoration>>()
+
+    operator fun get(key: SceneryKey): List<Decoration>? = entries[key]
+
+    operator fun set(key: SceneryKey, pieces: List<Decoration>) {
+        // A new screen size or dock height means new keys; drop the oldest instead of growing.
+        if (entries.size >= MAX_CACHED_SECTIONS) entries.remove(entries.keys.first())
+        entries[key] = pieces
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -321,12 +566,12 @@ private class MapLayout(
  * the next instead of a hard line.
  */
 private fun DrawScope.drawWorldBackgrounds(layout: MapLayout) {
-    val sections = layout.worldSections()
-    for ((world, top, bottom) in sections) {
-        val topPx = top.toPx()
-        val bottomPx = bottom.toPx()
+    val sections = layout.sections
+    for (section in sections) {
+        val topPx = section.top.toPx()
+        val bottomPx = section.bottom.toPx()
         drawRect(
-            brush = Brush.verticalGradient(worldMapColors(world), startY = topPx, endY = bottomPx),
+            brush = Brush.verticalGradient(worldMapColors(section.world), startY = topPx, endY = bottomPx),
             topLeft = Offset(0f, topPx),
             size = Size(size.width, bottomPx - topPx),
         )
@@ -334,10 +579,10 @@ private fun DrawScope.drawWorldBackgrounds(layout: MapLayout) {
     // Blend each border: the upper world's bottom colour fades into the lower world's top colour.
     val blend = WORLD_BLEND.toPx()
     sections.zipWithNext().forEach { (lower, upper) ->
-        val edge = lower.second.toPx()
+        val edge = lower.top.toPx()
         drawRect(
             brush = Brush.verticalGradient(
-                listOf(worldMapColors(upper.first).last(), worldMapColors(lower.first).first()),
+                listOf(worldMapColors(upper.world).last(), worldMapColors(lower.world).first()),
                 startY = edge - blend,
                 endY = edge + blend,
             ),
@@ -347,49 +592,27 @@ private fun DrawScope.drawWorldBackgrounds(layout: MapLayout) {
     }
 }
 
-/**
- * Each world's scenery, at fixed seeded spots so it never moves between visits:
- * Sky — sun glow, fluffy clouds, bubble rings; Ocean — light rays, wave lines,
- * rising bubbles; Space — nebulae, stars, a ringed planet; Candy — polka dots,
- * sprinkles, lollipop swirls.
- */
-private fun DrawScope.drawWorldScenery(layout: MapLayout) {
-    for ((world, top, bottom) in layout.worldSections()) {
-        val area = SceneArea(top.toPx(), bottom.toPx(), size.width)
-        if (area.height <= 0f) continue
-        val random = Random(SCENERY_SEED + world.ordinal)
-        drawScenery(world, area, random)
+/** A smooth road through [points], bending between each pair. */
+private fun roadPath(points: List<Offset>) = Path().apply {
+    moveTo(points.first().x, points.first().y)
+    for (i in 1 until points.size) {
+        val from = points[i - 1]
+        val to = points[i]
+        val midY = (from.y + to.y) / 2
+        cubicTo(from.x, midY, to.x, midY, to.x, to.y)
     }
 }
 
-
 /**
- * The road through every stage: a wide soft band with dashes on top. The
- * stretch up to the last unlocked stage is dashed in gold.
+ * The road: a wide soft band with dashes on top. The stretch up to the last
+ * unlocked stage ([done]) is dashed in gold.
  */
-private fun DrawScope.drawRoad(layout: MapLayout, unlockedCount: Int) {
-    val centers = (0 until layout.nodeCount).map { layout.nodeCenter(it).let { c -> Offset(c.x.toPx(), c.y.toPx()) } }
-    if (centers.size < 2) return
-
-    fun pathThrough(points: List<Offset>) = Path().apply {
-        moveTo(points.first().x, points.first().y)
-        for (i in 1 until points.size) {
-            val from = points[i - 1]
-            val to = points[i]
-            val midY = (from.y + to.y) / 2
-            cubicTo(from.x, midY, to.x, midY, to.x, to.y)
-        }
-    }
-
-    val dashes = PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 10.dp.toPx()))
-    val fullRoad = pathThrough(centers)
+private fun DrawScope.drawRoad(road: Path, done: Path?, dashes: PathEffect) {
     // A darker edge under the road, so it reads as a raised path.
-    drawPath(fullRoad, GameColors.ButtonOutline.copy(alpha = ROAD_EDGE_ALPHA), style = Stroke(width = 28.dp.toPx(), cap = StrokeCap.Round))
-    drawPath(fullRoad, MapRoadColor, style = Stroke(width = 22.dp.toPx(), cap = StrokeCap.Round))
-    drawPath(fullRoad, MapRoadDashColor, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, pathEffect = dashes))
-
-    if (unlockedCount >= 2) {
-        val done = pathThrough(centers.take(unlockedCount))
+    drawPath(road, GameColors.ButtonOutline.copy(alpha = ROAD_EDGE_ALPHA), style = Stroke(width = 28.dp.toPx(), cap = StrokeCap.Round))
+    drawPath(road, MapRoadColor, style = Stroke(width = 22.dp.toPx(), cap = StrokeCap.Round))
+    drawPath(road, MapRoadDashColor, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, pathEffect = dashes))
+    if (done != null) {
         // Soft gold glow under the gold dashes.
         drawPath(done, GameColors.Gold.copy(alpha = ROAD_GLOW_ALPHA), style = Stroke(width = 12.dp.toPx(), cap = StrokeCap.Round))
         drawPath(done, MapRoadDoneColor, style = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round, pathEffect = dashes))
@@ -406,6 +629,9 @@ private fun DrawScope.drawRoad(layout: MapLayout, unlockedCount: Int) {
  * stages get a gold ring, the next stage pulses with a glow, and a boss stage is
  * bigger with a slowly turning gold starburst inside, behind its crown. Its stars sit on a small
  * pill underneath.
+ *
+ * Only the current stage and bosses animate, and both animations are read in a
+ * graphics layer, so they move the layer without recomposing or redrawing anything.
  */
 @Composable
 private fun StageNode(
@@ -416,19 +642,18 @@ private fun StageNode(
     modifier: Modifier = Modifier,
 ) {
     val isBoss = stage.boss != null
-    val transition = rememberInfiniteTransition(label = "stage_node")
     // The stage to play next gently pulses.
     val pulse = if (state == NodeState.CURRENT) {
-        transition.animateFloat(
+        rememberInfiniteTransition(label = "stage_pulse").animateFloat(
             initialValue = 1f,
             targetValue = 1.1f,
             animationSpec = infiniteRepeatable(tween(durationMillis = 700), RepeatMode.Reverse),
             label = "pulse",
-        ).value
-    } else 1f
-    // Only bosses turn a starburst; read only while drawing, so it never recomposes the node.
+        )
+    } else null
+    // Only bosses turn a starburst.
     val spin = if (isBoss) {
-        transition.animateFloat(
+        rememberInfiniteTransition(label = "boss_spin").animateFloat(
             initialValue = 0f,
             targetValue = 360f,
             animationSpec = infiniteRepeatable(tween(BURST_TURN_MS, easing = LinearEasing), RepeatMode.Restart),
@@ -449,7 +674,13 @@ private fun StageNode(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .requiredSize(bubbleSize)
-                    .scale(pulse)
+                    // Always its own layer, so the pulse and the starburst never redraw the slice.
+                    .graphicsLayer {
+                        if (pulse != null) {
+                            scaleX = pulse.value
+                            scaleY = pulse.value
+                        }
+                    }
                     .drawBehind {
                         val r = size.minDimension / 2f
                         if (state == NodeState.CURRENT) {
@@ -477,10 +708,11 @@ private fun StageNode(
                     },
             ) {
                 // Boss: a gold starburst turning inside the bubble, behind the crown (or lock).
+                // Drawn once; the layer rotates it.
                 if (spin != null) {
-                    Canvas(Modifier.matchParentSize()) {
+                    Canvas(Modifier.matchParentSize().graphicsLayer { rotationZ = spin.value }) {
                         val r = size.minDimension / 2f
-                        rotate(spin.value) { drawStarburst(r * BURST_REACH, r * BURST_INNER, dimmed = state == NodeState.LOCKED) }
+                        drawStarburst(r * BURST_REACH, r * BURST_INNER, dimmed = state == NodeState.LOCKED)
                     }
                 }
                 when {
@@ -594,12 +826,26 @@ private val BANNER_BELOW_NODE = 100.dp
 private val BANNER_HALF_HEIGHT = 20.dp
 private val PLATE_HEIGHT = 40.dp
 private val TEASER_ABOVE_LAST_NODE = 130.dp
+/**
+ * How far a stage's slice reaches above its node: room for the current boss's
+ * pulsing glow (84 dp × 1.6 / 2 × 1.1 ≈ 74 dp), so nothing pokes into the slice above.
+ */
+private val SLICE_ABOVE_NODE = 76.dp
+/** Stages kept built beyond the screen, each way (about five). */
+@OptIn(ExperimentalFoundationApi::class)
+private val CACHE_WINDOW = LazyLayoutCacheWindow(ahead = NODE_SPACING * 5, behind = NODE_SPACING * 5)
+/** World sections whose scenery is kept between visits (a few screen sizes' worth). */
+private const val MAX_CACHED_SECTIONS = 16
+/** The map fades in this fast after a first-visit load (and the loader fades out). */
+private const val MAP_FADE_MS = 250
+/** A first visit's loader fills over at least this long. */
+private const val MIN_LOADER_MS = 700
+private val LOADER_BAR_WIDTH = 220.dp
 /** Height of the soft blend where one world meets the next. */
 private val WORLD_BLEND = 90.dp
 private const val SCENERY_SEED = 7
-/** Shown for the moment before progress loads; close to the map's own colours. */
-private val LOADING_BACKGROUND = Color(0xFF0D47A1)
-/** Radians between consecutive stages on the left–right sine wave. */
+/** Under everything: dark, so no frame outside the loader shows the loader's blue. */
+private val LOADING_BACKGROUND = GameColors.NightTop/** Radians between consecutive stages on the left–right sine wave. */
 private const val WAVE_STEP = 0.95f
 private const val ROAD_EDGE_ALPHA = 0.25f
 private const val ROAD_GLOW_ALPHA = 0.3f

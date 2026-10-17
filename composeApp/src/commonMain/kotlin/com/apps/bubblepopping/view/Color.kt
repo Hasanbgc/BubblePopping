@@ -57,6 +57,8 @@ val MapRoadColor = Color.White.copy(alpha = 0.16f)
 /** Dashes on the road; gold once the player has passed that stretch. */
 val MapRoadDashColor = Color.White.copy(alpha = 0.45f)
 val MapRoadDoneColor = Color(0xFFFFD54F)
+/** The stage map's loading screen: solid, the Sky world's deepest blue. */
+val MapLoadingColor = Color(0xFF0D47A1)
 
 // ── Cosmetics ───────────────────────────────────────────────────────────────
 

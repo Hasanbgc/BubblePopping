@@ -112,6 +112,10 @@ private fun PlayerResourcesProvider(container: AppContainer, content: @Composabl
 @Composable
 private fun AppNavigation(container: AppContainer, hapticFeedback: HapticFeedback, onExitApp: (() -> Unit)?) {
     val backStack = rememberNavBackStack(config, Routes.Home)
+    // Collected for the whole session, not per visit (it keeps updating during a round), so the
+    // stage map has up-to-date progress on its first frame instead of waiting for the database.
+    val stageProgress by remember(container) { container.progressRepository.stageProgress() }
+        .collectAsStateWithLifecycle(null)
 
     // Menu screens share one bottom dock; it hides during a round.
     val tab = dockTabFor(backStack.lastOrNull())
@@ -199,7 +203,7 @@ private fun AppNavigation(container: AppContainer, hapticFeedback: HapticFeedbac
                     }
                     entry<Routes.Stages> { args ->
                         StageMapScreenRoot(
-                            progressRepository = container.progressRepository,
+                            progress = stageProgress,
                             initialIntroStageId = args.introStageId,
                             onPlayStage = { stageId ->
                                 backStack.add(Routes.Play(GameMode.Stage(stageId)))
