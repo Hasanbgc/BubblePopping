@@ -11,7 +11,7 @@ import kotlin.math.cos
 import kotlin.math.PI
 import com.apps.bubblepopping.ui.components.enamelPill
 import com.apps.bubblepopping.ui.components.candyFace
-import com.apps.bubblepopping.ui.components.ResourcePill
+import com.apps.bubblepopping.ui.components.formatCount
 import com.apps.bubblepopping.ui.components.ButtonColor
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.requiredSize
@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.layout.layout
 import com.apps.bubblepopping.data.StageProgress
 import com.apps.bubblepopping.stage.StageCatalog
 import com.apps.bubblepopping.stage.StageConfig
@@ -360,28 +361,39 @@ private fun MapSlice(
 ) {
     val top = layout.sliceTop(index)
     val bottom = layout.sliceBottom(index)
+    // Borders in whole pixels, rounded once: a slice's bottom is exactly the next one's
+    // top, so the list places every slice exactly where its drawing expects to be. With
+    // fractional dp heights the list's rounding drifted from the drawing, leaving a
+    // thin line at every slice border.
+    val density = LocalDensity.current
+    val topPx = with(density) { top.roundToPx() }
+    val bottomPx = with(density) { bottom.roundToPx() }
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(bottom - top)
+            .layout { measurable, constraints ->
+                val height = bottomPx - topPx
+                val placeable = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
+                layout(placeable.width, height) { placeable.place(0, 0) }
+            }
             .zIndex(index.toFloat())
             .graphicsLayer()
             .drawWithCache {
-                val topPx = top.toPx()
-                val bottomPx = bottom.toPx()
                 // The road always starts at stage 1, so the dashes line up across slices.
                 val roadEnd = minOf(index + 1, layout.nodeCount - 1)
                 val centers = (0..roadEnd).map { layout.nodeCenter(it).let { c -> Offset(c.x.toPx(), c.y.toPx()) } }
                 val road = roadPath(centers)
                 val doneRoad = if (roadDone >= 2) roadPath(centers.take(roadDone)) else null
                 val dashes = PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 10.dp.toPx()))
+                val background = mapBackground(layout)
                 // Reading the scenery here rebuilds this cache when a world's scenery arrives.
                 val pieces = layout.sections.flatMap { scenery[it.world].orEmpty() }
                     .filter { it.bottom > topPx && it.top < bottomPx }
                 onDrawBehind {
                     clipRect {
-                        translate(top = -topPx) {
-                            drawWorldBackgrounds(layout)
+                        translate(top = -topPx.toFloat()) {
+                            // The map-wide gradient, drawn over this slice's band only.
+                            drawRect(background, topLeft = Offset(0f, topPx.toFloat()), size = Size(size.width, (bottomPx - topPx).toFloat()))
                             pieces.forEach { it.draw(this) }
                             drawRoad(road, doneRoad, dashes)
                         }
@@ -562,34 +574,27 @@ private object MapSceneryCache {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Each world's section in its colours, with a soft blend where one world meets
- * the next instead of a hard line.
+ * The whole map's colours as one continuous top-to-bottom gradient: each world's
+ * colours spread over its section, and across each border the colour runs
+ * straight from the upper world's bottom colour to the lower world's top colour
+ * over [WORLD_BLEND] each side. One gradient has no seams, so there's no visible
+ * edge (the "bump" separately drawn blend strips left) where worlds meet.
  */
-private fun DrawScope.drawWorldBackgrounds(layout: MapLayout) {
-    val sections = layout.sections
-    for (section in sections) {
-        val topPx = section.top.toPx()
-        val bottomPx = section.bottom.toPx()
-        drawRect(
-            brush = Brush.verticalGradient(worldMapColors(section.world), startY = topPx, endY = bottomPx),
-            topLeft = Offset(0f, topPx),
-            size = Size(size.width, bottomPx - topPx),
-        )
-    }
-    // Blend each border: the upper world's bottom colour fades into the lower world's top colour.
+private fun Density.mapBackground(layout: MapLayout): Brush {
+    val height = layout.height.toPx()
     val blend = WORLD_BLEND.toPx()
-    sections.zipWithNext().forEach { (lower, upper) ->
-        val edge = lower.top.toPx()
-        drawRect(
-            brush = Brush.verticalGradient(
-                listOf(worldMapColors(upper.world).last(), worldMapColors(lower.world).first()),
-                startY = edge - blend,
-                endY = edge + blend,
-            ),
-            topLeft = Offset(0f, edge - blend),
-            size = Size(size.width, blend * 2f),
-        )
+    val sections = layout.sections.sortedBy { it.top }
+    val stops = sections.flatMapIndexed { i, section ->
+        val colors = worldMapColors(section.world)
+        // Inset from the borders it shares with a neighbour, leaving room for the blend.
+        val start = section.top.toPx() + if (i > 0) blend else 0f
+        val end = section.bottom.toPx() - if (i < sections.lastIndex) blend else 0f
+        colors.mapIndexed { k, color ->
+            val y = start + (end - start) * k / (colors.size - 1)
+            (y / height).coerceIn(0f, 1f) to color
+        }
     }
+    return Brush.verticalGradient(*stops.toTypedArray(), startY = 0f, endY = height)
 }
 
 /** A smooth road through [points], bending between each pair. */
@@ -764,9 +769,10 @@ private fun DrawScope.drawStarburst(outer: Float, inner: Float, dimmed: Boolean)
 }
 
 /**
- * "Sky World" on a compact light-cyan enamel name plate. When
- * [starsNeeded] is set the world is still locked, and a pill under the plate shows
- * its star requirement; [comingSoon] marks a world without stages yet.
+ * "Sky World" on a compact light-cyan enamel name plate. When [starsNeeded] is
+ * set the world is still locked: a lock sits in front of the name and the stars
+ * it takes (the score pill's star and the number) at the end, all on the one
+ * plate. [comingSoon] marks a world without stages yet, with a clock instead of the lock.
  */
 @Composable
 private fun WorldBanner(
@@ -775,26 +781,31 @@ private fun WorldBanner(
     comingSoon: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-        modifier = modifier,
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.s),
+        modifier = modifier
+            .height(PLATE_HEIGHT)
+            .enamelPill(GameColors.OceanTint, EnamelTone.OCEAN)
+            .padding(horizontal = Spacing.l),
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .height(PLATE_HEIGHT)
-                .enamelPill(GameColors.OceanTint, EnamelTone.OCEAN)
-                .padding(horizontal = Spacing.l),
-        ) {
-            OutlinedText("${world.displayName} World", GameTheme.type.headline, maxLines = 1)
-        }
         if (starsNeeded != null) {
-            ResourcePill(
-                icon = if (comingSoon) GameIcons.Clock else GameIcons.Lock,
-                value = if (comingSoon) "Coming soon · $starsNeeded ★" else "$starsNeeded ★ needed",
-                tint = GameColors.PillStar,
+            Image(
+                if (comingSoon) GameIcons.Clock else GameIcons.Lock,
+                contentDescription = if (comingSoon) "Coming soon" else "Locked",
+                modifier = Modifier.size(PLATE_ICON),
             )
+        }
+        OutlinedText("${world.displayName} World", GameTheme.type.headline, maxLines = 1)
+        if (starsNeeded != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                modifier = Modifier.semantics { contentDescription = "$starsNeeded stars to unlock" },
+            ) {
+                Image(GameIcons.Star, contentDescription = null, modifier = Modifier.size(PLATE_ICON))
+                OutlinedText(formatCount(starsNeeded), GameTheme.type.headline, maxLines = 1)
+            }
         }
     }
 }
@@ -825,6 +836,7 @@ private val TOP_PADDING = 240.dp
 private val BANNER_BELOW_NODE = 100.dp
 private val BANNER_HALF_HEIGHT = 20.dp
 private val PLATE_HEIGHT = 40.dp
+private val PLATE_ICON = 24.dp
 private val TEASER_ABOVE_LAST_NODE = 130.dp
 /**
  * How far a stage's slice reaches above its node: room for the current boss's
