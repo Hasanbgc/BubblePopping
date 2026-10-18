@@ -11,9 +11,10 @@ import com.apps.bubblepopping.view.play.component.Bubble
 sealed interface GameEvent {
     /**
      * A bubble was popped by the player. [points] already include the combo
-     * multiplier; [combo] is the combo count after this pop (0 for poison).
+     * multiplier; [combo] is the combo count after this pop (0 for poison). [blast] is true
+     * when a bomb or lightning popped it rather than a tap.
      */
-    data class Popped(val bubble: Bubble, val points: Int, val combo: Int) : GameEvent
+    data class Popped(val bubble: Bubble, val points: Int, val combo: Int, val blast: Boolean = false) : GameEvent
 
     /** A bubble escaped off the top. [lifeLost] is true when it cost a life. */
     data class Missed(val bubble: Bubble, val lifeLost: Boolean) : GameEvent
@@ -33,6 +34,15 @@ sealed interface GameEvent {
 
     /** The wind blew a skull bubble off the side of the screen. */
     data class WindSave(val bubble: Bubble) : GameEvent
+
+    /** A lightning bubble zapped [count] bubbles. */
+    data class LightningZapped(val count: Int) : GameEvent
+
+    /** Both bubbles of a chain pair were popped in time, scoring a [points] bonus. */
+    data class ChainPaired(val points: Int) : GameEvent
+
+    /** A tap cracked an armored bubble's armor (the next tap pops it). */
+    data object ArmorCracked : GameEvent
 
     /** A shield absorbed a skull pop. */
     data object ShieldUsed : GameEvent

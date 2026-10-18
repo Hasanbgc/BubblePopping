@@ -1,6 +1,7 @@
 package com.apps.bubblepopping.view.play.component
 
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import com.apps.bubblepopping.game.BubbleSize
 import com.apps.bubblepopping.game.GameRules
@@ -22,6 +23,18 @@ enum class BubbleType {
     SPLITTER,
     /** Absorbs the next skull pop. */
     SHIELD,
+    /** Adds a few seconds to a stage's timer. Only spawns in stages with a time limit. */
+    CLOCK,
+    /** Doubles every point scored for a few seconds. */
+    DOUBLE,
+    /** Zaps the nearest bubbles (never skulls), popping them all at once. */
+    LIGHTNING,
+    /** Takes two taps: the first cracks it. A bomb or lightning breaks it at once. Escaping costs a life. */
+    ARMORED,
+    /** Fades in and out; it can only be popped while it can be seen. Escaping costs a life. */
+    GHOST,
+    /** Comes in tied pairs: pop both quickly for a bonus, or the popped one comes back. Escaping costs a life. */
+    CHAIN,
 }
 
 /**
@@ -51,6 +64,12 @@ data class Bubble(
     val color: Color,
     val shimmerAngle: Float,  // degrees — position of the shine highlight
     val type: BubbleType = BubbleType.NORMAL,
+    /** Armored bubbles: true once the first tap has cracked the armor. */
+    var cracked: Boolean = false,
+    /** Ghost bubbles: how visible it is right now, 0 → 1; it can only be popped while mostly visible. */
+    var visibility: Float = 1f,
+    /** Chain bubbles: the id the two bubbles of a pair share. */
+    val linkId: String? = null,
 )
 
 /**
@@ -104,10 +123,27 @@ class BossBubble(
     var hp: Int = maxHp
     /** Seconds left of the white hit flash and wobble. */
     var hitFlash: Float = 0f
+    /** Behind an ice shield ([com.apps.bubblepopping.stage.BossTrick.IceShield]): taps and blasts do nothing. */
+    var shielded: Boolean = false
+    /** The fight ran too long: faster, nastier, and drawn glowing red. */
+    var enraged: Boolean = false
+    /** Bomb armor ([com.apps.bubblepopping.stage.BossTrick.BlastArmor]): only bombs and lightning hurt it. */
+    var blastOnly: Boolean = false
+    /** Armor plates left ([com.apps.bubblepopping.stage.BossTrick.Plates]); each must break before HP drops. */
+    var plates: Int = 0
+    /** Phantom ([com.apps.bubblepopping.stage.BossTrick.Fade]): how visible it is, 0 → 1; it can only be hit while mostly visible. */
+    var visibility: Float = 1f
+    /** Seconds a lightning strike keeps a fading boss in plain sight. */
+    var revealLeft: Float = 0f
+    /** Taps on the current plate so far. */
+    var plateHits: Int = 0
 
     val hpFraction: Float get() = hp.toFloat() / maxHp
     val radius: Float get() = fullRadius * (GameRules.BOSS_MIN_SCALE + (1f - GameRules.BOSS_MIN_SCALE) * hpFraction)
 }
+
+/** A lightning bolt from a lightning bubble to a zapped bubble; fades as [life] runs out. */
+class LightningBolt(val id: Long, val from: Offset, val to: Offset, var life: Float)
 
 /** A confetti scrap from a boss defeat; falls and spins until [life] runs out. */
 class Confetti(

@@ -106,6 +106,8 @@ import com.apps.bubblepopping.stage.World
 import androidx.compose.foundation.gestures.awaitEachGesture
 import kotlin.math.abs
 import com.apps.bubblepopping.view.play.component.drawPopAnimation
+import com.apps.bubblepopping.view.play.component.drawLightningBolt
+import com.apps.bubblepopping.view.play.component.drawChainLink
 import org.jetbrains.compose.resources.painterResource
 
 /** Pop sounds; one is picked at random per pop. */
@@ -286,12 +288,40 @@ fun BubblePoppingScreen(
                         sounds?.shield()
                         haptics?.medium()
                     }
+                    BubbleType.CLOCK -> {
+                        sounds?.clock()
+                        haptics?.medium()
+                    }
+                    BubbleType.DOUBLE -> {
+                        sounds?.double()
+                        haptics?.medium()
+                    }
+                    BubbleType.LIGHTNING -> {
+                        sounds?.lightning()
+                        haptics?.heavy()
+                    }
+                    BubbleType.ARMORED -> {
+                        sounds?.armorPop()
+                        haptics?.medium()
+                    }
+                    BubbleType.GHOST, BubbleType.CHAIN -> {
+                        sounds?.pop(event.combo)
+                        haptics?.light()
+                    }
                     // The blast itself plays on BombExploded.
                     BubbleType.BOMB -> Unit
                     BubbleType.POISON -> {
                         sounds?.poison()
                         haptics?.heavy()
                     }
+                }
+                is GameEvent.ChainPaired -> {
+                    sounds?.golden()
+                    haptics?.medium()
+                }
+                is GameEvent.ArmorCracked -> {
+                    sounds?.armorCrack()
+                    haptics?.light()
                 }
                 is GameEvent.BombExploded -> {
                     sounds?.bomb()
@@ -379,6 +409,7 @@ fun BubblePoppingScreen(
     // so they recompose only when that changes.
     val isFrozen by remember(viewModel) { derivedStateOf { viewModel.freezeTimeLeft > 0f } }
     val freezeSecondsLeft by remember(viewModel) { derivedStateOf { ceil(viewModel.freezeTimeLeft).toInt() } }
+    val doubleSecondsLeft by remember(viewModel) { derivedStateOf { ceil(viewModel.doubleTimeLeft).toInt() } }
     val isTapLocked by remember(viewModel) { derivedStateOf { viewModel.tapLockLeft > 0f } }
     val breezeDirection by remember(viewModel) {
         derivedStateOf {
@@ -453,6 +484,15 @@ fun BubblePoppingScreen(
                     drawBoss(boss, viewModel.world, elapsedTime)
                 }
 
+                // Chain pairs: a rope between the two, drawn under them.
+                val bubbleList = viewModel.bubbles
+                for (i in bubbleList.indices) {
+                    val link = bubbleList[i].linkId ?: continue
+                    for (j in i + 1 until bubbleList.size) {
+                        if (bubbleList[j].linkId == link) drawChainLink(bubbleList[i], bubbleList[j])
+                    }
+                }
+
                 // Normal bubbles this close to the top pulse red — they're about to cost a life.
                 val dangerY = topOffsetPx + (size.height - topOffsetPx) * GameRules.NEAR_MISS_ZONE
                 for (bubble in viewModel.bubbles) {
@@ -464,6 +504,9 @@ fun BubblePoppingScreen(
 
                 for (anim in viewModel.popAnimations) {
                     drawPopAnimation(anim, settings.equippedPopEffect)
+                }
+                for (bolt in viewModel.lightningBolts) {
+                    drawLightningBolt(bolt)
                 }
 
                 for (text in viewModel.floatingTexts) {
@@ -542,6 +585,7 @@ fun BubblePoppingScreen(
                 comboMultiplier = viewModel.comboMultiplier,
                 shieldActive = viewModel.shieldActive,
                 freezeSecondsLeft = freezeSecondsLeft,
+                doubleSecondsLeft = doubleSecondsLeft,
             )
 
             // ── Stage: timer + goal progress under the HUD ──────────────────────

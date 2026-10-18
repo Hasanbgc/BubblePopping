@@ -69,6 +69,7 @@ fun GameHud(
     comboMultiplier: Int = 1,
     shieldActive: Boolean = false,
     freezeSecondsLeft: Int = 0,
+    doubleSecondsLeft: Int = 0,
 ) {
     Box(
         modifier = modifier
@@ -93,7 +94,7 @@ fun GameHud(
                     horizontalArrangement = Arrangement.spacedBy(Spacing.s),
                 ) {
                     LivesView(lives = lives)
-                    PowerUpBadges(shieldActive = shieldActive, freezeSecondsLeft = freezeSecondsLeft)
+                    PowerUpBadges(shieldActive = shieldActive, freezeSecondsLeft = freezeSecondsLeft, doubleSecondsLeft = doubleSecondsLeft)
                 }
             },
             center = {
@@ -129,9 +130,12 @@ fun LivesView(lives: Int, modifier: Modifier = Modifier) {
     }
 }
 
-/** A shield badge while a shield is ready; a snowflake with [freezeSecondsLeft] while frozen. */
+/**
+ * A shield badge while a shield is ready; a snowflake with [freezeSecondsLeft] while frozen;
+ * "×2" with [doubleSecondsLeft] while points count double.
+ */
 @Composable
-fun PowerUpBadges(shieldActive: Boolean, freezeSecondsLeft: Int, modifier: Modifier = Modifier) {
+fun PowerUpBadges(shieldActive: Boolean, freezeSecondsLeft: Int, modifier: Modifier = Modifier, doubleSecondsLeft: Int = 0) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.s),
@@ -147,6 +151,13 @@ fun PowerUpBadges(shieldActive: Boolean, freezeSecondsLeft: Int, modifier: Modif
             HudPill(GameColors.PillFreeze, Modifier.semantics { contentDescription = "Frozen, $seconds seconds left" }) {
                 Image(GameIcons.Snowflake, contentDescription = null, modifier = Modifier.size(HUD_ICON))
                 OutlinedText("$seconds", GameTheme.type.label, color = GameColors.FreezeText)
+            }
+        }
+        if (doubleSecondsLeft > 0) {
+            val seconds = doubleSecondsLeft
+            HudPill(GameColors.PillHeart, Modifier.semantics { contentDescription = "Double points, $seconds seconds left" }) {
+                OutlinedText("×2", GameTheme.type.label)
+                OutlinedText("$seconds", GameTheme.type.label)
             }
         }
     }

@@ -25,6 +25,11 @@ data class SpawnConfig(
     val maxSpeedCap: Float,
     /** Relative spawn weights per bubble type. */
     val typeWeights: Map<BubbleType, Int> = DEFAULT_TYPE_WEIGHTS,
+    /**
+     * Stages: ramp up in timed waves with a calm between them (like Endless)
+     * instead of with the score — see [paced]. Endless always uses waves.
+     */
+    val inWaves: Boolean = false,
 ) {
     init {
         require(typeWeights.values.all { it >= 0 } && typeWeights.values.sum() > 0) {
@@ -56,5 +61,21 @@ data class SpawnConfig(
             maxSpeed = 0.099f,
             maxSpeedCap = 0.191f,
         )
+
+        /**
+         * A stage that starts at [start] and climbs wave by wave towards [top]
+         * (see [WaveDirector.forStage]); it never goes beyond [top].
+         */
+        fun paced(start: Pace, top: Pace = start, typeWeights: Map<BubbleType, Int> = DEFAULT_TYPE_WEIGHTS): SpawnConfig {
+            require(top >= start) { "A stage's pace can't fall: $start → $top" }
+            return SpawnConfig(
+                spawnInterval = start.spawnInterval,
+                minSpawnInterval = top.spawnInterval,
+                maxSpeed = start.maxSpeed,
+                maxSpeedCap = top.maxSpeed,
+                typeWeights = typeWeights,
+                inWaves = true,
+            )
+        }
     }
 }

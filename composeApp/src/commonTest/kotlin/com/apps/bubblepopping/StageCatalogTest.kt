@@ -58,23 +58,33 @@ class StageCatalogTest {
         stages.forEach { stage ->
             assertTrue(stage.lives > 0, "Stage ${stage.id}")
             stage.allObjectives.forEach { objective ->
-                val target = when (objective) {
-                    is Objective.ReachScore -> objective.target
-                    is Objective.PopCount -> objective.count
-                    is Objective.PopType -> objective.count
-                    is Objective.PopSize -> objective.count
-                    is Objective.ReachCombo -> objective.combo
-                    is Objective.Survive -> objective.seconds
-                    is Objective.BombChain -> objective.bubbles
-                    is Objective.WindSaves -> objective.count
-                    is Objective.DefeatBoss -> objective.boss.totalHp
-                    is Objective.MaxTaps -> objective.taps
-                    is Objective.FinishUnder -> objective.seconds
-                    Objective.NoMisses, Objective.NoLivesLost -> 1
-                }
-                assertTrue(target > 0, "Stage ${stage.id}: ${objective.description}")
+                assertTrue(smallestTarget(objective) > 0, "Stage ${stage.id}: ${objective.description}")
             }
         }
+    }
+
+    /** The smallest number an objective asks for (every part of an [Objective.AllOf]). */
+    private fun smallestTarget(objective: Objective): Int = when (objective) {
+        is Objective.ReachScore -> objective.target
+        is Objective.PopCount -> objective.count
+        is Objective.PopType -> objective.count
+        is Objective.PopSize -> objective.count
+        is Objective.ReachCombo -> objective.combo
+        is Objective.ComboTimes -> minOf(objective.combo, objective.times)
+        is Objective.Survive -> objective.seconds
+        is Objective.BombChain -> objective.bubbles
+        is Objective.WindSaves -> objective.count
+        is Objective.LightningZaps -> objective.count
+        is Objective.CrackArmored -> objective.count
+        is Objective.BreakArmoredWithBlast -> objective.count
+        is Objective.ChainPairs -> objective.count
+        is Objective.DefeatBoss -> objective.boss.totalHp
+        is Objective.Accuracy -> objective.percent
+        is Objective.FinishUnder -> objective.seconds
+        is Objective.AllOf -> objective.goals.minOf(::smallestTarget)
+        // Zero lives lost is a valid limit.
+        is Objective.LivesLostAtMost -> objective.lives + 1
+        Objective.NoMisses, Objective.NoLivesLost -> 1
     }
 
     @Test
@@ -82,8 +92,27 @@ class StageCatalogTest {
         StageCatalog.worlds.forEach { world ->
             val last = stages.last { it.world == world }
             assertTrue(last.boss != null, "$world should end with a boss stage")
-            assertEquals(1, stages.count { it.world == world && it.boss != null }, "$world: one boss")
         }
+    }
+
+    @Test
+    fun bosses_guardEveryTenthStage_andNoOthers() {
+        stages.forEach { stage ->
+            assertEquals(stage.id % BOSS_EVERY == 0, stage.boss != null, "Stage ${stage.id}")
+        }
+    }
+
+    @Test
+    fun clocks_onlySpawnWhereMoreTimeHelps() {
+        // A clock needs a timer to add to, and is pointless when the goal is to survive the clock.
+        stages.filter { (it.spawn.typeWeights[BubbleType.CLOCK] ?: 0) > 0 }.forEach { stage ->
+            assertTrue(stage.durationSec != null, "Stage ${stage.id}: clocks need a timer")
+            assertTrue(stage.allObjectives.none { it is Objective.Survive }, "Stage ${stage.id}: clocks in a survive stage")
+        }
+    }
+
+    private companion object {
+        const val BOSS_EVERY = 10
     }
 
     @Test

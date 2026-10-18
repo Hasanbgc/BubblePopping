@@ -63,6 +63,66 @@ class ObjectiveTrackerTest {
     }
 
     @Test
+    fun comboTimes_countsSeparateCombosThatReachedTheTarget() {
+        val tracker = ObjectiveTracker()
+        fun combo(vararg counts: Int) {
+            var previous = 0
+            for (count in counts) {
+                tracker.onEvent(GameEvent.ComboChanged(combo = count, previous = previous))
+                previous = count
+            }
+        }
+        // A 3 combo that ends, then a 3 combo that restarts straight into a new one, which reaches 4.
+        combo(1, 2, 3, 0)
+        combo(1, 2, 3)
+        tracker.onEvent(GameEvent.ComboChanged(combo = 1, previous = 3))
+        tracker.onEvent(GameEvent.ComboChanged(combo = 2, previous = 1))
+        tracker.onEvent(GameEvent.ComboChanged(combo = 3, previous = 2))
+        tracker.onEvent(GameEvent.ComboChanged(combo = 4, previous = 3))
+
+        assertEquals(3, tracker.progress(Objective.ComboTimes(3, 5)).current)
+        assertTrue(tracker.isSatisfied(Objective.ComboTimes(3, 3)))
+        assertEquals(1, tracker.progress(Objective.ComboTimes(4, 2)).current)
+    }
+
+    @Test
+    fun accuracy_isTheShareOfTapsThatHit() {
+        val tracker = ObjectiveTracker()
+        repeat(4) { tracker.onEvent(GameEvent.Tapped(hit = true)) }
+        tracker.onEvent(GameEvent.Tapped(hit = false))
+
+        assertEquals(80, tracker.progress(Objective.Accuracy(80)).current)
+        assertTrue(tracker.isSatisfied(Objective.Accuracy(80)))
+        assertFalse(tracker.isSatisfied(Objective.Accuracy(85)))
+    }
+
+    @Test
+    fun livesLostAtMost_allowsThatManyLosses() {
+        val tracker = ObjectiveTracker()
+        tracker.onEvent(GameEvent.Missed(bubble(), lifeLost = true))
+        assertTrue(tracker.isSatisfied(Objective.LivesLostAtMost(1)))
+
+        tracker.onEvent(GameEvent.Missed(bubble(), lifeLost = true))
+        assertFalse(tracker.isSatisfied(Objective.LivesLostAtMost(1)))
+    }
+
+    @Test
+    fun allOf_needsEveryPart_andSumsProgress() {
+        val tracker = ObjectiveTracker()
+        val goal = Objective.AllOf(listOf(Objective.PopType(BubbleType.HEART, 2), Objective.PopCount(5)))
+        repeat(3) { tracker.pop(BubbleType.HEART) }
+
+        // Hearts: 2 of 2 (the third doesn't count twice), pops: 3 of 5.
+        assertEquals(5, tracker.progress(goal).current)
+        assertEquals(7, tracker.progress(goal).target)
+        assertFalse(tracker.isSatisfied(goal))
+
+        repeat(2) { tracker.pop() }
+        assertTrue(tracker.isSatisfied(goal))
+        assertEquals("Pop 2 hearts and pop 5 bubbles", goal.description)
+    }
+
+    @Test
     fun bombChain_usesBiggestSingleExplosion() {
         val tracker = ObjectiveTracker()
         tracker.onEvent(GameEvent.BombExploded(chainSize = 4))
@@ -97,20 +157,20 @@ class ObjectiveTrackerTest {
         val tracker = ObjectiveTracker()
         assertTrue(tracker.isSatisfied(Objective.NoMisses))
         assertTrue(tracker.isSatisfied(Objective.NoLivesLost))
-        assertTrue(tracker.isSatisfied(Objective.MaxTaps(2)))
+        assertTrue(tracker.isSatisfied(Objective.Accuracy(70)))
 
         tracker.onEvent(GameEvent.Tapped(hit = true))
         tracker.onEvent(GameEvent.Tapped(hit = true))
         tracker.onEvent(GameEvent.Missed(bubble(BubbleType.HEART), lifeLost = false))
         assertTrue(tracker.isSatisfied(Objective.NoMisses))
         assertTrue(tracker.isSatisfied(Objective.NoLivesLost))
-        assertTrue(tracker.isSatisfied(Objective.MaxTaps(2)))
+        assertTrue(tracker.isSatisfied(Objective.Accuracy(70)))
 
         tracker.onEvent(GameEvent.Tapped(hit = false))
         tracker.onEvent(GameEvent.Missed(bubble(), lifeLost = true))
         assertFalse(tracker.isSatisfied(Objective.NoMisses))
         assertFalse(tracker.isSatisfied(Objective.NoLivesLost))
-        assertFalse(tracker.isSatisfied(Objective.MaxTaps(2)))
+        assertFalse(tracker.isSatisfied(Objective.Accuracy(70)))
     }
 
     @Test

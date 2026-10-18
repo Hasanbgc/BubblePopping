@@ -25,6 +25,12 @@ data class StageConfig(
     val lives: Int = GameRules.MAX_LIVES,
     /** Fixed seed → the same bubbles on every attempt. Null = random each time. */
     val seed: Long? = null,
+    /**
+     * Roughly how long the stage is meant to take, in seconds (`stage-plan.md` §2.1).
+     * The stage simulator test checks that a good player can't win much faster.
+     * Null = not yet designed to a length.
+     */
+    val designSec: Int? = null,
 ) {
     val allObjectives: List<Objective> get() = listOf(goal) + bonusGoals
     val maxStars: Int get() = 1 + bonusGoals.size

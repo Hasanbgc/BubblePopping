@@ -1,5 +1,6 @@
 package com.apps.bubblepopping
 
+import com.apps.bubblepopping.meta.Economy
 import androidx.compose.ui.geometry.Offset
 import com.apps.bubblepopping.data.StageProgress
 import com.apps.bubblepopping.game.EndlessUnlocks
@@ -122,7 +123,7 @@ class DailyModesTest {
         assertTrue(run.stats.pops > 0)
         assertTrue(run.stats.elapsedSec >= 20)
         val rewards = assertNotNull(viewModel.rewards)
-        assertEquals(viewModel.score / 10, rewards.lines.first { it.label.startsWith("Score") }.coins)
+        assertEquals((viewModel.score / Economy.SCORE_PER_COIN).coerceAtMost(Economy.MAX_SCORE_COINS), rewards.lines.first { it.label.startsWith("Score") }.coins)
         assertEquals(rewards.coins, meta.state.value.player.coins)
 
         viewModel.restartGame()

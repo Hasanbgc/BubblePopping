@@ -20,7 +20,8 @@ import kotlin.random.Random
 // Scenery painted over a world's colours, shared by the stage map and the play
 // screen: Sky — sun glow, fluffy clouds, bubble rings; Ocean — light rays, wave
 // lines, rising bubbles; Space — nebulae, stars, a ringed planet; Candy — polka
-// dots, sprinkles, lollipop swirls. Placed at seeded spots, so it never moves.
+// dots, sprinkles, lollipop swirls; Frost — snow, snowflakes, ice crystals. Placed at
+// seeded spots, so it never moves.
 
 /** Draws [world]'s scenery over [area], placed by [random] (seed it for a stable look). */
 internal fun DrawScope.drawScenery(world: World, area: SceneArea, random: Random) {
@@ -44,6 +45,7 @@ internal fun Density.sceneryDecorations(world: World, area: SceneArea, random: R
         World.OCEAN -> scenery.ocean(area, random)
         World.SPACE -> scenery.space(area, random)
         World.CANDY -> scenery.candy(area, random)
+        World.FROST -> scenery.frost(area, random)
     }
     return scenery.pieces
 }
@@ -259,6 +261,61 @@ private fun SceneryBuilder.candy(area: SceneArea, random: Random) {
                     style = stripe,
                 )
             }
+        }
+    }
+}
+
+private fun SceneryBuilder.frost(area: SceneArea, random: Random) {
+    // A cold glow, like moonlight on snow.
+    listOf(Color(0x3380D8FF), Color(0x26E1F5FE)).forEach { tint ->
+        val c = Offset(area.x(random), area.y(random))
+        val r = area.width * (0.5f + random.nextFloat() * 0.3f)
+        val glow = Brush.radialGradient(listOf(tint, Color.Transparent), center = c, radius = r)
+        add(c.y - r, c.y + r) { drawCircle(glow, radius = r, center = c) }
+    }
+    // Drifting snow: small soft dots.
+    repeat(area.count(12.dp.toPx())) {
+        val c = Offset(area.x(random), area.y(random))
+        val r = (0.8f + random.nextFloat() * 1.6f).dp.toPx()
+        add(c.y - r, c.y + r) { drawCircle(Color.White.copy(alpha = 0.25f + random.nextFloat() * 0.35f), radius = r, center = c) }
+    }
+    // Snowflakes: six arms with little branches.
+    val arm = Stroke(1.6.dp.toPx(), cap = StrokeCap.Round)
+    repeat(area.count(110.dp.toPx())) {
+        val c = Offset(area.x(random), area.y(random))
+        val r = (6 + random.nextInt(10)).dp.toPx()
+        val turn = random.nextFloat() * 60f
+        add(c.y - r, c.y + r) {
+            rotate(turn, pivot = c) {
+                for (i in 0 until 6) {
+                    val a = i * PI.toFloat() / 3f
+                    val tip = Offset(c.x + cos(a) * r, c.y + sin(a) * r)
+                    drawLine(Color.White.copy(alpha = 0.3f), c, tip, strokeWidth = arm.width, cap = StrokeCap.Round)
+                    val mid = Offset(c.x + cos(a) * r * 0.6f, c.y + sin(a) * r * 0.6f)
+                    for (side in listOf(-0.7f, 0.7f)) {
+                        val b = a + side
+                        drawLine(Color.White.copy(alpha = 0.25f), mid, Offset(mid.x + cos(b) * r * 0.3f, mid.y + sin(b) * r * 0.3f), strokeWidth = arm.width, cap = StrokeCap.Round)
+                    }
+                }
+            }
+        }
+    }
+    // Ice crystals: faint hexagon outlines.
+    val edge = Stroke(1.5.dp.toPx())
+    repeat(area.count(240.dp.toPx())) {
+        val c = Offset(area.x(random), area.y(random))
+        val r = (14 + random.nextInt(16)).dp.toPx()
+        val hexagon = Path().apply {
+            for (i in 0 until 6) {
+                val a = i * PI.toFloat() / 3f + PI.toFloat() / 6f
+                val p = Offset(c.x + cos(a) * r, c.y + sin(a) * r)
+                if (i == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y)
+            }
+            close()
+        }
+        add(c.y - r, c.y + r) {
+            drawPath(hexagon, Color(0x22E1F5FE))
+            drawPath(hexagon, Color.White.copy(alpha = 0.2f), style = edge)
         }
     }
 }

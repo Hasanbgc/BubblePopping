@@ -1,5 +1,6 @@
 package com.apps.bubblepopping.view.stage
 
+import com.apps.bubblepopping.meta.Booster
 import com.apps.bubblepopping.view.Decoration
 import com.apps.bubblepopping.view.sceneryDecorations
 import com.apps.bubblepopping.view.SceneArea
@@ -119,7 +120,8 @@ fun StageMapScreenRoot(
      * rather than opening on stage 1 and jumping).
      */
     progress: Map<Int, StageProgress>?,
-    onPlayStage: (Int) -> Unit,
+    /** Plays the stage with the boosters picked on its card. */
+    onPlayStage: (stageId: Int, boosters: Set<Booster>) -> Unit,
     onBack: () -> Unit,
     /** Opens with this stage's card showing (e.g. after "Next stage"). */
     initialIntroStageId: Int? = null,
@@ -138,10 +140,10 @@ fun StageMapScreenRoot(
         StageIntroDialog(
             stage = StageCatalog.stage(stageId),
             progress = progress?.get(stageId),
-            onPlay = {
+            onPlay = { boosters ->
                 // Closed first, so coming back from the round shows the map.
                 introStageId = null
-                onPlayStage(stageId)
+                onPlayStage(stageId, boosters)
             },
             onDismiss = { introStageId = null },
         )

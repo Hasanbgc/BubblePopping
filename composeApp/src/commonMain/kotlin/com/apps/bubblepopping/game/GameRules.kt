@@ -76,7 +76,7 @@ object GameRules {
     // ── Special bubbles ─────────────────────────────────────────────────────
 
     const val GOLDEN_POINTS = 25
-    /** Freeze, splitter and shield bubbles. */
+    /** Freeze, splitter, shield, clock and ×2 bubbles. */
     const val POWER_UP_POINTS = 3
     const val BOMB_POINTS = 5
 
@@ -86,6 +86,36 @@ object GameRules {
     /** Bubbles move at this fraction of their speed while frozen. */
     const val FREEZE_SLOWDOWN = 0.4f
     const val FREEZE_SECONDS = 3f
+
+    /** A clock bubble adds this many seconds to a stage's timer. */
+    const val CLOCK_SECONDS = 10
+    /** A ×2 bubble doubles every point for this long; another one adds as much again. */
+    const val DOUBLE_SECONDS = 8f
+    const val DOUBLE_MULTIPLIER = 2
+    /** A lightning bubble zaps this many of the nearest bubbles… */
+    const val LIGHTNING_ZAPS = 6
+    /** …and hits every boss on screen for this much (some bosses take more). */
+    const val LIGHTNING_BOSS_DAMAGE = 3
+    /** How long a lightning bolt stays on screen. */
+    const val BOLT_SECONDS = 0.35f
+    /** Points for an armored bubble, popped at the second tap. */
+    const val ARMORED_POINTS = 5
+    /** Ghost bubbles fade out and back in over this many seconds… */
+    const val GHOST_PERIOD_SECONDS = 2.4f
+    /** …and can be popped while at least this visible. */
+    const val GHOST_TAPPABLE = 0.4f
+    const val GHOST_POINTS = 4
+    const val CHAIN_POINTS = 4
+    /** Pop the second bubble of a chain pair within this long for the bonus… */
+    const val CHAIN_WINDOW_SECONDS = 1.5f
+    /** …worth this (× the combo multiplier). */
+    const val CHAIN_BONUS = 10
+    /** The two bubbles of a pair start this far apart. */
+    const val CHAIN_GAP_DP = 64f
+    /** A lightning strike shows a fading boss in plain sight this long. */
+    const val PHANTOM_REVEAL_SECONDS = 3f
+    /** A fading boss goes round its fade this often. */
+    const val PHANTOM_FADE_SECONDS = 3f
 
     /** A bomb pops every bubble whose edge is within this distance of its centre. */
     const val BOMB_RADIUS_DP = 95f
@@ -129,12 +159,12 @@ object GameRules {
     const val BOSS_HEIGHT_FRACTION = 0.32f
     const val BOSS_BOB_DP = 24f
 
-    /** Cloud King: hits between thrown skulls. */
-    val SKULL_EVERY_HITS = listOf(4, 3, 2)
-    /** Jelly Queen: hits between stings, and how long each locks taps. */
-    val STING_EVERY_HITS = listOf(6, 5, 4)
-    val STING_SECONDS = listOf(1f, 1.25f, 1.5f)
-    const val NEBULA_BOMB_COUNT = 3
+    /** Enraged bosses move this much faster… */
+    const val BOSS_ENRAGE_SPEED = 1.5f
+    /** …and the spawn interval around them is multiplied by this. */
+    const val BOSS_ENRAGE_SPAWN_PACE = 0.8f
+    /** While an ice shield holds, another ice bubble rises this often (in case the last escaped). */
+    const val ICE_SHIELD_RESPAWN_SECONDS = 6f
 
     const val BOSS_HIT_FLASH_SECONDS = 0.15f
     const val SHAKE_BOSS_HIT_DP = 1.5f
@@ -152,7 +182,7 @@ object GameRules {
 
     // ── Revive ────────────────────────────────────────────────────────────────
     /** Coins a revive costs. One revive per round. */
-    const val REVIVE_COST = 50
+    const val REVIVE_COST = 100
     /** How long the "Continue?" offer waits before the round ends anyway. */
     const val REVIVE_OFFER_SECONDS = 5f
     /** Out of lives: a revive gives back this many. */
@@ -182,7 +212,11 @@ object GameRules {
     fun basePoints(bubble: Bubble): Int = when (bubble.type) {
         BubbleType.NORMAL, BubbleType.HEART -> bubble.size.points
         BubbleType.GOLDEN -> GOLDEN_POINTS
-        BubbleType.FREEZE, BubbleType.SPLITTER, BubbleType.SHIELD -> POWER_UP_POINTS
+        BubbleType.FREEZE, BubbleType.SPLITTER, BubbleType.SHIELD,
+        BubbleType.CLOCK, BubbleType.DOUBLE, BubbleType.LIGHTNING -> POWER_UP_POINTS
+        BubbleType.ARMORED -> ARMORED_POINTS
+        BubbleType.GHOST -> GHOST_POINTS
+        BubbleType.CHAIN -> CHAIN_POINTS
         BubbleType.BOMB -> BOMB_POINTS
         BubbleType.POISON -> 0
     }

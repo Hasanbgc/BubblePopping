@@ -29,6 +29,7 @@ class RunTracker {
             is GameEvent.Tick -> elapsedSec = event.elapsedSec
             is GameEvent.WaveCleared -> wavesCleared = maxOf(wavesCleared, event.wave)
             is GameEvent.Missed, is GameEvent.Tapped, is GameEvent.BossHit, GameEvent.ShieldUsed,
+            is GameEvent.LightningZapped, GameEvent.ArmorCracked, is GameEvent.ChainPaired,
             is GameEvent.WaveStarted, is GameEvent.GameOver,
             is GameEvent.ReviveOffered, is GameEvent.Revived -> Unit
         }

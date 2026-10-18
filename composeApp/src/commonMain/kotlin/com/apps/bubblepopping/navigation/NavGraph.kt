@@ -53,6 +53,9 @@ import com.apps.bubblepopping.ui.components.PlayerResources
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import com.apps.bubblepopping.meta.Booster
+import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.combine
 import com.apps.bubblepopping.ui.theme.BubbleTheme
@@ -118,6 +121,7 @@ private fun PlayerResourcesProvider(container: AppContainer, content: @Composabl
 @Composable
 private fun AppNavigation(container: AppContainer, hapticFeedback: HapticFeedback, onExitApp: (() -> Unit)?) {
     val backStack = rememberNavBackStack(config, Routes.Home)
+    val scope = rememberCoroutineScope()
     // Collected for the whole session, not per visit (it keeps updating during a round), so the
     // stage map has up-to-date progress on its first frame instead of waiting for the database.
     val stageProgress by remember(container) { container.progressRepository.stageProgress() }
@@ -186,6 +190,7 @@ private fun AppNavigation(container: AppContainer, hapticFeedback: HapticFeedbac
                                     progressRepository = container.progressRepository,
                                     settingsRepository = container.settingsRepository,
                                     metaRepository = container.metaRepository,
+                                    boosters = args.boosters,
                                 )
                             },
                             hapticFeedback = hapticFeedback,
@@ -211,8 +216,12 @@ private fun AppNavigation(container: AppContainer, hapticFeedback: HapticFeedbac
                         StageMapScreenRoot(
                             progress = stageProgress,
                             initialIntroStageId = args.introStageId,
-                            onPlayStage = { stageId ->
-                                backStack.add(Routes.Play(GameMode.Stage(stageId)))
+                            onPlayStage = { stageId, boosters ->
+                                // Boosters are paid for as the round starts; if the coins aren't there, it starts without them.
+                                scope.launch {
+                                    val paid = boosters.isEmpty() || container.metaRepository.spendCoins(Booster.price(boosters))
+                                    backStack.add(Routes.Play(GameMode.Stage(stageId), if (paid) boosters else emptySet()))
+                                }
                             },
                             onBack = {
                                 backStack.removeLastOrNull()

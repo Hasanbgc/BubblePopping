@@ -46,6 +46,8 @@ object MusicSynth {
         World.SPACE -> Style(90, listOf(listOf(-7, -4, 0), listOf(-14, -10, -7), listOf(-7, -4, 0), listOf(-12, -9, -5)), 0.1f, 1)
         // F – Dm – Gm – C, bouncy
         World.CANDY -> Style(120, listOf(listOf(-16, -12, -9), listOf(-19, -16, -12), listOf(-14, -11, -7), listOf(-9, -5, -2)), 0.9f, 4)
+        // Em – C – G – D, slow and glittering
+        World.FROST -> Style(76, listOf(listOf(-8, -5, -1), listOf(-12, -8, -5), listOf(-17, -13, -10), listOf(-10, -6, -3)), 0.15f, 3)
     }
 
     /** Length of one loop: two passes through the four chords. */

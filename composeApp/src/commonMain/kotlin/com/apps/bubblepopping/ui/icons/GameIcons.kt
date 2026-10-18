@@ -143,6 +143,16 @@ object GameIcons {
         }
     }
 
+    /** A lightning bolt — the lightning bubble and booster. */
+    val Bolt: ImageVector by lazy {
+        icon("Bolt") {
+            path(fill = SolidColor(Color(0xFFFFEA00)), stroke = InkStroke, strokeLineWidth = OUTLINE, strokeLineJoin = StrokeJoin.Round) {
+                moveTo(14f, 2f); lineTo(5f, 13.5f); lineTo(11f, 13.5f)
+                lineTo(9.5f, 22f); lineTo(19f, 10f); lineTo(13f, 10f); close()
+            }
+        }
+    }
+
     val Snowflake: ImageVector by lazy {
         twoPassStroke("Snowflake", fill = Color(0xFFB3E5FC)) {
             for (i in 0 until 3) {

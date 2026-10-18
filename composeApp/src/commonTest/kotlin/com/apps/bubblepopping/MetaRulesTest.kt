@@ -51,22 +51,38 @@ class MetaRulesTest {
     // ── Coins ───────────────────────────────────────────────────────────────
 
     @Test
-    fun endlessScore_paysOneCoinPerTenPoints() {
+    fun endlessScore_paysOneCoinPerFiftyPoints_upToACap() {
         val (state, rewards) = apply(RunSummary(endless, score = 157))
-        assertEquals(15, rewards.coins)
-        assertEquals(15, state.player.coins)
+        assertEquals(3, rewards.coins)
+        assertEquals(3, state.player.coins)
+
+        val huge = apply(RunSummary(endless, score = 1_000_000)).second
+        assertEquals(Economy.MAX_SCORE_COINS, huge.coins)
     }
 
     @Test
-    fun stageStars_payOnlyTheFirstTime() {
+    fun stageStars_payOnlyTheFirstTime_andReplaysPayALittle() {
         val firstClear = apply(RunSummary(GameMode.Stage(1), score = 50, stars = 2, previousStars = 0)).second
-        assertEquals(2 * Economy.COINS_PER_NEW_STAR, firstClear.coins)
+        assertEquals(Economy.STAR_COINS[0] + Economy.STAR_COINS[1], firstClear.coins)
 
         val oneMore = apply(RunSummary(GameMode.Stage(1), score = 50, stars = 3, previousStars = 2)).second
-        assertEquals(Economy.COINS_PER_NEW_STAR, oneMore.coins)
+        assertEquals(Economy.STAR_COINS[2], oneMore.coins)
 
         val replay = apply(RunSummary(GameMode.Stage(1), score = 50, stars = 3, previousStars = 3)).second
-        assertEquals(0, replay.coins)
+        assertEquals(Economy.REPLAY_COINS, replay.coins)
+
+        val lost = apply(RunSummary(GameMode.Stage(1), score = 5, stars = 0, previousStars = 3)).second
+        assertEquals(0, lost.coins)
+    }
+
+    @Test
+    fun bossStages_payABigFirstWin_andMoreForTheThirdStar() {
+        val bossId = StageCatalog.stages.first { it.boss != null }.id
+        val win = apply(RunSummary(GameMode.Stage(bossId), score = 500, stars = 1, previousStars = 0)).second
+        assertEquals(Economy.BOSS_STAR_COINS[0], win.coins)
+
+        val perfect = apply(RunSummary(GameMode.Stage(bossId), score = 500, stars = 3, previousStars = 1)).second
+        assertEquals(Economy.BOSS_STAR_COINS[1] + Economy.BOSS_STAR_COINS[2], perfect.coins)
     }
 
     // ── Missions ────────────────────────────────────────────────────────────
@@ -95,9 +111,9 @@ class MetaRulesTest {
     // ── Chests ──────────────────────────────────────────────────────────────
 
     @Test
-    fun everyTenStars_opensOneChest() {
-        val snapshot = ProgressSnapshot(stageProgress = stars(1 to 3, 2 to 3, 3 to 3, 4 to 2))
-        val (after, rewards) = apply(RunSummary(GameMode.Stage(4), score = 0, stars = 2, previousStars = 2), snapshot = snapshot)
+    fun everyFifteenStars_opensOneChest() {
+        val snapshot = ProgressSnapshot(stageProgress = stars(1 to 3, 2 to 3, 3 to 3, 4 to 3, 5 to 3))
+        val (after, rewards) = apply(RunSummary(GameMode.Stage(5), score = 0, stars = 3, previousStars = 3), snapshot = snapshot)
 
         assertEquals(1, rewards.chests.size)
         assertEquals(1, after.player.chestsOpened)
@@ -128,7 +144,7 @@ class MetaRulesTest {
         val alwaysZero = object : Random() {
             override fun nextBits(bitCount: Int) = 0
         }
-        val snapshot = ProgressSnapshot(stageProgress = stars(1 to 3, 2 to 3, 3 to 3, 4 to 1))
+        val snapshot = ProgressSnapshot(stageProgress = stars(1 to 3, 2 to 3, 3 to 3, 4 to 3, 5 to 3))
         val (after, rewards) = MetaRules.applyRun(MetaState(missions = idleMissions), RunSummary(endless, 0), snapshot, alwaysZero)
 
         val item = rewards.chests.filterIsInstance<ChestReward.Item>().single()
@@ -199,7 +215,7 @@ class MetaRulesTest {
             state = next
         }
         assertEquals(Economy.LOGIN_REWARDS + Economy.LOGIN_REWARDS.first(), paid)
-        assertEquals(100, paid[6])
+        assertEquals(Economy.LOGIN_REWARDS.max(), paid[6])
     }
 
     // ── Shop ────────────────────────────────────────────────────────────────

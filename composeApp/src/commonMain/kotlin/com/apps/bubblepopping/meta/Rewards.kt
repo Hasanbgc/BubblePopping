@@ -39,20 +39,29 @@ data class RunRewards(
     val isEmpty: Boolean get() = lines.isEmpty() && chests.isEmpty() && achievements.isEmpty()
 }
 
-/** Coin amounts and reward rules. */
+/**
+ * Coin amounts and reward rules, aiming at about 150–250 coins per day of normal
+ * play so the shop stays a long-term goal (`stage-plan.md` §7).
+ */
 object Economy {
-    /** Each star earned on a stage for the first time. */
-    const val COINS_PER_NEW_STAR = 10
-    /** Endless and Daily Challenge: 1 coin per this many points. */
-    const val SCORE_PER_COIN = 10
+    /** A stage's 1st, 2nd and 3rd star, each paid the first time it's earned. */
+    val STAR_COINS = listOf(10, 10, 15)
+    /** A boss stage pays for beating it, and again for its 3rd star. */
+    val BOSS_STAR_COINS = listOf(100, 0, 50)
+    /** Winning a stage again without a new star. */
+    const val REPLAY_COINS = 2
+    /** Endless and Daily Challenge: 1 coin per this many points… */
+    const val SCORE_PER_COIN = 50
+    /** …up to this many per round. */
+    const val MAX_SCORE_COINS = 100
     /** Every this many total stars opens a star chest. */
-    const val STARS_PER_CHEST = 10
-    const val CHEST_COINS = 50
+    const val STARS_PER_CHEST = 15
+    const val CHEST_COINS = 25
     /** Chance a chest holds a cosmetic the player doesn't own yet (instead of coins). */
-    const val CHEST_ITEM_CHANCE = 0.3f
+    const val CHEST_ITEM_CHANCE = 0.2f
 
     /** Daily login rewards, day 1 → 7, then the week starts over. Missed days are never lost. */
-    val LOGIN_REWARDS = listOf(10, 15, 20, 25, 30, 40, 100)
+    val LOGIN_REWARDS = listOf(5, 10, 15, 20, 25, 30, 75)
 
     /** Coins for the next login, given how many daily rewards were already claimed. */
     fun loginReward(claimedDays: Int): Int = LOGIN_REWARDS[claimedDays % LOGIN_REWARDS.size]
@@ -64,12 +73,18 @@ object Economy {
     fun runCoins(run: RunSummary): List<RewardLine> = buildList {
         when (run.mode) {
             is GameMode.Endless, is GameMode.DailyChallenge -> {
-                val coins = run.score / SCORE_PER_COIN
+                val coins = (run.score / SCORE_PER_COIN).coerceAtMost(MAX_SCORE_COINS)
                 if (coins > 0) add(RewardLine("Score ${run.score}", coins))
             }
             is GameMode.Stage -> {
-                val newStars = (run.stars - run.previousStars).coerceAtLeast(0)
-                if (newStars > 0) add(RewardLine("$newStars new ★", newStars * COINS_PER_NEW_STAR))
+                val isBoss = StageCatalog.stages.firstOrNull { it.id == run.mode.stageId }?.boss != null
+                val perStar = if (isBoss) BOSS_STAR_COINS else STAR_COINS
+                val newStars = (run.previousStars until run.stars)
+                val coins = newStars.sumOf { perStar.getOrElse(it) { 0 } }
+                when {
+                    coins > 0 -> add(RewardLine("${newStars.count()} new ★", coins))
+                    run.stars > 0 -> add(RewardLine("Stage cleared", REPLAY_COINS))
+                }
             }
             is GameMode.DailyStage -> Unit // rewarded with a chest instead
         }
@@ -99,15 +114,15 @@ data class AchievementContext(
 
 /** Long-term goals. Each pays [reward] coins once, the moment it's reached. */
 enum class Achievement(val title: String, val description: String, val target: Int, val reward: Int) {
-    POP_1000("Bubble Buster", "Pop 1,000 bubbles", 1_000, 100),
-    POP_10000("Bubble Legend", "Pop 10,000 bubbles", 10_000, 500),
-    ROUNDS_50("Regular", "Play 50 rounds", 50, 100),
-    COMBO_25("Combo Master", "Reach a 25 combo", 25, 150),
-    STARS_100("Star Collector", "Collect 100 stars", 100, 300),
-    SKY_PERFECT("Sky High", "Get every star in the Sky world", 30, 200),
-    ALL_BOSSES("Boss Slayer", "Beat all four bosses", 4, 500),
-    HARD_300("Hardcore", "Score 300 in Endless Hard", 300, 200),
-    MISSIONS_25("Go-Getter", "Complete 25 missions", 25, 200);
+    POP_1000("Bubble Buster", "Pop 1,000 bubbles", 1_000, 50),
+    POP_10000("Bubble Legend", "Pop 10,000 bubbles", 10_000, 250),
+    ROUNDS_50("Regular", "Play 50 rounds", 50, 50),
+    COMBO_25("Combo Master", "Reach a 25 combo", 25, 75),
+    STARS_100("Star Collector", "Collect 100 stars", 100, 150),
+    SKY_PERFECT("Sky High", "Get every star in the Sky world", StageCatalog.stages.filter { it.world == World.SKY }.sumOf { it.maxStars }, 100),
+    ALL_BOSSES("Boss Slayer", "Beat every boss", StageCatalog.stages.count { it.boss != null }, 250),
+    HARD_300("Hardcore", "Score 300 in Endless Hard", 300, 100),
+    MISSIONS_25("Go-Getter", "Complete 25 missions", 25, 100);
 
     fun progress(context: AchievementContext): Int {
         val stars = context.stageProgress

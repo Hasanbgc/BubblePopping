@@ -181,7 +181,7 @@ fun BubbleShowcasePreview() {
                     .height(110.dp)
                     .background(Brush.verticalGradient(worldMapColors(World.SKY))),
             ) {
-                val specials = listOf(BubbleType.POISON, BubbleType.HEART, BubbleType.GOLDEN, BubbleType.FREEZE, BubbleType.BOMB, BubbleType.SPLITTER, BubbleType.SHIELD)
+                val specials = listOf(BubbleType.POISON, BubbleType.HEART, BubbleType.GOLDEN, BubbleType.FREEZE, BubbleType.BOMB, BubbleType.SPLITTER, BubbleType.SHIELD, BubbleType.CLOCK, BubbleType.DOUBLE, BubbleType.LIGHTNING, BubbleType.ARMORED, BubbleType.GHOST, BubbleType.CHAIN)
                 val step = size.width / specials.size
                 specials.forEachIndexed { i, type ->
                     drawGameBubble(previewBubble(step * (i + 0.5f), size.height / 2f, 24.dp.toPx(), type, i), World.SKY, PreviewIcons)

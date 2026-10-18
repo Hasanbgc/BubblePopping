@@ -12,8 +12,8 @@ object EndlessUnlocks {
     /** Scoring this on Medium unlocks Hard… */
     const val HARD_UNLOCK_MEDIUM_SCORE = 150
 
-    /** …and so does clearing the last Sky stage (the Cloud King). */
-    val HARD_UNLOCK_STAGE_ID: Int = StageCatalog.stages.last { it.world == World.SKY }.id
+    /** …and so does beating the first boss (the Cloud King). */
+    val HARD_UNLOCK_STAGE_ID: Int = StageCatalog.stages.first { it.boss != null }.id
 
     /**
      * Endless spawn weights for the special bubbles, next to the base
@@ -25,6 +25,12 @@ object EndlessUnlocks {
         BubbleType.BOMB to 5,
         BubbleType.SPLITTER to 6,
         BubbleType.SHIELD to 3,
+        // No clocks: Endless has no timer.
+        BubbleType.DOUBLE to 3,
+        BubbleType.LIGHTNING to 3,
+        BubbleType.ARMORED to 4,
+        BubbleType.GHOST to 3,
+        BubbleType.CHAIN to 3,
     )
 
     fun isUnlocked(difficulty: Difficulty, mediumBest: Int?, progress: Map<Int, StageProgress>): Boolean =

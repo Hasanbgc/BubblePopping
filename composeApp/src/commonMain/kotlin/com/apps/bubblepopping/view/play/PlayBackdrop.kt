@@ -61,6 +61,10 @@ private fun DrawScope.drawBackdrop(world: World, backgroundId: String?) {
             "bg_sunset" -> drawScenery(World.SKY, area, random)
             "bg_midnight" -> drawScenery(World.SPACE, area, random)
             "bg_aurora" -> drawAuroraScenery(area, random)
+            "bg_dawn" -> drawScenery(World.SKY, area, random)
+            "bg_ocean" -> drawScenery(World.OCEAN, area, random)
+            "bg_candy" -> drawScenery(World.CANDY, area, random)
+            "bg_nebula" -> drawScenery(World.SPACE, area, random)
             else -> drawScenery(world, area, random)
         }
         canvas.restore()

@@ -28,17 +28,20 @@ data class Cosmetic(
     val inChests: Boolean get() = price != null
     val rarity: CosmeticRarity get() = when {
         bossStageId != null -> CosmeticRarity.LEGENDARY
-        price == null -> CosmeticRarity.COMMON
-        price >= EPIC_PRICE -> CosmeticRarity.EPIC
-        else -> CosmeticRarity.RARE
+        price == null || price < RARE_PRICE -> CosmeticRarity.COMMON
+        price < EPIC_PRICE -> CosmeticRarity.RARE
+        price < LEGENDARY_PRICE -> CosmeticRarity.EPIC
+        else -> CosmeticRarity.LEGENDARY
     }
 }
 
 /** How special a cosmetic is, shown on its shop card: free, bought (by price), or a boss reward. */
 enum class CosmeticRarity { COMMON, RARE, EPIC, LEGENDARY }
 
-/** Bought cosmetics from this price up count as [CosmeticRarity.EPIC]. */
-private const val EPIC_PRICE = 400
+// Bought cosmetics are rare, epic or legendary from these prices up (`stage-plan.md` §7).
+private const val RARE_PRICE = 1_200
+private const val EPIC_PRICE = 2_500
+private const val LEGENDARY_PRICE = 4_500
 
 object Cosmetics {
 
@@ -50,21 +53,42 @@ object Cosmetics {
         // Skins — one per boss, plus shop skins.
         CLASSIC,
         Cosmetic("skin_cloud", "Cloud", CosmeticKind.SKIN, bossStageId = 10),
-        Cosmetic("skin_jelly", "Jelly", CosmeticKind.SKIN, bossStageId = 20),
-        Cosmetic("skin_galaxy", "Galaxy", CosmeticKind.SKIN, bossStageId = 30),
-        Cosmetic("skin_candy", "Candy", CosmeticKind.SKIN, bossStageId = 40),
-        Cosmetic("skin_neon", "Neon", CosmeticKind.SKIN, price = 300),
-        Cosmetic("skin_gold", "Gold", CosmeticKind.SKIN, price = 800),
+        Cosmetic("skin_storm", "Storm", CosmeticKind.SKIN, bossStageId = 20),
+        Cosmetic("skin_jelly", "Jelly", CosmeticKind.SKIN, bossStageId = 30),
+        Cosmetic("skin_kraken", "Kraken", CosmeticKind.SKIN, bossStageId = 40),
+        Cosmetic("skin_galaxy", "Galaxy", CosmeticKind.SKIN, bossStageId = 50),
+        Cosmetic("skin_void", "Void", CosmeticKind.SKIN, bossStageId = 60),
+        Cosmetic("skin_candy", "Candy", CosmeticKind.SKIN, bossStageId = 70),
+        Cosmetic("skin_sugar", "Sugar", CosmeticKind.SKIN, bossStageId = 80),
+        Cosmetic("skin_phantom", "Phantom", CosmeticKind.SKIN, bossStageId = 90),
+        Cosmetic("skin_titan", "Titan", CosmeticKind.SKIN, bossStageId = 100),
+        Cosmetic("skin_peach", "Peach", CosmeticKind.SKIN, price = 600),
+        Cosmetic("skin_lavender", "Lavender", CosmeticKind.SKIN, price = 750),
+        Cosmetic("skin_neon", "Neon", CosmeticKind.SKIN, price = 900),
+        Cosmetic("skin_lava", "Lava", CosmeticKind.SKIN, price = 1_200),
+        Cosmetic("skin_sakura", "Sakura", CosmeticKind.SKIN, price = 1_500),
+        Cosmetic("skin_pearl", "Pearl", CosmeticKind.SKIN, price = 1_800),
+        Cosmetic("skin_royal", "Royal", CosmeticKind.SKIN, price = 2_800),
+        Cosmetic("skin_gold", "Gold", CosmeticKind.SKIN, price = 4_500),
+        Cosmetic("skin_diamond", "Diamond", CosmeticKind.SKIN, price = 5_000),
         // Pop effects
         RAINBOW,
-        Cosmetic("pop_confetti", "Confetti", CosmeticKind.POP_EFFECT, price = 150),
-        Cosmetic("pop_stars", "Stars", CosmeticKind.POP_EFFECT, price = 200),
-        Cosmetic("pop_hearts", "Hearts", CosmeticKind.POP_EFFECT, price = 250),
+        Cosmetic("pop_confetti", "Confetti", CosmeticKind.POP_EFFECT, price = 600),
+        Cosmetic("pop_sparks", "Sparks", CosmeticKind.POP_EFFECT, price = 900),
+        Cosmetic("pop_stars", "Stars", CosmeticKind.POP_EFFECT, price = 1_200),
+        Cosmetic("pop_bubbles", "Bubbles", CosmeticKind.POP_EFFECT, price = 1_200),
+        Cosmetic("pop_hearts", "Hearts", CosmeticKind.POP_EFFECT, price = 1_500),
+        Cosmetic("pop_snow", "Snowflakes", CosmeticKind.POP_EFFECT, price = 1_800),
+        Cosmetic("pop_fireworks", "Fireworks", CosmeticKind.POP_EFFECT, price = 3_000),
         // Backgrounds
         DEFAULT_BACKGROUND,
-        Cosmetic("bg_sunset", "Sunset", CosmeticKind.BACKGROUND, price = 200),
-        Cosmetic("bg_midnight", "Midnight", CosmeticKind.BACKGROUND, price = 250),
-        Cosmetic("bg_aurora", "Aurora", CosmeticKind.BACKGROUND, price = 400),
+        Cosmetic("bg_sunset", "Sunset", CosmeticKind.BACKGROUND, price = 900),
+        Cosmetic("bg_dawn", "Dawn", CosmeticKind.BACKGROUND, price = 900),
+        Cosmetic("bg_midnight", "Midnight", CosmeticKind.BACKGROUND, price = 1_200),
+        Cosmetic("bg_ocean", "Deep sea", CosmeticKind.BACKGROUND, price = 1_200),
+        Cosmetic("bg_candy", "Candyland", CosmeticKind.BACKGROUND, price = 1_800),
+        Cosmetic("bg_aurora", "Aurora", CosmeticKind.BACKGROUND, price = 2_500),
+        Cosmetic("bg_nebula", "Nebula", CosmeticKind.BACKGROUND, price = 3_000),
     )
 
     fun byId(id: String): Cosmetic? = all.firstOrNull { it.id == id }

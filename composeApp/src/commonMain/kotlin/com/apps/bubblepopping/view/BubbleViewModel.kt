@@ -28,9 +28,11 @@ import com.apps.bubblepopping.meta.RunRewards
 import com.apps.bubblepopping.meta.RunSummary
 import com.apps.bubblepopping.game.SpawnConfig
 import com.apps.bubblepopping.game.WaveDirector
-import com.apps.bubblepopping.stage.BossGimmick
+import com.apps.bubblepopping.stage.BossTrick
+import com.apps.bubblepopping.meta.Booster
 import com.apps.bubblepopping.stage.ObjectiveProgress
 import com.apps.bubblepopping.view.play.component.BossBubble
+import com.apps.bubblepopping.view.play.component.LightningBolt
 import com.apps.bubblepopping.view.play.component.Confetti
 import com.apps.bubblepopping.stage.StageCatalog
 import com.apps.bubblepopping.stage.StageConfig
@@ -77,6 +79,8 @@ class BubbleGameViewModel(
     val stage: StageConfig? = defaultStage(mode),
     private val spawn: SpawnConfig = stage?.spawn ?: defaultSpawn(mode),
     private val seed: Long? = stage?.seed ?: (mode as? GameMode.DailyChallenge)?.epochDay,
+    /** Head starts bought for this attempt (a restart plays without them). */
+    boosters: Set<Booster> = emptySet(),
 ) : ViewModel() {
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -88,6 +92,10 @@ class BubbleGameViewModel(
         private const val BREEZE_CUTOFF = 0.003f
         /** Bomb blasts draw a much bigger burst than a normal pop. */
         private const val BLAST_INTENSITY = 3f
+        /** Bubbles that cost a life when they escape. */
+        private val LIFE_BUBBLES = setOf(BubbleType.NORMAL, BubbleType.ARMORED, BubbleType.GHOST, BubbleType.CHAIN)
+        /** How soft a fading boss's fade edges are. */
+        private const val FADE_EDGE = 0.2f
         private const val BOSS_POP_INTENSITY = 2.5f
         /** "STUNG!" appears this far below the boss's edge. */
         private const val BOSS_TEXT_GAP_DP = 16f
@@ -114,6 +122,8 @@ class BubbleGameViewModel(
     /** Boss stages: every boss copy on screen (several once a boss splits). */
     val bosses         = mutableStateListOf<BossBubble>()
     val confetti       = mutableStateListOf<Confetti>()
+    /** Bolts from a lightning bubble to the bubbles it zapped, fading out. */
+    val lightningBolts = mutableStateListOf<LightningBolt>()
 
     /** Current breeze, from -1 (full left) to +1 (full right). */
     var breeze         by mutableStateOf(0f);       private set
@@ -133,7 +143,8 @@ class BubbleGameViewModel(
      * a new effect appears or the round restarts.
      */
     val isAtRest: Boolean
-        get() = isGameOver && isSettled && popAnimations.isEmpty() && floatingTexts.isEmpty() && confetti.isEmpty()
+        get() = isGameOver && isSettled && popAnimations.isEmpty() && floatingTexts.isEmpty() && confetti.isEmpty() &&
+            lightningBolts.isEmpty()
     /** True when the round that just ended beat the saved best score. */
     var isNewBest      by mutableStateOf(false);     private set
 
@@ -155,6 +166,8 @@ class BubbleGameViewModel(
     var shieldActive   by mutableStateOf(false);     private set
     /** Seconds of freeze left; bubbles move slowly while above 0. */
     var freezeTimeLeft by mutableStateOf(0f);        private set
+    /** Seconds of double points left (×2 bubbles); every point counts twice while above 0. */
+    var doubleTimeLeft by mutableStateOf(0f);        private set
     /** Seconds the player's taps are disabled after a boss sting. */
     var tapLockLeft    by mutableStateOf(0f);        private set
 
@@ -184,7 +197,9 @@ class BubbleGameViewModel(
 
     /** Theme for backgrounds and bubble colours. Endless uses the first world. */
     val world: World = stage?.world ?: World.SKY
-    val maxLives: Int = stage?.lives ?: GameRules.MAX_LIVES
+    private val baseLives: Int = stage?.lives ?: GameRules.MAX_LIVES
+    /** Lives this attempt starts with: the stage's, plus one with the +1 life booster. */
+    var maxLives       by mutableStateOf(baseLives); private set
     val livesLeft: Int get() = maxLives - missedCount
     val comboMultiplier: Int get() = ComboTracker.multiplierFor(combo)
 
@@ -194,7 +209,7 @@ class BubbleGameViewModel(
      */
     val musicIntensity: Float get() {
         val fromCombo = combo / GameRules.MUSIC_FULL_COMBO.toFloat()
-        val fromWave = if (waveDirector != null) (wave - 1) / GameRules.MUSIC_FULL_WAVE.toFloat() else 0f
+        val fromWave = if (stage == null) (wave - 1) / GameRules.MUSIC_FULL_WAVE.toFloat() else 0f
         val fromBoss = if (bosses.isNotEmpty()) GameRules.MUSIC_BOSS_INTENSITY else 0f
         val fromTimer = timeLeftSec?.let { if (it <= GameRules.MUSIC_URGENT_SECONDS) 1f else 0f } ?: 0f
         return maxOf(fromCombo, fromWave, fromBoss, fromTimer).coerceIn(0f, 1f)
@@ -249,12 +264,23 @@ class BubbleGameViewModel(
     private val comboTracker    = ComboTracker()
     private var objectiveTracker = stage?.let { ObjectiveTracker() }
     private var runTracker      = RunTracker()
-    /** Endless only: paces the round in waves instead of ramping with the score. */
-    private val waveDirector    = if (stage == null) WaveDirector(spawn) else null
+    /**
+     * Endless and paced stages: paces the round in waves instead of ramping with the
+     * score. Only Endless announces its waves; a stage's calms just pass quietly.
+     */
+    private val waveDirector    = when {
+        stage == null -> WaveDirector(spawn)
+        spawn.inWaves -> WaveDirector.forStage(spawn)
+        else -> null
+    }
     /** Seconds of slow drift left after the round ends. */
     private var gameOverSlowmoLeft = 0f
     /** Stage only: seconds a revive added to the timer. */
     private var bonusSeconds    = 0
+    /** The boosters this attempt was started with, and whether the ice booster's bubble is still to rise. */
+    private var activeBoosters  = boosters
+    private var iceBoosterPending = false
+    private var lightningBoosterPending = false
     /** True while a revive's coins are being taken (the offer stops counting down). */
     private var revivePending   = false
     private var random         = newRandom()
@@ -271,9 +297,17 @@ class BubbleGameViewModel(
     // Boss state
     private var bossSpawned     = false
     private var bossClock       = 0f
-    private var bossHitsSinceGimmick = 0
+    /** Play time when the boss arrived, for its enrage timer. */
+    private var bossArrivedAt   = 0f
+    private var bossEnraged     = false
+    /** The fight's current phase (0–2) and the taps on the boss since it began. */
+    private var bossPhaseNow    = 0
+    private var bossHitsInPhase = 0
     private var bossDamageDealt = 0
-    private var bossBombsDropped = false
+    /** Seconds until another ice bubble rises while an ice shield holds. */
+    private var iceRespawnLeft  = 0f
+    /** Seconds until bomb armor drops its next bombs. */
+    private var blastArmorBombsIn = 0f
     /** Slow-motion seconds left after the final blow; the stage ends when it runs out. */
     private var celebrationLeft = 0f
     /** Cosmetic randomness (confetti) — kept apart so it never changes a seeded round. */
@@ -339,13 +373,24 @@ class BubbleGameViewModel(
             reviveGraceLeft = (reviveGraceLeft - dt).coerceAtLeast(0f)
         }
         freezeTimeLeft = (freezeTimeLeft - dt).coerceAtLeast(0f)
+        doubleTimeLeft = (doubleTimeLeft - dt).coerceAtLeast(0f)
         tapLockLeft = (tapLockLeft - dt).coerceAtLeast(0f)
 
         spawnBossIfNeeded()
         bossStep(bubbleDt)
         waveStep(dt)
         spawnStep(bubbleDt)
+        if (iceBoosterPending && playTime >= Booster.ICE_DELAY_SECONDS) {
+            iceBoosterPending = false
+            bubbles.add(createBubble(forcedType = BubbleType.FREEZE))
+        }
+        if (lightningBoosterPending && playTime >= Booster.ICE_DELAY_SECONDS) {
+            lightningBoosterPending = false
+            bubbles.add(createBubble(forcedType = BubbleType.LIGHTNING))
+        }
         moveStep(bubbleDt)
+        fadeStep()
+        chainStep()
         windSaveStep()
         cullStep()
         breezeDecayStep(dt)
@@ -369,6 +414,8 @@ class BubbleGameViewModel(
 
         // Bubbles first: they're drawn over the boss, so a skull in front of it gets popped.
         val hit = bubbles.firstOrNull { bubble ->
+            // A faded ghost can't be touched: the tap goes through it.
+            if (bubble.type == BubbleType.GHOST && bubble.visibility < GameRules.GHOST_TAPPABLE) return@firstOrNull false
             val dx        = offset.x - bubble.x
             val dy        = offset.y - bubble.y
             val hitRadius = (bubble.radius * hitScale).coerceAtLeast(minHitRadius)
@@ -376,6 +423,11 @@ class BubbleGameViewModel(
         }
         if (hit != null) {
             emit(GameEvent.Tapped(hit = true))
+            // An armored bubble only cracks at the first tap.
+            if (hit.type == BubbleType.ARMORED && !hit.cracked) {
+                crackArmor(hit)
+                return true
+            }
             bubbles.remove(hit)
             bubblesPopped++
             if (hit.type == BubbleType.POISON) popPoison(hit) else popScoring(hit)
@@ -383,7 +435,9 @@ class BubbleGameViewModel(
             return true
         }
 
-        val boss = bosses.lastOrNull { hypot(offset.x - it.x, offset.y - it.y) <= it.radius } ?: return false
+        val boss = bosses.lastOrNull {
+            it.visibility >= GameRules.GHOST_TAPPABLE && hypot(offset.x - it.x, offset.y - it.y) <= it.radius
+        } ?: return false
         emit(GameEvent.Tapped(hit = true))
         hitBossByTap(boss)
         checkStageEnd()
@@ -464,14 +518,21 @@ class BubbleGameViewModel(
         stageResult   = null
         shieldActive  = false
         freezeTimeLeft = 0f
+        doubleTimeLeft = 0f
         tapLockLeft   = 0f
         bosses.clear()
         confetti.clear()
         bossSpawned   = false
         bossClock     = 0f
-        bossHitsSinceGimmick   = 0
+        bossArrivedAt = 0f
+        bossEnraged   = false
+        bossPhaseNow  = 0
+        bossHitsInPhase = 0
         bossDamageDealt = 0
-        bossBombsDropped = false
+        iceRespawnLeft = 0f
+        blastArmorBombsIn = 0f
+        lightningBolts.clear()
+        chainWaiting.clear()
         celebrationLeft = 0f
         gameOverSlowmoLeft = 0f
         waveDirector?.reset()
@@ -488,11 +549,27 @@ class BubbleGameViewModel(
         rewards       = null
         runTracker    = RunTracker()
         unlockedDifficulty = null
+        // Boosters were bought for one attempt.
+        activeBoosters = emptySet()
+        applyBoosters()
         refreshObjectives()
     }
 
     init {
+        applyBoosters()
         refreshObjectives()
+    }
+
+    /** Sets up the round's head starts: an extra life, a shield, an early ice bubble, more time. */
+    private fun applyBoosters() {
+        maxLives = baseLives + if (Booster.EXTRA_LIFE in activeBoosters) 1 else 0
+        if (Booster.SHIELD in activeBoosters) shieldActive = true
+        iceBoosterPending = Booster.ICE in activeBoosters
+        lightningBoosterPending = Booster.LIGHTNING in activeBoosters
+        if (Booster.CLOCK in activeBoosters && stage?.durationSec != null) {
+            bonusSeconds = Booster.CLOCK_SECONDS
+            timerStep()
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -503,7 +580,7 @@ class BubbleGameViewModel(
     private fun popScoring(bubble: Bubble) {
         val previous   = comboTracker.combo
         val newCombo   = comboTracker.onPop(playTime)
-        val multiplier = ComboTracker.multiplierFor(newCombo)
+        val multiplier = ComboTracker.multiplierFor(newCombo) * scoreBoost
         val points     = GameRules.basePoints(bubble) * multiplier
 
         score += points
@@ -535,18 +612,166 @@ class BubbleGameViewModel(
         emit(GameEvent.Popped(bubble, points, newCombo))
         emit(GameEvent.ComboChanged(newCombo, previous))
 
-        if (bubble.type == BubbleType.BOMB) explode(bubble, multiplier, newCombo) else applyEffect(bubble)
+        when (bubble.type) {
+            BubbleType.BOMB -> explode(bubble, multiplier, newCombo)
+            BubbleType.LIGHTNING -> zap(bubble)
+            else -> applyEffect(bubble)
+        }
     }
 
-    /** What a popped heart / ice / shield / splitter bubble does. Bombs are handled by [explode]. */
+    /** What a popped heart / ice / shield / splitter / clock / ×2 bubble does. Bombs are handled by [explode]. */
     private fun applyEffect(bubble: Bubble) {
         when (bubble.type) {
             BubbleType.HEART -> if (missedCount > 0) missedCount--
-            BubbleType.FREEZE -> freezeTimeLeft = GameRules.FREEZE_SECONDS
+            BubbleType.FREEZE -> {
+                freezeTimeLeft = GameRules.FREEZE_SECONDS
+                breakIceShield()
+            }
             BubbleType.SHIELD -> shieldActive = true
             BubbleType.SPLITTER -> split(bubble)
-            BubbleType.NORMAL, BubbleType.GOLDEN, BubbleType.BOMB, BubbleType.POISON -> Unit
+            BubbleType.CLOCK -> addTime(bubble)
+            BubbleType.DOUBLE -> {
+                doubleTimeLeft += GameRules.DOUBLE_SECONDS
+                addFloatingText("×${GameRules.DOUBLE_MULTIPLIER} POINTS!", bubble.x, bubble.y - bubble.radius, ComboColor, isMilestone = true)
+            }
+            BubbleType.NORMAL, BubbleType.GOLDEN, BubbleType.BOMB, BubbleType.POISON,
+            BubbleType.CHAIN -> chainPopped(bubble)
+            BubbleType.LIGHTNING, BubbleType.ARMORED, BubbleType.GHOST -> Unit
         }
+    }
+
+    /** Chain pairs where one bubble is popped and the other must follow in time, by link id. */
+    private class ChainWait(val popped: Bubble, val at: Float)
+    private val chainWaiting = mutableMapOf<String, ChainWait>()
+
+    /** A chain bubble spawns with its partner beside it, tied to it. */
+    private fun addChainPair(first: Bubble) {
+        val link = "chain_${nextEffectId++}"
+        val gap = GameRules.CHAIN_GAP_DP * density
+        // The partner goes on whichever side has room.
+        val side = if (first.baseX + gap < canvasWidth - first.radius) 1f else -1f
+        bubbles += first.copy(linkId = link)
+        bubbles += first.copy(id = "${first.id}_pair", x = first.x + side * gap, baseX = first.baseX + side * gap, linkId = link)
+    }
+
+    /** One bubble of a pair popped: the bonus if its partner went just before, otherwise the clock starts. */
+    private fun chainPopped(bubble: Bubble) {
+        val link = bubble.linkId ?: return
+        if (chainWaiting.remove(link) != null) {
+            val points = GameRules.CHAIN_BONUS * ComboTracker.multiplierFor(comboTracker.combo) * scoreBoost
+            score += points
+            addFloatingText("PAIR! +$points", bubble.x, bubble.y - bubble.radius, ComboColor, isMilestone = true)
+            emit(GameEvent.ChainPaired(points))
+        } else if (bubbles.any { it.linkId == link }) {
+            chainWaiting[link] = ChainWait(bubble, playTime)
+        }
+    }
+
+    /** A pair left half-popped too long: the popped bubble comes back beside its partner. */
+    private fun chainStep() {
+        if (chainWaiting.isEmpty()) return
+        val gap = GameRules.CHAIN_GAP_DP * density
+        val expired = chainWaiting.filterValues { playTime - it.at > GameRules.CHAIN_WINDOW_SECONDS }
+        for ((link, wait) in expired) {
+            chainWaiting.remove(link)
+            val partner = bubbles.firstOrNull { it.linkId == link } ?: continue
+            val side = if (partner.baseX + gap < canvasWidth - partner.radius) 1f else -1f
+            bubbles += wait.popped.copy(
+                id = "${wait.popped.id}_back${nextEffectId++}",
+                x = partner.x + side * gap,
+                y = partner.y,
+                baseX = partner.baseX + side * gap,
+            )
+            addFloatingText("BACK!", partner.x + side * gap, partner.y - partner.radius, ArmorTextColor)
+        }
+    }
+
+    /**
+     * Ghost bubbles fade in and out on their own beat; a fading boss ([BossTrick.Fade])
+     * fades on the boss clock — unless a lightning strike has just shown it.
+     */
+    private fun fadeStep() {
+        for (bubble in bubbles) {
+            if (bubble.type != BubbleType.GHOST) continue
+            val beat = 2f * PI.toFloat() * playTime / GameRules.GHOST_PERIOD_SECONDS + bubble.phase
+            bubble.visibility = 0.5f + 0.5f * cos(beat)
+        }
+        if (bosses.isEmpty()) return
+        val fade = stage?.boss?.phases?.get(bossPhaseNow)?.filterIsInstance<BossTrick.Fade>()?.firstOrNull()
+        for (boss in bosses) {
+            boss.visibility = when {
+                fade == null -> 1f
+                boss.revealLeft > 0f -> 1f
+                else -> {
+                    // Visible for visibleShare of each fade, with soft edges either side.
+                    val raw = 0.5f + 0.5f * cos(2f * PI.toFloat() * playTime / GameRules.PHANTOM_FADE_SECONDS)
+                    ((raw - (1f - fade.visibleShare)) / FADE_EDGE + 0.5f).coerceIn(0f, 1f)
+                }
+            }
+        }
+    }
+
+    /** The first tap on an armored bubble: the armor cracks and the combo carries on. */
+    private fun crackArmor(bubble: Bubble) {
+        bubble.cracked = true
+        val previous = comboTracker.combo
+        val newCombo = comboTracker.onPop(playTime)
+        syncComboState()
+        addFloatingText("CRACK!", bubble.x, bubble.y - bubble.radius, ArmorTextColor)
+        startShake(GameRules.SHAKE_BOSS_HIT_DP, GameRules.SHAKE_BOSS_HIT_SECONDS)
+        emit(GameEvent.ArmorCracked)
+        emit(GameEvent.ComboChanged(newCombo, previous))
+    }
+
+    /**
+     * A lightning bubble: bolts to the [GameRules.LIGHTNING_ZAPS] nearest bubbles
+     * (never skulls or bombs), each popping as part of the combo — armor and all — and a
+     * strike on every boss.
+     */
+    private fun zap(source: Bubble) {
+        val from = Offset(source.x, source.y)
+        val targets = bubbles
+            // Never skulls, and never bombs: a zapped bomb could blow up a skull nobody saw coming.
+            .filter { it.type != BubbleType.POISON && it.type != BubbleType.BOMB }
+            .sortedBy { hypot(it.x - source.x, it.y - source.y) }
+            .take(GameRules.LIGHTNING_ZAPS)
+        for (target in targets) {
+
+            bubbles.remove(target)
+            bubblesPopped++
+            lightningBolts += LightningBolt(nextEffectId++, from, Offset(target.x, target.y), GameRules.BOLT_SECONDS)
+            val previous = comboTracker.combo
+            val newCombo = comboTracker.onPop(playTime)
+            val multiplier = ComboTracker.multiplierFor(newCombo) * scoreBoost
+            val points = GameRules.basePoints(target) * multiplier
+            score += points
+            addPopAnimation(target, intensity = 1f + minOf(newCombo, GameRules.MAX_BURST_COMBO) * GameRules.BURST_GROWTH_PER_COMBO)
+            emit(GameEvent.Popped(target, points, newCombo, blast = true))
+            emit(GameEvent.ComboChanged(newCombo, previous))
+            applyEffect(target)
+        }
+        syncComboState()
+        for (boss in bosses.toList()) {
+            lightningBolts += LightningBolt(nextEffectId++, from, Offset(boss.x, boss.y), GameRules.BOLT_SECONDS)
+            val points = GameRules.BOSS_HIT_POINTS * boss.config.lightningDamage * scoreBoost
+            score += points
+            // A fading boss shows itself when struck.
+            boss.revealLeft = GameRules.PHANTOM_REVEAL_SECONDS
+            damageBoss(boss, boss.config.lightningDamage, points, fromBlast = true)
+        }
+        startShake(GameRules.SHAKE_LARGE_POP_DP * 2f, GameRules.SHAKE_LARGE_POP_SECONDS * 2f)
+        emit(GameEvent.LightningZapped(targets.size))
+    }
+
+    /** ×2 bubbles: while one is running, every point counts double. */
+    private val scoreBoost: Int get() = if (doubleTimeLeft > 0f) GameRules.DOUBLE_MULTIPLIER else 1
+
+    /** A clock bubble: more time on the stage's timer. */
+    private fun addTime(bubble: Bubble) {
+        if (stage?.durationSec == null) return
+        bonusSeconds += GameRules.CLOCK_SECONDS
+        timerStep()
+        addFloatingText("+${GameRules.CLOCK_SECONDS}s", bubble.x, bubble.y - bubble.radius, ComboColor, isMilestone = true)
     }
 
     /** A skull ends the round — unless a shield absorbs it or a revive's grace is still on. */
@@ -584,14 +809,15 @@ class BubbleGameViewModel(
 
         while (pendingBombs.isNotEmpty()) {
             val center = pendingBombs.removeFirst()
-            // Blasts hurt bosses too.
+            // Blasts hurt bosses too — unless they're behind an ice shield.
             bosses.toList()
+                .filter { !it.shielded }
                 .filter { hypot(it.x - center.x, it.y - center.y) - it.radius <= blastRadius }
                 .forEach { boss ->
-                    val points = GameRules.BOSS_HIT_POINTS * GameRules.BOMB_BOSS_DAMAGE * multiplier
+                    val points = GameRules.BOSS_HIT_POINTS * boss.config.blastDamage * multiplier
                     score += points
                     chainPoints += points
-                    damageBoss(boss, GameRules.BOMB_BOSS_DAMAGE, points)
+                    damageBoss(boss, boss.config.blastDamage, points, fromBlast = true)
                 }
             popAnimations.add(
                 PopAnimation(
@@ -617,7 +843,7 @@ class BubbleGameViewModel(
                 val points = GameRules.basePoints(bubble) * multiplier
                 score += points
                 chainPoints += points
-                emit(GameEvent.Popped(bubble, points, combo))
+                emit(GameEvent.Popped(bubble, points, combo, blast = true))
                 if (bubble.type == BubbleType.BOMB) pendingBombs.add(bubble) else applyEffect(bubble)
             }
         }
@@ -653,6 +879,7 @@ class BubbleGameViewModel(
         val config = stage?.boss ?: return
         if (bossSpawned || playTime < GameRules.BOSS_ENTRY_DELAY_SECONDS) return
         bossSpawned = true
+        bossArrivedAt = playTime
         bosses.add(
             BossBubble(
                 id = "boss_${nextEffectId++}",
@@ -666,12 +893,37 @@ class BubbleGameViewModel(
                 y = -config.radiusDp * density,
             )
         )
+        enterBossPhase(0, bosses.first())
     }
 
-    /** Bosses drift side to side and bob, faster as they lose HP. */
+    /**
+     * Bosses drift side to side and bob, faster as they lose HP — and faster still
+     * once enraged. While an ice shield holds, fresh ice bubbles keep rising.
+     */
     private fun bossStep(dt: Float) {
         if (bosses.isEmpty()) return
-        bossClock += dt * GameRules.BOSS_PHASE_SPEED[bossPhase()]
+        val enrageAfter = stage?.boss?.enrageAfterSec
+        if (!bossEnraged && enrageAfter != null && playTime - bossArrivedAt >= enrageAfter) enrage()
+        if (bosses.any { it.shielded }) {
+            iceRespawnLeft -= dt
+            if (iceRespawnLeft <= 0f) riseIce()
+        }
+        val tricks = stage?.boss?.phases?.get(bossPhaseNow).orEmpty()
+        // Bomb armor: fresh bombs keep dropping, the only way through.
+        tricks.filterIsInstance<BossTrick.BlastArmor>().firstOrNull()?.let { armor ->
+            blastArmorBombsIn -= dt
+            if (blastArmorBombsIn <= 0f) {
+                dropBombs(bosses.first(), armor.bombs)
+                blastArmorBombsIn = armor.everySec * if (bossEnraged) 0.5f else 1f
+            }
+        }
+        // Gravity: every bubble drifts sideways towards the boss.
+        tricks.filterIsInstance<BossTrick.Gravity>().firstOrNull()?.let { gravity ->
+            val pull = (gravity.strength * dt * if (bossEnraged) GameRules.BOSS_ENRAGE_SPEED else 1f).coerceAtMost(1f)
+            val boss = bosses.first()
+            for (bubble in bubbles) bubble.baseX += (boss.x - bubble.baseX) * pull
+        }
+        bossClock += dt * GameRules.BOSS_PHASE_SPEED[bossPhaseNow] * (if (bossEnraged) GameRules.BOSS_ENRAGE_SPEED else 1f)
         val bob = GameRules.BOSS_BOB_DP * density
         // Glide towards the path rather than snapping, so fresh split copies fly apart smoothly.
         val follow = (dt * BOSS_FOLLOW_RATE).coerceAtMost(1f)
@@ -682,6 +934,7 @@ class BubbleGameViewModel(
             boss.x += (targetX - boss.x) * follow
             boss.y += (targetY - boss.y) * follow
             boss.hitFlash = (boss.hitFlash - dt).coerceAtLeast(0f)
+            boss.revealLeft = (boss.revealLeft - dt).coerceAtLeast(0f)
         }
     }
 
@@ -699,38 +952,155 @@ class BubbleGameViewModel(
         }
     }
 
-    /** A tap on a boss: 1 damage, extends the combo, and may set off the boss's gimmick. */
+    /** A tap on a boss: 1 damage, extends the combo, and may set off one of the boss's tricks. */
     private fun hitBossByTap(boss: BossBubble) {
+        if (boss.shielded) {
+            addFloatingText("BLOCKED", boss.x, boss.y - boss.radius, IceTextColor)
+            return
+        }
+        if (boss.blastOnly) {
+            addFloatingText("USE BOMBS!", boss.x, boss.y - boss.radius, ArmorTextColor)
+            return
+        }
         val previous   = comboTracker.combo
         val newCombo   = comboTracker.onPop(playTime)
-        val points     = GameRules.BOSS_HIT_POINTS * ComboTracker.multiplierFor(newCombo)
+        val points     = GameRules.BOSS_HIT_POINTS * ComboTracker.multiplierFor(newCombo) * scoreBoost
         score += points
         syncComboState()
         addFloatingText("+$points", boss.x, boss.y - boss.radius, ScorePopupColor)
         emit(GameEvent.ComboChanged(newCombo, previous))
 
-        bossHitsSinceGimmick++
-        damageBoss(boss, damage = 1, points = points)
-        if (boss.hp <= 0) return
-        // The gimmick comes round sooner as the fight goes on.
-        val phase = bossPhase()
-        val every = when (boss.config.gimmick) {
-            BossGimmick.THROWS_SKULLS -> GameRules.SKULL_EVERY_HITS[phase]
-            BossGimmick.STINGS -> GameRules.STING_EVERY_HITS[phase]
-            BossGimmick.DROPS_BOMBS, BossGimmick.SPLITS -> return
+        if (boss.plates > 0) {
+            // Plates first: each takes a few taps, and the boss's HP waits behind them.
+            boss.plateHits++
+            boss.hitFlash = GameRules.BOSS_HIT_FLASH_SECONDS
+            val tapsEach = boss.config.phases[bossPhaseNow].filterIsInstance<BossTrick.Plates>().firstOrNull()?.tapsEach ?: 1
+            if (boss.plateHits >= tapsEach) breakPlate(boss)
+        } else {
+            damageBoss(boss, damage = 1, points = points)
         }
-        if (bossHitsSinceGimmick < every) return
-        bossHitsSinceGimmick = 0
-        when (boss.config.gimmick) {
-            BossGimmick.THROWS_SKULLS -> throwSkull()
-            BossGimmick.STINGS -> sting(boss)
-            BossGimmick.DROPS_BOMBS, BossGimmick.SPLITS -> Unit
+        if (boss.hp <= 0 || bosses.isEmpty()) return
+        bossHitsInPhase++
+        for (trick in boss.config.phases[bossPhaseNow]) {
+            val every = when (trick) {
+                is BossTrick.ThrowSkulls -> trick.everyHits
+                is BossTrick.Sting -> trick.everyHits
+                is BossTrick.Gust -> trick.everyHits
+                is BossTrick.IceShield -> trick.everyHits
+                is BossTrick.ThrowGhosts -> trick.everyHits
+                is BossTrick.DropBombs, is BossTrick.BlastArmor, is BossTrick.Gravity,
+                is BossTrick.Plates, is BossTrick.HealOnEscape, is BossTrick.Fade -> continue
+            }
+            // Enraged, every trick comes round twice as often.
+            val due = if (bossEnraged) (every + 1) / 2 else every
+            if (bossHitsInPhase % due != 0) continue
+            when (trick) {
+                is BossTrick.ThrowSkulls -> repeat(trick.count) { throwSkull() }
+                is BossTrick.Sting -> sting(boss, trick.seconds)
+                is BossTrick.Gust -> gust(boss)
+                is BossTrick.IceShield -> raiseIceShield(boss)
+                is BossTrick.ThrowGhosts -> repeat(trick.count) { bubbles.add(createBubble(forcedType = BubbleType.GHOST)) }
+                is BossTrick.DropBombs, is BossTrick.BlastArmor, is BossTrick.Gravity,
+                is BossTrick.Plates, is BossTrick.HealOnEscape, is BossTrick.Fade -> Unit
+            }
         }
     }
 
+    /** Moves on to the next phase once the damage crosses ⅓ or ⅔. Phases never go back, even when a boss heals. */
+    private fun updateBossPhase(boss: BossBubble) {
+        val phase = bossPhase()
+        if (phase > bossPhaseNow) enterBossPhase(phase, boss)
+    }
+
+    /** A phase begins: its count starts over, and its bombs, plates and armor arrive. */
+    private fun enterBossPhase(phase: Int, boss: BossBubble) {
+        bossPhaseNow = phase
+        bossHitsInPhase = 0
+        val tricks = boss.config.phases[phase]
+        tricks.filterIsInstance<BossTrick.DropBombs>().forEach { dropBombs(boss, it.count) }
+        val plates = tricks.filterIsInstance<BossTrick.Plates>().firstOrNull()
+        val armored = tricks.any { it is BossTrick.BlastArmor }
+        for (copy in bosses) {
+            copy.plates = plates?.count ?: 0
+            copy.plateHits = 0
+            copy.blastOnly = armored
+        }
+        blastArmorBombsIn = 0f
+        when {
+            plates != null -> addFloatingText("ARMOR UP!", boss.x, boss.y + boss.radius + BOSS_TEXT_GAP_DP * density, ArmorTextColor, isMilestone = true)
+            armored -> addFloatingText("ONLY BOMBS HURT IT!", boss.x, boss.y + boss.radius + BOSS_TEXT_GAP_DP * density, ArmorTextColor, isMilestone = true)
+        }
+    }
+
+    /** One armor plate breaks, by taps or a blast. */
+    private fun breakPlate(boss: BossBubble) {
+        boss.plates = (boss.plates - 1).coerceAtLeast(0)
+        boss.plateHits = 0
+        boss.hitFlash = GameRules.BOSS_HIT_FLASH_SECONDS
+        addFloatingText(if (boss.plates == 0) "ARMOR BROKEN!" else "PLATE!", boss.x, boss.y - boss.radius, ArmorTextColor, isMilestone = boss.plates == 0)
+        startShake(GameRules.SHAKE_BOSS_HIT_DP * 2f, GameRules.SHAKE_BOSS_HIT_SECONDS * 2f)
+    }
+
+    /** Sugar Golem: an escaped bubble heals every copy a little. */
+    private fun healBosses(hp: Int) {
+        var healed = 0
+        for (boss in bosses) {
+            val gain = minOf(hp, boss.maxHp - boss.hp)
+            boss.hp += gain
+            healed += gain
+        }
+        if (healed == 0) return
+        bossDamageDealt = (bossDamageDealt - healed).coerceAtLeast(0)
+        bosses.firstOrNull()?.let { addFloatingText("+$hp HP", it.x, it.y - it.radius, BossHealColor) }
+    }
+
+    /** The fight ran too long: the boss speeds up and its tricks come twice as often. */
+    private fun enrage() {
+        bossEnraged = true
+        bosses.forEach { it.enraged = true }
+        addFloatingText("ENRAGED!", canvasWidth / 2f, bossBaseY(), StingColor, isMilestone = true)
+        startShake(GameRules.SHAKE_BOSS_DEFEAT_DP, GameRules.SHAKE_BOSS_HIT_SECONDS * 3)
+    }
+
+    /** Storm Cloud: a gust blows every bubble to one side. */
+    private fun gust(boss: BossBubble) {
+        breeze = if (random.nextBoolean()) 1f else -1f
+        addFloatingText("GUST!", boss.x, boss.y + boss.radius + BOSS_TEXT_GAP_DP * density, IceTextColor, isMilestone = true)
+    }
+
+    /** Tide Kraken: a shield goes up around every copy until an ice bubble is popped. */
+    private fun raiseIceShield(boss: BossBubble) {
+        if (bosses.any { it.shielded }) return
+        bosses.forEach { it.shielded = true }
+        addFloatingText("SHIELDED!", boss.x, boss.y + boss.radius + BOSS_TEXT_GAP_DP * density, IceTextColor, isMilestone = true)
+        riseIce()
+    }
+
+    private fun riseIce() {
+        bubbles.add(createBubble(forcedType = BubbleType.FREEZE))
+        iceRespawnLeft = GameRules.ICE_SHIELD_RESPAWN_SECONDS
+    }
+
+    /** Popping an ice bubble shatters a boss's ice shield. */
+    private fun breakIceShield() {
+        val shielded = bosses.filter { it.shielded }
+        if (shielded.isEmpty()) return
+        shielded.forEach { it.shielded = false }
+        val boss = shielded.first()
+        addFloatingText("SHIELD BROKEN!", boss.x, boss.y - boss.radius, IceTextColor, isMilestone = true)
+        startShake(GameRules.SHAKE_BOSS_HIT_DP, GameRules.SHAKE_BOSS_HIT_SECONDS)
+    }
+
     /** Deals [damage] to [boss] (already scored as [points]). Beaten copies split or vanish. */
-    private fun damageBoss(boss: BossBubble, damage: Int, points: Int) {
+    private fun damageBoss(boss: BossBubble, damage: Int, points: Int, fromBlast: Boolean = false) {
         if (boss.hp <= 0) return
+        if (boss.shielded) return
+        // Bomb armor lets only blasts and lightning through; plates take a blast each before any HP.
+        if (boss.blastOnly && !fromBlast) return
+        if (boss.plates > 0) {
+            if (fromBlast) breakPlate(boss)
+            return
+        }
         val dealt = minOf(damage, boss.hp)
         boss.hp -= dealt
         bossDamageDealt += dealt
@@ -738,9 +1108,7 @@ class BubbleGameViewModel(
         startShake(GameRules.SHAKE_BOSS_HIT_DP, GameRules.SHAKE_BOSS_HIT_SECONDS)
         emit(GameEvent.BossHit(dealt, points))
 
-        if (boss.config.gimmick == BossGimmick.DROPS_BOMBS && !bossBombsDropped && bossPhase() == 2) {
-            dropBombs(boss)
-        }
+        updateBossPhase(boss)
         if (boss.hp == 0) beatBossCopy(boss)
     }
 
@@ -769,7 +1137,10 @@ class BubbleGameViewModel(
                         motionPhase = boss.motionPhase + i * 2f * PI.toFloat() / GameRules.BOSS_SPLIT_COUNT,
                         x = boss.x,
                         y = boss.y,
-                    )
+                    ).apply {
+                        enraged = bossEnraged
+                        blastOnly = boss.blastOnly
+                    }
                 )
             }
         }
@@ -797,17 +1168,16 @@ class BubbleGameViewModel(
         bubbles.add(createBubble(forcedType = BubbleType.POISON))
     }
 
-    private fun sting(boss: BossBubble) {
-        tapLockLeft = GameRules.STING_SECONDS[bossPhase()]
+    private fun sting(boss: BossBubble, seconds: Float) {
+        tapLockLeft = seconds
         addFloatingText("STUNG!", boss.x, boss.y + boss.radius + BOSS_TEXT_GAP_DP * density, StingColor, isMilestone = true)
     }
 
-    /** Nebula Core: bombs drop out from under it once, when it falls below ⅓ HP. */
-    private fun dropBombs(boss: BossBubble) {
-        bossBombsDropped = true
+    /** Nebula Core: bombs drop out from under it as a phase begins. */
+    private fun dropBombs(boss: BossBubble, count: Int) {
         val spacing = BOMB_DROP_SPACING_DP * density
-        repeat(GameRules.NEBULA_BOMB_COUNT) { i ->
-            val offsetX = (i - (GameRules.NEBULA_BOMB_COUNT - 1) / 2f) * spacing
+        repeat(count) { i ->
+            val offsetX = (i - (count - 1) / 2f) * spacing
             bubbles.add(
                 createBubble(
                     forcedType = BubbleType.BOMB,
@@ -908,6 +1278,9 @@ class BubbleGameViewModel(
         for (anim in popAnimations) anim.progress += dt * GameRules.POP_ANIM_SPEED
         popAnimations.removeAll { it.progress >= 1f }
 
+        for (bolt in lightningBolts) bolt.life -= dt
+        lightningBolts.removeAll { it.life <= 0f }
+
         for (text in floatingTexts) {
             val speed = if (text.isMilestone) GameRules.MILESTONE_TEXT_SPEED else GameRules.FLOATING_TEXT_SPEED
             text.progress += dt * speed
@@ -939,17 +1312,19 @@ class BubbleGameViewModel(
         effectFrame++
     }
 
-    /** Endless: advances the waves and announces each calm and each new wave. */
+    /** Advances the waves. Endless announces each calm and each new wave; stages don't. */
     private fun waveStep(dt: Float) {
         val director = waveDirector ?: return
+        val endless = stage == null
         when (director.update(dt)) {
             WaveDirector.Change.CALM_STARTED -> {
                 spawnTimer = 0f
-                emit(GameEvent.WaveCleared(director.wave - 1))
+                if (endless) emit(GameEvent.WaveCleared(director.wave - 1))
             }
-            WaveDirector.Change.WAVE_STARTED -> emit(GameEvent.WaveStarted(director.wave))
+            WaveDirector.Change.WAVE_STARTED -> if (endless) emit(GameEvent.WaveStarted(director.wave))
             null -> Unit
         }
+        if (!endless) return
         wave         = director.wave
         isWaveCalm   = director.isCalm
         waveProgress = director.waveProgress
@@ -963,16 +1338,18 @@ class BubbleGameViewModel(
     }
 
     private fun spawnStep(dt: Float) {
-        // Endless: nothing spawns between waves, and the wave sets the pace.
+        // Waves: nothing spawns during a calm, and the wave sets the pace.
         if (waveDirector?.isCalm == true) return
-        val interval = waveDirector?.spawnInterval
-            ?: ((spawn.spawnInterval - score * spawn.spawnRampPerPoint).coerceAtLeast(spawn.minSpawnInterval) *
-                // Boss stages: the bubbles around the boss come faster as the fight goes on.
-                (if (stage?.boss != null) GameRules.BOSS_SPAWN_PACE[bossPhase()] else 1f))
+        val interval = (waveDirector?.spawnInterval
+            ?: (spawn.spawnInterval - score * spawn.spawnRampPerPoint).coerceAtLeast(spawn.minSpawnInterval)) *
+            // Boss stages: the bubbles around the boss come faster as the fight goes on.
+            (if (stage?.boss != null) GameRules.BOSS_SPAWN_PACE[bossPhaseNow] else 1f) *
+            (if (bossEnraged) GameRules.BOSS_ENRAGE_SPAWN_PACE else 1f)
         spawnTimer += dt
         if (spawnTimer >= interval) {
             spawnTimer = 0f
-            bubbles.add(createBubble())
+            val bubble = createBubble()
+            if (bubble.type == BubbleType.CHAIN) addChainPair(bubble) else bubbles.add(bubble)
         }
     }
 
@@ -1009,10 +1386,12 @@ class BubbleGameViewModel(
         bubbles.removeAll(escaped.toSet())
         for (bubble in escaped) {
             // Right after a revive, escaping bubbles cost nothing.
-            val lifeLost = bubble.type == BubbleType.NORMAL && reviveGraceLeft <= 0f
+            val lifeLost = bubble.type in LIFE_BUBBLES && reviveGraceLeft <= 0f
             if (lifeLost) {
                 missedCount++
                 breakCombo()
+                stage?.boss?.phases?.get(bossPhaseNow)?.filterIsInstance<BossTrick.HealOnEscape>()?.firstOrNull()
+                    ?.takeIf { bosses.isNotEmpty() }?.let { healBosses(it.hp) }
             }
             emit(GameEvent.Missed(bubble, lifeLost))
         }

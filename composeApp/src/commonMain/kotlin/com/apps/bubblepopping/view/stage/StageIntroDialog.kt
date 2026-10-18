@@ -16,6 +16,21 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.apps.bubblepopping.meta.Booster
+import com.apps.bubblepopping.ui.components.LocalPlayerResources
+import com.apps.bubblepopping.ui.components.LocalUiFeedback
+import com.apps.bubblepopping.ui.components.candyFace
+import com.apps.bubblepopping.ui.components.sunkenWell
+import com.apps.bubblepopping.ui.theme.Corners
 import com.apps.bubblepopping.data.StageProgress
 import com.apps.bubblepopping.stage.StageCatalog
 import com.apps.bubblepopping.stage.StageConfig
@@ -43,9 +58,14 @@ import com.apps.bubblepopping.ui.theme.Spacing
 fun StageIntroDialog(
     stage: StageConfig,
     progress: StageProgress?,
-    onPlay: () -> Unit,
+    /** Starts the stage with the boosters picked here (paid for as it starts). */
+    onPlay: (Set<Booster>) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val offered = remember(stage.id) { Booster.offeredFor(stage) }
+    var picked by remember(stage.id) { mutableStateOf(emptySet<Booster>()) }
+    val coins = LocalPlayerResources.current.coins ?: 0
+    val cost = Booster.price(picked)
     GameDialog(title = "Stage ${stage.id}", onDismiss = onDismiss) {
         stage.boss?.let { boss ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
@@ -92,9 +112,26 @@ fun StageIntroDialog(
             ResourcePill(GameIcons.Star, "Best ${formatCount(best)}", tint = GameColors.VioletTop, tone = EnamelTone.VIOLET)
         }
 
+        // Head starts for this attempt, paid when PLAY is pressed.
+        if (offered.isNotEmpty()) {
+            OutlinedText("BOOSTERS", GameTheme.type.label, color = GameColors.Gold)
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), modifier = Modifier.fillMaxWidth()) {
+                offered.forEach { booster ->
+                    val selected = booster in picked
+                    BoosterTile(
+                        booster = booster,
+                        selected = selected,
+                        affordable = selected || cost + booster.price <= coins,
+                        onClick = { picked = if (selected) picked - booster else picked + booster },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+
         GameButton(
-            text = "PLAY",
-            onClick = onPlay,
+            text = if (picked.isEmpty()) "PLAY" else "PLAY · ${formatCount(cost)}",
+            onClick = { onPlay(picked) },
             // Same green PLAY as everywhere else.
             color = ButtonColor.GREEN,
             size = ButtonSize.LARGE,
@@ -104,6 +141,53 @@ fun StageIntroDialog(
     }
 }
 
+/**
+ * One booster on a stage card: its icon, name and price. Tapping picks it (green) or
+ * drops it; one the player can't afford is greyed out and can't be picked.
+ */
+@Composable
+private fun BoosterTile(
+    booster: Booster,
+    selected: Boolean,
+    affordable: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val feedback = LocalUiFeedback.current
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+        modifier = modifier
+            .alpha(if (affordable) 1f else UNAFFORDABLE_ALPHA)
+            .then(if (selected) Modifier.candyFace(ButtonColor.GREEN, Corners.medium) else Modifier.sunkenWell())
+            .clickable(enabled = affordable, onClickLabel = booster.description) {
+                feedback.click()
+                onClick()
+            }
+            .semantics { contentDescription = "${booster.title}, ${booster.price} coins" }
+            .padding(vertical = Spacing.s),
+    ) {
+        Image(booster.icon, contentDescription = null, modifier = Modifier.size(BOOSTER_ICON))
+        OutlinedText(booster.title, GameTheme.type.caption, maxLines = 1)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            Image(GameIcons.Coin, contentDescription = null, modifier = Modifier.size(PRICE_ICON))
+            OutlinedText("${booster.price}", GameTheme.type.caption, maxLines = 1)
+        }
+    }
+}
+
+private val Booster.icon: ImageVector
+    get() = when (this) {
+        Booster.EXTRA_LIFE -> GameIcons.Heart
+        Booster.SHIELD -> GameIcons.Shield
+        Booster.ICE -> GameIcons.Snowflake
+        Booster.CLOCK -> GameIcons.Clock
+        Booster.LIGHTNING -> GameIcons.Bolt
+    }
+
+private val BOOSTER_ICON = 30.dp
+private val PRICE_ICON = 14.dp
+private const val UNAFFORDABLE_ALPHA = 0.45f
 private val BOSS_ICON = 28.dp
 private val GOAL_TITLE_ICON = 26.dp
 private val STAR_SIZE = 38.dp

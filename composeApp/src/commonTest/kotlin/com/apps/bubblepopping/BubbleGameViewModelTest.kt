@@ -1,5 +1,7 @@
 package com.apps.bubblepopping
 
+import com.apps.bubblepopping.stage.StageCatalog
+import com.apps.bubblepopping.meta.Booster
 import androidx.compose.ui.geometry.Offset
 import com.apps.bubblepopping.game.ComboTracker
 import com.apps.bubblepopping.game.GameEvent
@@ -24,6 +26,8 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import com.apps.bubblepopping.game.BubbleSize
+import com.apps.bubblepopping.game.Pace
+import com.apps.bubblepopping.game.WaveDirector
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.test.AfterTest
@@ -677,6 +681,162 @@ class BubbleGameViewModelTest {
         assertFailsWith<IllegalArgumentException> {
             SpawnConfig.MEDIUM.copy(typeWeights = mapOf(BubbleType.NORMAL to 0))
         }
+    }
+    // ── Paced stages ────────────────────────────────────────────────────────
+
+    @Test
+    fun pacedStage_spawnsNothingDuringItsCalm_andDoesNotAnnounceWaves() = runTest {
+        val stage = StageConfig(
+            id = 1,
+            world = World.SKY,
+            goal = Objective.Survive(60),
+            bonusGoals = emptyList(),
+            // Hearts never cost a life, so the round keeps going.
+            spawn = SpawnConfig.paced(Pace.P10, typeWeights = mapOf(BubbleType.HEART to 1)),
+            introText = "",
+            durationSec = 60,
+        )
+        val viewModel = newViewModel(stage = stage)
+        val events = collectEvents(viewModel)
+        val seen = mutableSetOf<String>()
+        fun runAndRecord(seconds: Float) = repeat((seconds / FRAME).toInt()) {
+            viewModel.update(FRAME)
+            viewModel.bubbles.mapTo(seen) { it.id }
+        }
+
+        // Into the calm that follows the first wave.
+        runAndRecord(WaveDirector.STAGE_WAVE_SECONDS + 0.2f)
+        val beforeCalm = seen.size
+        runAndRecord(WaveDirector.STAGE_CALM_SECONDS - 0.4f)
+        assertEquals(beforeCalm, seen.size, "no bubbles spawn during the calm")
+
+        // Then the next wave spawns again.
+        runAndRecord(1f)
+        assertTrue(seen.size > beforeCalm)
+        assertFalse(events.any { it is GameEvent.WaveCleared || it is GameEvent.WaveStarted })
+        assertEquals(1, viewModel.wave)
+    }
+    // ── Clock and ×2 bubbles ────────────────────────────────────────────────
+
+    @Test
+    fun doubleBubble_doublesThePointsThatFollow_forAWhile() {
+        val viewModel = newViewModel(spawn = FAST_NORMAL_ONLY.copy(typeWeights = mapOf(BubbleType.NORMAL to 1, BubbleType.DOUBLE to 1)))
+        while (viewModel.bubbles.none { it.type == BubbleType.DOUBLE }) viewModel.update(FRAME)
+        val double = viewModel.bubbles.first { it.type == BubbleType.DOUBLE }
+        viewModel.tryPop(Offset(double.x, double.y))
+        assertClose(GameRules.DOUBLE_SECONDS, viewModel.doubleTimeLeft, tolerance = 0.05f)
+
+        // Long enough for the combo to lapse, so only ×2 multiplies.
+        viewModel.runFor(ComboTracker.WINDOW_SECONDS + 0.1f)
+        while (viewModel.bubbles.none { it.type == BubbleType.NORMAL }) viewModel.update(FRAME)
+        val normal = viewModel.bubbles.first { it.type == BubbleType.NORMAL }
+        val before = viewModel.score
+        viewModel.tryPop(Offset(normal.x, normal.y))
+        assertEquals(normal.size.points * GameRules.DOUBLE_MULTIPLIER, viewModel.score - before)
+
+        viewModel.runFor(GameRules.DOUBLE_SECONDS)
+        assertEquals(0f, viewModel.doubleTimeLeft)
+    }
+
+    @Test
+    fun clockBubble_addsTimeToTheStageTimer() {
+        val stage = testStage(goal = Objective.ReachScore(1_000), durationSec = 30).copy(
+            spawn = FAST_NORMAL_ONLY.copy(typeWeights = mapOf(BubbleType.CLOCK to 1)),
+        )
+        val viewModel = newViewModel(stage = stage)
+        viewModel.runUntilBubble()
+        val before = requireNotNull(viewModel.timeLeftSec)
+        val clock = viewModel.bubbles.first()
+        viewModel.tryPop(Offset(clock.x, clock.y))
+        assertEquals(before + GameRules.CLOCK_SECONDS, viewModel.timeLeftSec)
+    }
+    // ── Boosters ────────────────────────────────────────────────────────────
+
+    private fun boostedViewModel(stage: StageConfig, boosters: Set<Booster>) = BubbleGameViewModel(
+        mode = GameMode.Stage(stage.id),
+        progressRepository = FakeProgressRepository(),
+        settingsRepository = FakeSettingsRepository(),
+        metaRepository = FakeMetaRepository(),
+        stage = stage,
+        seed = 42L,
+        boosters = boosters,
+    ).apply { setCanvasBounds(WIDTH, HEIGHT, topOffset = 0f, density = DENSITY) }
+
+    @Test
+    fun boosters_giveTheirHeadStart_forOneAttemptOnly() {
+        val stage = testStage(goal = Objective.ReachScore(1_000), durationSec = 30)
+        val viewModel = boostedViewModel(stage, setOf(Booster.EXTRA_LIFE, Booster.SHIELD, Booster.CLOCK, Booster.ICE))
+
+        assertEquals(GameRules.MAX_LIVES + 1, viewModel.maxLives)
+        assertTrue(viewModel.shieldActive)
+        assertEquals(30 + Booster.CLOCK_SECONDS, viewModel.timeLeftSec)
+        viewModel.runFor(Booster.ICE_DELAY_SECONDS + 0.1f)
+        assertTrue(viewModel.bubbles.any { it.type == BubbleType.FREEZE })
+
+        // A restart is a fresh attempt, without them.
+        viewModel.restartGame()
+        assertEquals(GameRules.MAX_LIVES, viewModel.maxLives)
+        assertFalse(viewModel.shieldActive)
+        assertEquals(30, viewModel.timeLeftSec)
+    }
+
+    @Test
+    fun boosters_areOfferedOnlyWhereTheyHelp() {
+        val early = StageCatalog.stage(Booster.FIRST_STAGE - 1)
+        assertTrue(Booster.offeredFor(early).isEmpty())
+
+        val survive = StageCatalog.stages.first { stage -> stage.id >= 11 && stage.allObjectives.any { it is Objective.Survive } }
+        assertFalse(Booster.CLOCK in Booster.offeredFor(survive))
+        val timedScore = StageCatalog.stages.first { stage -> stage.id >= 11 && stage.durationSec != null && stage.goal is Objective.ReachScore }
+        assertTrue(Booster.CLOCK in Booster.offeredFor(timedScore))
+        assertTrue(Booster.EXTRA_LIFE in Booster.offeredFor(timedScore))
+    }
+    // ── Lightning and armored bubbles ───────────────────────────────────────
+
+    @Test
+    fun lightning_zapsTheNearestBubbles_butNeverSkullsOrBombs() = runTest {
+        val viewModel = newViewModel(spawn = FAST_NORMAL_ONLY.copy(typeWeights = mapOf(BubbleType.NORMAL to 1)))
+        val events = collectEvents(viewModel)
+        viewModel.runFor(1f)
+        val lightning = viewModel.bubbles.first().copy(id = "zap", type = BubbleType.LIGHTNING)
+        val skull = viewModel.bubbles.first().copy(id = "skull", x = lightning.x + 1f, type = BubbleType.POISON)
+        val bomb = viewModel.bubbles.first().copy(id = "bomb", x = lightning.x + 2f, type = BubbleType.BOMB)
+        viewModel.bubbles.add(0, lightning)
+        viewModel.bubbles += listOf(skull, bomb)
+        val others = viewModel.bubbles.count { it.type == BubbleType.NORMAL }
+
+        viewModel.tryPop(Offset(lightning.x, lightning.y))
+
+        val zapped = events.filterIsInstance<GameEvent.LightningZapped>().single().count
+        assertEquals(minOf(GameRules.LIGHTNING_ZAPS, others), zapped)
+        assertTrue(skull in viewModel.bubbles && bomb in viewModel.bubbles)
+        assertTrue(viewModel.lightningBolts.isNotEmpty())
+        assertTrue(events.filterIsInstance<GameEvent.Popped>().count { it.blast } == zapped)
+    }
+
+    @Test
+    fun armoredBubble_cracksAtTheFirstTap_andPopsAtTheSecond() = runTest {
+        val viewModel = newViewModel(spawn = FAST_NORMAL_ONLY.copy(typeWeights = mapOf(BubbleType.ARMORED to 1)))
+        val events = collectEvents(viewModel)
+        viewModel.runUntilBubble()
+        val armored = viewModel.bubbles.first()
+
+        assertTrue(viewModel.tryPop(Offset(armored.x, armored.y)))
+        assertTrue(armored.cracked)
+        assertTrue(armored in viewModel.bubbles)
+        assertTrue(events.any { it == GameEvent.ArmorCracked })
+        assertEquals(0, viewModel.score)
+
+        viewModel.tryPop(Offset(armored.x, armored.y))
+        assertFalse(armored in viewModel.bubbles)
+        assertEquals(GameRules.ARMORED_POINTS, viewModel.score)
+    }
+
+    @Test
+    fun escapedArmoredBubbles_costLives() {
+        val viewModel = newViewModel(spawn = FAST_NORMAL_ONLY.copy(typeWeights = mapOf(BubbleType.ARMORED to 1)))
+        viewModel.runUntilGameOver()
+        assertEquals(GameOverReason.OUT_OF_LIVES, viewModel.gameOverReason)
     }
 
     private fun assertClose(expected: Float, actual: Float, tolerance: Float = 0.01f) {

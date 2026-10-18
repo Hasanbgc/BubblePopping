@@ -1,9 +1,11 @@
 package com.apps.bubblepopping
 
+import com.apps.bubblepopping.game.Pace
 import com.apps.bubblepopping.game.SpawnConfig
 import com.apps.bubblepopping.game.WaveDirector
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -67,6 +69,31 @@ class WaveDirectorTest {
 
         assertEquals(base.minSpawnInterval, director.spawnInterval, TOLERANCE)
         assertEquals(base.maxSpeedCap, director.maxSpeed, TOLERANCE)
+    }
+
+    @Test
+    fun pacedStage_climbsFromItsStartPace_toItsTopPace_inLongerWaves() {
+        val paced = SpawnConfig.paced(Pace.P3, Pace.P6)
+        val director = WaveDirector.forStage(paced)
+        assertEquals(Pace.P3.spawnInterval, director.spawnInterval, TOLERANCE)
+        assertEquals(Pace.P3.maxSpeed, director.maxSpeed, TOLERANCE)
+
+        // Still in wave 1 where an Endless wave would already have ended.
+        director.advance(WaveDirector.WAVE_SECONDS + 1f)
+        assertEquals(1, director.wave)
+        assertEquals(
+            listOf(WaveDirector.Change.CALM_STARTED, WaveDirector.Change.WAVE_STARTED),
+            director.advance(WaveDirector.STAGE_WAVE_SECONDS - WaveDirector.WAVE_SECONDS + WaveDirector.STAGE_CALM_SECONDS),
+        )
+
+        director.advance(30 * (WaveDirector.STAGE_WAVE_SECONDS + WaveDirector.STAGE_CALM_SECONDS))
+        assertEquals(Pace.P6.spawnInterval, director.spawnInterval, TOLERANCE)
+        assertEquals(Pace.P6.maxSpeed, director.maxSpeed, TOLERANCE)
+    }
+
+    @Test
+    fun pace_cantFall() {
+        assertFailsWith<IllegalArgumentException> { SpawnConfig.paced(Pace.P5, Pace.P2) }
     }
 
     @Test

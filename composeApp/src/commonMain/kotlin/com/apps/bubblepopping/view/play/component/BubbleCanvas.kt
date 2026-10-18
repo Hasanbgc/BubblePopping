@@ -7,9 +7,13 @@ import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.geometry.Rect
 import com.apps.bubblepopping.stage.World
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -41,6 +45,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
@@ -364,6 +369,8 @@ private fun DrawScope.drawSoapBubble(bubble: Bubble, scheme: BubbleScheme) =
         rot = bubble.shimmerAngle - bubble.y * SWIRL_PER_PX,
         scheme = scheme,
         wobble = WOBBLE_AMOUNT * sin(bubble.y * WOBBLE_PER_PX + bubble.phase),
+        // Ghost bubbles fade in and out.
+        alpha = bubble.visibility,
     )
 
 private fun DrawScope.drawBubbleIcon(bubble: Bubble, icon: ImageBitmap) {
@@ -422,6 +429,56 @@ private val SHIELD_SCHEME = BubbleScheme(
     crescentColor = Color(0xFFFFFFFF),
 )
 
+private val CLOCK_SCHEME = BubbleScheme(
+    bodyTint      = Color(0xFFB2DFDB),
+    outlineColor  = Color(0xFF64FFDA).copy(alpha = 0.75f),
+    arcAStops     = rainbow(0xFF64FFDA, 0xFFA7FFEB, 0xFF1DE9B6, 0xFFB2DFDB),
+    arcBStops     = rainbow(0xFF00BFA5, 0xFFE0F2F1, 0xFF69F0AE, 0xFFA7FFEB),
+    crescentColor = Color(0xFFA7FFEB),
+)
+
+private val LIGHTNING_SCHEME = BubbleScheme(
+    bodyTint      = Color(0xFFFFF59D),
+    outlineColor  = Color(0xFFFFEA00).copy(alpha = 0.8f),
+    arcAStops     = rainbow(0xFFFFEA00, 0xFF40C4FF, 0xFFFFFFFF, 0xFFFFD600),
+    arcBStops     = rainbow(0xFF00B0FF, 0xFFFFFF8D, 0xFF448AFF, 0xFFFFFFFF),
+    crescentColor = Color(0xFFFFFFFF),
+    sparkleColor  = Color(0xFFFFFF8D),
+)
+
+private val GHOST_SCHEME = BubbleScheme(
+    bodyTint      = Color(0xFFF3E5F5),
+    outlineColor  = Color.White.copy(alpha = 0.6f),
+    arcAStops     = rainbow(0xFFE1BEE7, 0xFFFFFFFF, 0xFFB39DDB, 0xFFF3E5F5),
+    arcBStops     = rainbow(0xFFCE93D8, 0xFFE8EAF6, 0xFFD1C4E9, 0xFFFFFFFF),
+    crescentColor = Color(0xFFFFFFFF),
+)
+
+private val CHAIN_SCHEME = BubbleScheme(
+    bodyTint      = Color(0xFFFFF8E1),
+    outlineColor  = Color(0xFFFFD54F).copy(alpha = 0.85f),
+    arcAStops     = rainbow(0xFFFFD54F, 0xFFB0BEC5, 0xFFFFECB3, 0xFFECEFF1),
+    arcBStops     = rainbow(0xFFFFC107, 0xFFCFD8DC, 0xFFFFF8E1, 0xFFB0BEC5),
+    crescentColor = Color(0xFFFFF8E1),
+)
+
+private val ARMORED_SCHEME = BubbleScheme(
+    bodyTint      = Color(0xFF78909C),
+    outlineColor  = Color(0xFFCFD8DC).copy(alpha = 0.95f),
+    arcAStops     = rainbow(0xFFB0BEC5, 0xFFECEFF1, 0xFF607D8B, 0xFFCFD8DC),
+    arcBStops     = rainbow(0xFF546E7A, 0xFFFFFFFF, 0xFF90A4AE, 0xFFECEFF1),
+    crescentColor = Color(0xFFECEFF1),
+)
+
+private val DOUBLE_SCHEME = BubbleScheme(
+    bodyTint      = Color(0xFFF8BBD0),
+    outlineColor  = Color(0xFFFF4081).copy(alpha = 0.75f),
+    arcAStops     = rainbow(0xFFFF4081, 0xFFFFAB40, 0xFFF50057, 0xFFFF80AB),
+    arcBStops     = rainbow(0xFFFF6E40, 0xFFFFD180, 0xFFFF4081, 0xFFFCE4EC),
+    crescentColor = Color(0xFFFFD180),
+    sparkleColor  = Color(0xFFFFF59D),
+)
+
 /** Normal bubbles take on each world's palette (built once per world). */
 private fun normalScheme(world: World): BubbleScheme = WORLD_SCHEMES.getValue(world)
 
@@ -438,6 +495,11 @@ private fun buildNormalScheme(world: World): BubbleScheme = when (world) {
         bodyTint  = Color(0xFFD1C4E9),
         arcAStops = rainbow(0xFFB388FF, 0xFF8C9EFF, 0xFFEA80FC, 0xFF82B1FF),
         arcBStops = rainbow(0xFF7C4DFF, 0xFF536DFE, 0xFFE040FB, 0xFF448AFF),
+    )
+    World.FROST -> NORMAL_SCHEME.copy(
+        bodyTint  = Color(0xFFE1F5FE),
+        arcAStops = rainbow(0xFFB3E5FC, 0xFFFFFFFF, 0xFF80D8FF, 0xFFE1F5FE),
+        arcBStops = rainbow(0xFF81D4FA, 0xFFF3E5F5, 0xFF4FC3F7, 0xFFFFFFFF),
     )
     World.CANDY -> NORMAL_SCHEME.copy(
         bodyTint  = Color(0xFFFCE4EC),
@@ -526,6 +588,153 @@ private fun DrawScope.drawShieldIcon(center: Offset, r: Float) {
     drawPath(path, Color.White, style = Stroke(width = r * 0.12f))
 }
 
+/** Stopwatch: a round face with a crown button, tick marks and two hands. */
+private fun DrawScope.drawClockIcon(center: Offset, r: Float) {
+    val face = r * 0.78f
+    val faceCenter = Offset(center.x, center.y + r * 0.12f)
+    drawLine(Color.White, Offset(faceCenter.x, faceCenter.y - face), Offset(faceCenter.x, faceCenter.y - face - r * 0.22f), r * 0.2f, StrokeCap.Round)
+    drawCircle(Color(0xFF00897B), face, faceCenter)
+    drawCircle(Color.White, face, faceCenter, style = Stroke(width = r * 0.13f))
+    for (i in 0 until 4) {
+        val angle = i * PI.toFloat() / 2f
+        val outer = Offset(faceCenter.x + face * 0.78f * cos(angle), faceCenter.y + face * 0.78f * sin(angle))
+        val inner = Offset(faceCenter.x + face * 0.6f * cos(angle), faceCenter.y + face * 0.6f * sin(angle))
+        drawLine(Color.White, inner, outer, r * 0.09f, StrokeCap.Round)
+    }
+    drawLine(Color.White, faceCenter, Offset(faceCenter.x, faceCenter.y - face * 0.55f), r * 0.12f, StrokeCap.Round)
+    drawLine(Color.White, faceCenter, Offset(faceCenter.x + face * 0.42f, faceCenter.y + face * 0.12f), r * 0.12f, StrokeCap.Round)
+}
+
+/** A zig-zag lightning bolt, yellow with a dark edge. */
+private fun DrawScope.drawBoltIcon(center: Offset, r: Float) {
+    val bolt = Path().apply {
+        moveTo(center.x + r * 0.25f, center.y - r)
+        lineTo(center.x - r * 0.45f, center.y + r * 0.12f)
+        lineTo(center.x - r * 0.02f, center.y + r * 0.12f)
+        lineTo(center.x - r * 0.25f, center.y + r)
+        lineTo(center.x + r * 0.5f, center.y - r * 0.18f)
+        lineTo(center.x + r * 0.05f, center.y - r * 0.18f)
+        close()
+    }
+    drawPath(bolt, Color(0xFFFFEA00))
+    drawPath(bolt, Color(0xFFE65100), style = Stroke(width = r * 0.1f, join = StrokeJoin.Round))
+}
+
+/** Riveted steel plating across the bubble; once [cracked], a jagged split through it. */
+private fun DrawScope.drawArmorIcon(center: Offset, radius: Float, cracked: Boolean) {
+    val band = radius * 0.32f
+    drawRect(
+        color = Color(0xFF546E7A).copy(alpha = 0.85f),
+        topLeft = Offset(center.x - radius * 0.86f, center.y - band / 2f),
+        size = Size(radius * 1.72f, band),
+    )
+    drawLine(Color.White.copy(alpha = 0.5f), Offset(center.x - radius * 0.86f, center.y - band / 2f), Offset(center.x + radius * 0.86f, center.y - band / 2f), radius * 0.05f)
+    for (i in -1..1) {
+        val rivet = Offset(center.x + i * radius * 0.5f, center.y)
+        drawCircle(Color(0xFFCFD8DC), radius * 0.08f, rivet)
+        drawCircle(Color(0xFF37474F), radius * 0.08f, rivet, style = Stroke(width = radius * 0.03f))
+    }
+    if (cracked) {
+        val crack = Path().apply {
+            moveTo(center.x - radius * 0.1f, center.y - radius * 0.85f)
+            lineTo(center.x + radius * 0.12f, center.y - radius * 0.35f)
+            lineTo(center.x - radius * 0.08f, center.y + radius * 0.05f)
+            lineTo(center.x + radius * 0.18f, center.y + radius * 0.45f)
+            lineTo(center.x - radius * 0.02f, center.y + radius * 0.85f)
+        }
+        drawPath(crack, Color(0xFF263238), style = Stroke(width = radius * 0.1f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        drawPath(crack, Color.White.copy(alpha = 0.7f), style = Stroke(width = radius * 0.04f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
+
+/** A little sheet ghost with two eyes, as see-through as the bubble. */
+private fun DrawScope.drawGhostIcon(center: Offset, r: Float, alpha: Float) {
+    val body = Path().apply {
+        moveTo(center.x - r * 0.7f, center.y + r * 0.85f)
+        lineTo(center.x - r * 0.7f, center.y - r * 0.1f)
+        cubicTo(center.x - r * 0.7f, center.y - r * 1.05f, center.x + r * 0.7f, center.y - r * 1.05f, center.x + r * 0.7f, center.y - r * 0.1f)
+        lineTo(center.x + r * 0.7f, center.y + r * 0.85f)
+        // Wavy hem.
+        quadraticTo(center.x + r * 0.47f, center.y + r * 0.55f, center.x + r * 0.23f, center.y + r * 0.85f)
+        quadraticTo(center.x, center.y + r * 0.55f, center.x - r * 0.23f, center.y + r * 0.85f)
+        quadraticTo(center.x - r * 0.47f, center.y + r * 0.55f, center.x - r * 0.7f, center.y + r * 0.85f)
+        close()
+    }
+    drawPath(body, Color.White.copy(alpha = 0.9f * alpha))
+    drawPath(body, Color(0xFF7E57C2).copy(alpha = alpha), style = Stroke(width = r * 0.1f, join = StrokeJoin.Round))
+    for (side in listOf(-1f, 1f)) {
+        drawCircle(Color(0xFF311B92).copy(alpha = alpha), r * 0.14f, Offset(center.x + side * r * 0.28f, center.y - r * 0.2f))
+    }
+}
+
+/** Two linked chain rings. */
+private fun DrawScope.drawChainIcon(center: Offset, r: Float) {
+    val ring = Stroke(width = r * 0.2f)
+    for ((dx, color) in listOf(-0.32f to Color(0xFFFFB300), 0.32f to Color(0xFF90A4AE))) {
+        drawOval(
+            color = color,
+            topLeft = Offset(center.x + dx * r - r * 0.48f, center.y - r * 0.32f),
+            size = Size(r * 0.96f, r * 0.64f),
+            style = ring,
+        )
+    }
+}
+
+/** The rope between the two bubbles of a chain pair. */
+fun DrawScope.drawChainLink(a: Bubble, b: Bubble) {
+    drawLine(Color(0xFF5D4037).copy(alpha = 0.6f), Offset(a.x, a.y), Offset(b.x, b.y), strokeWidth = 4.dp.toPx(), cap = StrokeCap.Round)
+    drawLine(Color(0xFFFFD54F).copy(alpha = 0.8f), Offset(a.x, a.y), Offset(b.x, b.y), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
+}
+
+/** A lightning bolt from a lightning bubble to what it zapped: a jittering zig-zag that fades. */
+fun DrawScope.drawLightningBolt(bolt: LightningBolt) {
+    val fade = (bolt.life / GameRules.BOLT_SECONDS).coerceIn(0f, 1f)
+    val dx = bolt.to.x - bolt.from.x
+    val dy = bolt.to.y - bolt.from.y
+    val length = hypot(dx, dy).coerceAtLeast(1f)
+    val nx = -dy / length
+    val ny = dx / length
+    val random = kotlin.random.Random(bolt.id + (bolt.life * 30).toInt())
+    val path = Path().apply {
+        moveTo(bolt.from.x, bolt.from.y)
+        for (i in 1 until BOLT_SEGMENTS) {
+            val t = i.toFloat() / BOLT_SEGMENTS
+            val jitter = (random.nextFloat() - 0.5f) * BOLT_JITTER_DP.dp.toPx()
+            lineTo(bolt.from.x + dx * t + nx * jitter, bolt.from.y + dy * t + ny * jitter)
+        }
+        lineTo(bolt.to.x, bolt.to.y)
+    }
+    drawPath(path, Color(0xFF40C4FF).copy(alpha = 0.5f * fade), style = Stroke(width = 7.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+    drawPath(path, Color(0xFFFFFF8D).copy(alpha = fade), style = Stroke(width = 2.5f.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+}
+
+private const val BOLT_SEGMENTS = 7
+private const val BOLT_JITTER_DP = 14f
+
+/** "×2", drawn as strokes so it needs no font. */
+private fun DrawScope.drawDoubleIcon(center: Offset, r: Float) {
+    val stroke = r * 0.2f
+    val outline = stroke + r * 0.14f
+    val cross = r * 0.26f
+    val crossCenter = Offset(center.x - r * 0.42f, center.y + r * 0.18f)
+    val two = Path().apply {
+        val left = center.x + r * 0.02f
+        val right = center.x + r * 0.78f
+        val top = center.y - r * 0.62f
+        val bottom = center.y + r * 0.62f
+        moveTo(left, top + r * 0.3f)
+        cubicTo(left, top - r * 0.05f, right, top - r * 0.08f, right, top + r * 0.32f)
+        cubicTo(right, top + r * 0.62f, left + r * 0.2f, bottom - r * 0.32f, left, bottom)
+        lineTo(right, bottom)
+    }
+    // A dark outline first so the white mark reads on the bright film.
+    for ((color, width) in listOf(Color(0xFFAD1457) to outline, Color.White to stroke)) {
+        drawLine(color, Offset(crossCenter.x - cross, crossCenter.y - cross), Offset(crossCenter.x + cross, crossCenter.y + cross), width, StrokeCap.Round)
+        drawLine(color, Offset(crossCenter.x - cross, crossCenter.y + cross), Offset(crossCenter.x + cross, crossCenter.y - cross), width, StrokeCap.Round)
+        drawPath(two, color, style = Stroke(width = width, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Public draw API
 // ─────────────────────────────────────────────────────────────────────────────
@@ -549,7 +758,8 @@ fun DrawScope.drawGameBubble(
     if (bubble.type != BubbleType.NORMAL) {
         // Special bubbles: the film, then a soft glow in their colour behind the icon.
         drawSoapBubble(bubble, specialScheme(bubble.type))
-        drawCoreGlow(center, bubble.radius, CORE_GLOW_COLORS.getValue(bubble.type))
+        // A fading ghost keeps no glow, so it really does all but vanish.
+        if (bubble.type != BubbleType.GHOST) drawCoreGlow(center, bubble.radius, CORE_GLOW_COLORS.getValue(bubble.type))
     }
     when (bubble.type) {
         BubbleType.NORMAL -> drawSoapBubble(bubble, skinScheme(skinId) ?: normalScheme(world))
@@ -564,6 +774,12 @@ fun DrawScope.drawGameBubble(
         BubbleType.BOMB -> drawBombIcon(center, iconRadius)
         BubbleType.SPLITTER -> drawSplitterIcon(center, iconRadius)
         BubbleType.SHIELD -> drawShieldIcon(center, iconRadius)
+        BubbleType.CLOCK -> drawClockIcon(center, iconRadius)
+        BubbleType.DOUBLE -> drawDoubleIcon(center, iconRadius)
+        BubbleType.LIGHTNING -> drawBoltIcon(center, iconRadius)
+        BubbleType.ARMORED -> drawArmorIcon(center, bubble.radius, bubble.cracked)
+        BubbleType.GHOST -> drawGhostIcon(center, iconRadius, bubble.visibility)
+        BubbleType.CHAIN -> drawChainIcon(center, iconRadius)
     }
 }
 
@@ -576,6 +792,12 @@ private fun specialScheme(type: BubbleType): BubbleScheme = when (type) {
     BubbleType.BOMB -> BOMB_SCHEME
     BubbleType.SPLITTER -> SPLITTER_SCHEME
     BubbleType.SHIELD -> SHIELD_SCHEME
+    BubbleType.CLOCK -> CLOCK_SCHEME
+    BubbleType.DOUBLE -> DOUBLE_SCHEME
+    BubbleType.LIGHTNING -> LIGHTNING_SCHEME
+    BubbleType.ARMORED -> ARMORED_SCHEME
+    BubbleType.GHOST -> GHOST_SCHEME
+    BubbleType.CHAIN -> CHAIN_SCHEME
     BubbleType.NORMAL -> NORMAL_SCHEME
 }
 
@@ -588,6 +810,12 @@ private val CORE_GLOW_COLORS: Map<BubbleType, Color> = mapOf(
     BubbleType.BOMB to Color(0xFFFF6E40),
     BubbleType.SPLITTER to Color(0xFFEA80FC),
     BubbleType.SHIELD to Color(0xFFECEFF1),
+    BubbleType.CLOCK to Color(0xFF1DE9B6),
+    BubbleType.DOUBLE to Color(0xFFFF4081),
+    BubbleType.LIGHTNING to Color(0xFFFFEA00),
+    BubbleType.ARMORED to Color(0xFF90A4AE),
+    BubbleType.GHOST to Color(0xFFE1BEE7),
+    BubbleType.CHAIN to Color(0xFFFFD54F),
 )
 
 /** Unit-radius glow brushes, one per colour, built once. */
@@ -670,6 +898,23 @@ private const val HAZARD_DASH_DP = 6f
  * cracks below ⅔ and ⅓ HP, and a white flash + wobble when hit.
  */
 fun DrawScope.drawBoss(boss: BossBubble, world: World, time: Float) {
+    if (boss.visibility >= 1f) return drawBossBody(boss, world, time)
+    // A fading Phantom: drawn see-through, never quite gone, so the eye can still follow it.
+    val reach = boss.radius * BOSS_LAYER_REACH
+    drawIntoCanvas { canvas ->
+        canvas.saveLayer(
+            Rect(boss.x - reach, boss.y - reach, boss.x + reach, boss.y + reach),
+            Paint().apply { alpha = boss.visibility.coerceAtLeast(PHANTOM_MIN_ALPHA) },
+        )
+    }
+    drawBossBody(boss, world, time)
+    drawIntoCanvas { it.restore() }
+}
+
+private const val BOSS_LAYER_REACH = 1.6f
+private const val PHANTOM_MIN_ALPHA = 0.08f
+
+private fun DrawScope.drawBossBody(boss: BossBubble, world: World, time: Float) {
     val flash = (boss.hitFlash / GameRules.BOSS_HIT_FLASH_SECONDS).coerceIn(0f, 1f)
     val wobble = 1f + 0.08f * flash * sin(time * 60f)
     val r = boss.radius * wobble
@@ -703,13 +948,114 @@ fun DrawScope.drawBoss(boss: BossBubble, world: World, time: Float) {
     if (boss.generation == 0) drawCrown(Offset(center.x, center.y - r), r * 0.45f)
 
     if (flash > 0f) drawCircle(Color.White.copy(alpha = 0.45f * flash), r, center)
+    if (boss.enraged) drawRageGlow(center, r, time)
+    if (boss.shielded) drawIceShield(center, r, time)
+    if (boss.blastOnly) drawBlastArmor(center, r)
+    if (boss.plates > 0) drawPlates(center, r, boss.plates)
 }
+
+/** Bomb armor: a thick riveted steel ring — taps bounce off. */
+private fun DrawScope.drawBlastArmor(center: Offset, r: Float) {
+    val ring = r * 1.04f
+    drawCircle(Color(0xFF455A64).copy(alpha = 0.85f), ring, center, style = Stroke(width = r * 0.16f))
+    drawCircle(Color.White.copy(alpha = 0.45f), ring + r * 0.06f, center, style = Stroke(width = 1.5f.dp.toPx()))
+    for (i in 0 until ARMOR_RIVETS) {
+        val angle = i * 2f * PI.toFloat() / ARMOR_RIVETS
+        drawCircle(Color(0xFFCFD8DC), r * 0.05f, Offset(center.x + ring * cos(angle), center.y + ring * sin(angle)))
+    }
+}
+
+/** Armor plates: one steel shell segment per plate left, around the top of the boss. */
+private fun DrawScope.drawPlates(center: Offset, r: Float, plates: Int) {
+    val reach = r * 1.02f
+    val sweep = 360f / MAX_PLATES - PLATE_GAP_DEGREES
+    for (i in 0 until plates) {
+        val start = -90f + i * 360f / MAX_PLATES - sweep / 2f
+        drawArc(
+            color = Color(0xFF90A4AE),
+            startAngle = start,
+            sweepAngle = sweep,
+            useCenter = false,
+            topLeft = Offset(center.x - reach, center.y - reach),
+            size = Size(reach * 2, reach * 2),
+            style = Stroke(width = r * 0.22f, cap = StrokeCap.Butt),
+        )
+        drawArc(
+            color = Color.White.copy(alpha = 0.6f),
+            startAngle = start,
+            sweepAngle = sweep,
+            useCenter = false,
+            topLeft = Offset(center.x - reach - r * 0.1f, center.y - reach - r * 0.1f),
+            size = Size((reach + r * 0.1f) * 2, (reach + r * 0.1f) * 2),
+            style = Stroke(width = 1.5f.dp.toPx()),
+        )
+    }
+}
+
+private const val ARMOR_RIVETS = 10
+private const val MAX_PLATES = 3
+private const val PLATE_GAP_DEGREES = 14f
+
+/** A pulsing red halo around an enraged boss. */
+private fun DrawScope.drawRageGlow(center: Offset, r: Float, time: Float) {
+    val pulse = 0.5f + 0.5f * sin(time * RAGE_PULSE_SPEED)
+    val reach = r * (1.25f + 0.1f * pulse)
+    drawCircle(
+        Brush.radialGradient(
+            0.7f to BossRageColor.copy(alpha = 0f),
+            0.85f to BossRageColor.copy(alpha = 0.35f + 0.25f * pulse),
+            1f to BossRageColor.copy(alpha = 0f),
+            center = center,
+            radius = reach,
+        ),
+        reach,
+        center,
+    )
+}
+
+/** A frosted dome with a slowly turning ring of ice shards: the boss can't be hurt. */
+private fun DrawScope.drawIceShield(center: Offset, r: Float, time: Float) {
+    val dome = r * 1.12f
+    drawCircle(
+        Brush.radialGradient(
+            0f to IceShieldColor.copy(alpha = 0.08f),
+            0.8f to IceShieldColor.copy(alpha = 0.22f),
+            1f to IceShieldColor.copy(alpha = 0.5f),
+            center = center,
+            radius = dome,
+        ),
+        dome,
+        center,
+    )
+    drawCircle(Color.White.copy(alpha = 0.8f), dome, center, style = Stroke(width = 2.5f.dp.toPx()))
+    val turn = time * ICE_SHARD_TURN_SPEED
+    for (i in 0 until ICE_SHARDS) {
+        val angle = turn + i * 2f * PI.toFloat() / ICE_SHARDS
+        val tip = Offset(center.x + (dome + r * 0.16f) * cos(angle), center.y + (dome + r * 0.16f) * sin(angle))
+        val side = r * 0.07f
+        val shard = Path().apply {
+            moveTo(tip.x, tip.y)
+            lineTo(center.x + dome * cos(angle - 0.06f) - side * sin(angle), center.y + dome * sin(angle - 0.06f) + side * cos(angle))
+            lineTo(center.x + dome * cos(angle + 0.06f) + side * sin(angle), center.y + dome * sin(angle + 0.06f) - side * cos(angle))
+            close()
+        }
+        drawPath(shard, IceShieldColor)
+        drawPath(shard, Color.White, style = Stroke(width = 1.dp.toPx()))
+    }
+}
+
+private val BossRageColor = Color(0xFFFF1744)
+private val IceShieldColor = Color(0xFF80D8FF)
+private const val RAGE_PULSE_SPEED = 8f
+private const val ICE_SHARDS = 8
+private const val ICE_SHARD_TURN_SPEED = 0.6f
 
 private fun worldBossTint(world: World): Color = when (world) {
     World.SKY -> Color(0xFF90CAF9)
     World.OCEAN -> Color(0xFFCE93D8)
     World.SPACE -> Color(0xFF7C4DFF)
     World.CANDY -> Color(0xFFFF80AB)
+    World.FROST -> Color(0xFFB3E5FC)
 }
 
 /** Zig-zag cracks from the rim inwards; positions come from [seed] so they don't flicker. */

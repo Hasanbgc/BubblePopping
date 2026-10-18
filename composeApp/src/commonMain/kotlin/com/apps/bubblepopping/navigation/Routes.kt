@@ -1,5 +1,6 @@
 package com.apps.bubblepopping.navigation
 
+import com.apps.bubblepopping.meta.Booster
 import androidx.navigation3.runtime.NavKey
 import com.apps.bubblepopping.game.GameMode
 import kotlinx.serialization.Serializable
@@ -9,8 +10,9 @@ sealed class Routes: NavKey{
     @Serializable
     object Home: Routes()
 
+    /** A round of [mode], with the [boosters] bought for it on the stage card. */
     @Serializable
-    data class Play(val mode: GameMode): Routes()
+    data class Play(val mode: GameMode, val boosters: Set<Booster> = emptySet()): Routes()
 
     @Serializable
     object Ranking: Routes()

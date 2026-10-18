@@ -59,6 +59,11 @@ class GameSounds(private val sound: SoundManager) {
     fun bomb() = sound.play(sample = 0, rate = 0.5f)
     fun shield() = sound.play(sample = 1, rate = 1.3f)
     fun windSave() = sound.play(sample = 2, rate = 1.5f)
+    fun clock() = sound.play(sample = 1, rate = 1.6f)
+    fun double() = sound.play(sample = 2, rate = 1.8f)
+    fun lightning() = sound.play(sample = 2, rate = 2f)
+    fun armorCrack() = sound.play(sample = 1, rate = 0.6f)
+    fun armorPop() = sound.play(sample = 0, rate = 0.8f)
     fun bossHit() = sound.play(sample = Random.nextInt(sound.sampleCount), rate = 0.8f)
 
     /** Short rising arpeggio. */

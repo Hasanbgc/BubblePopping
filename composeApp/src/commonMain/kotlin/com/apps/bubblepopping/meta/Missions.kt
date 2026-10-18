@@ -115,44 +115,49 @@ object MissionCatalog {
 
     /** Every possible mission, grouped by kind. */
     fun templates(context: MissionContext): Map<MissionKind, List<Mission>> = buildMap {
-        put(MissionKind.POP_BUBBLES, tiers(MissionKind.POP_BUBBLES, 150 to 30, 300 to 50, 500 to 80))
+        put(MissionKind.POP_BUBBLES, tiers(MissionKind.POP_BUBBLES, 150 to 10, 300 to 15, 500 to 25))
         put(
             MissionKind.POP_TYPE,
             buildList {
-                add(Mission(MissionKind.POP_TYPE, 3, 30, bubbleType = BubbleType.HEART))
+                add(Mission(MissionKind.POP_TYPE, 3, 10, bubbleType = BubbleType.HEART))
                 for ((type, target, reward) in TYPE_MISSIONS) {
                     if (type in context.unlockedTypes) add(Mission(MissionKind.POP_TYPE, target, reward, bubbleType = type))
                 }
             },
         )
-        put(MissionKind.REACH_COMBO, tiers(MissionKind.REACH_COMBO, 8 to 30, 10 to 40, 15 to 60))
-        put(MissionKind.ENDLESS_SCORE, tiers(MissionKind.ENDLESS_SCORE, 80 to 30, 150 to 50, 250 to 80))
+        put(MissionKind.REACH_COMBO, tiers(MissionKind.REACH_COMBO, 8 to 10, 10 to 15, 15 to 20))
+        put(MissionKind.ENDLESS_SCORE, tiers(MissionKind.ENDLESS_SCORE, 80 to 10, 150 to 15, 250 to 25))
         put(
             MissionKind.ENDLESS_SURVIVE,
             buildList {
-                add(Mission(MissionKind.ENDLESS_SURVIVE, 60, 40, difficulty = Difficulty.MEDIUM))
-                if (context.hardUnlocked) add(Mission(MissionKind.ENDLESS_SURVIVE, 90, 70, difficulty = Difficulty.HARD))
+                add(Mission(MissionKind.ENDLESS_SURVIVE, 60, 15, difficulty = Difficulty.MEDIUM))
+                if (context.hardUnlocked) add(Mission(MissionKind.ENDLESS_SURVIVE, 90, 25, difficulty = Difficulty.HARD))
             },
         )
-        put(MissionKind.REACH_WAVE, tiers(MissionKind.REACH_WAVE, 3 to 30, 4 to 45, 5 to 60))
-        put(MissionKind.STAGE_STARS, tiers(MissionKind.STAGE_STARS, 3 to 50))
-        put(MissionKind.CLEAR_STAGES, tiers(MissionKind.CLEAR_STAGES, 3 to 40, 5 to 60))
-        put(MissionKind.WIND_SAVES, tiers(MissionKind.WIND_SAVES, 5 to 40))
+        put(MissionKind.REACH_WAVE, tiers(MissionKind.REACH_WAVE, 3 to 10, 4 to 15, 5 to 20))
+        put(MissionKind.STAGE_STARS, tiers(MissionKind.STAGE_STARS, 3 to 20))
+        put(MissionKind.CLEAR_STAGES, tiers(MissionKind.CLEAR_STAGES, 3 to 15, 5 to 20))
+        put(MissionKind.WIND_SAVES, tiers(MissionKind.WIND_SAVES, 5 to 15))
         if (BubbleType.BOMB in context.unlockedTypes) {
-            put(MissionKind.BOMB_CHAIN, tiers(MissionKind.BOMB_CHAIN, 5 to 50))
+            put(MissionKind.BOMB_CHAIN, tiers(MissionKind.BOMB_CHAIN, 4 to 20))
         }
-        put(MissionKind.DAILY_CHALLENGE, tiers(MissionKind.DAILY_CHALLENGE, 1 to 30))
-        put(MissionKind.PLAY_ROUNDS, tiers(MissionKind.PLAY_ROUNDS, 5 to 25))
+        put(MissionKind.DAILY_CHALLENGE, tiers(MissionKind.DAILY_CHALLENGE, 1 to 10))
+        put(MissionKind.PLAY_ROUNDS, tiers(MissionKind.PLAY_ROUNDS, 5 to 10))
     }
 
     private fun tiers(kind: MissionKind, vararg targetAndReward: Pair<Int, Int>) =
         targetAndReward.map { (target, reward) -> Mission(kind, target, reward) }
 
     private val TYPE_MISSIONS = listOf(
-        Triple(BubbleType.GOLDEN, 3, 40),
-        Triple(BubbleType.FREEZE, 2, 30),
-        Triple(BubbleType.BOMB, 2, 30),
-        Triple(BubbleType.SPLITTER, 3, 30),
-        Triple(BubbleType.SHIELD, 2, 30),
+        Triple(BubbleType.GOLDEN, 3, 15),
+        Triple(BubbleType.FREEZE, 2, 10),
+        Triple(BubbleType.BOMB, 2, 10),
+        Triple(BubbleType.SPLITTER, 3, 10),
+        Triple(BubbleType.SHIELD, 2, 10),
+        Triple(BubbleType.DOUBLE, 2, 10),
+        Triple(BubbleType.LIGHTNING, 2, 10),
+        Triple(BubbleType.ARMORED, 5, 15),
+        Triple(BubbleType.GHOST, 6, 15),
+        Triple(BubbleType.CHAIN, 6, 15),
     )
 }
