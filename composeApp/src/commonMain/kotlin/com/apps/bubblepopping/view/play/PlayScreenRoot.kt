@@ -25,6 +25,10 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
+import kotlin.math.ceil
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
@@ -105,7 +109,7 @@ import com.apps.bubblepopping.view.play.component.drawPopAnimation
 import org.jetbrains.compose.resources.painterResource
 
 /** Pop sounds; one is picked at random per pop. */
-private val POP_SAMPLES = listOf("files/pop_1.mp3", "files/pop_2.mp3", "files/pop_3.mp3")
+private val POP_SAMPLES = listOf("files/pop_1.wav", "files/pop_2.wav", "files/pop_3.wav")
 
 /** Breaking a combo this long or longer plays the combo-break sound. */
 private const val COMBO_BREAK_SOUND_MIN = 3
@@ -123,6 +127,9 @@ private val SWIPE_THRESHOLD = 24.dp
 
 private const val FREEZE_TINT_ALPHA = 0.12f
 private const val STING_TINT_ALPHA = 0.15f
+
+/** Floating texts kept laid out at once (the measurer re-lays out any it has dropped). */
+private const val TEXT_LAYOUT_CACHE = 24
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BubblePoppingScreen
@@ -334,7 +341,8 @@ fun BubblePoppingScreen(
         }
     }
 
-    val textMeasurer = rememberTextMeasurer()
+    // Room for every floating text on screen at once, so none is laid out twice.
+    val textMeasurer = rememberTextMeasurer(cacheSize = TEXT_LAYOUT_CACHE)
     val fontFamily   = BalooFontFamily()
 
     // ── Game-area top offset from live WindowInsets ──────────────────────────
@@ -346,20 +354,38 @@ fun BubblePoppingScreen(
     val topOffsetPx  = (statusBarPx + hudContentPx).toFloat()
 
     // ── Frame loop ───────────────────────────────────────────────────────────
+    // Runs only while something can move. Paused, held by the tutorial, or over
+    // with every effect finished, it asks for no frames at all and waits for that
+    // to change, so an idle screen costs no battery.
     LaunchedEffect(Unit) {
-        var lastFrameNanos = 0L
         while (true) {
-            withFrameNanos { frameNanos ->
-                val delta = if (lastFrameNanos == 0L) 0f
-                            else (frameNanos - lastFrameNanos) / 1_000_000_000f
-                lastFrameNanos = frameNanos
-                if (!viewModel.isGameOver && !viewModel.isPaused.value) {
-                    elapsedTime += delta
+            snapshotFlow { isPaused || currentHoldRound || viewModel.isAtRest }.first { idle -> !idle }
+            var lastFrameNanos = 0L
+            while (!isPaused && !currentHoldRound && !viewModel.isAtRest) {
+                withFrameNanos { frameNanos ->
+                    val delta = if (lastFrameNanos == 0L) 0f
+                                else (frameNanos - lastFrameNanos) / 1_000_000_000f
+                    lastFrameNanos = frameNanos
+                    if (!viewModel.isGameOver) elapsedTime += delta
+                    // Also after game over: the ViewModel keeps effects (bursts,
+                    // floating text, shake) and the revive countdown going.
+                    viewModel.update(delta)
                 }
-                // Always called (except while the tutorial holds the round): the
-                // ViewModel ignores pause itself, and keeps effects (bursts,
-                // floating text, shake) animating after game over.
-                if (!currentHoldRound) viewModel.update(delta)
+            }
+        }
+    }
+
+    // Values that change every frame, turned into what the overlays actually show,
+    // so they recompose only when that changes.
+    val isFrozen by remember(viewModel) { derivedStateOf { viewModel.freezeTimeLeft > 0f } }
+    val freezeSecondsLeft by remember(viewModel) { derivedStateOf { ceil(viewModel.freezeTimeLeft).toInt() } }
+    val isTapLocked by remember(viewModel) { derivedStateOf { viewModel.tapLockLeft > 0f } }
+    val breezeDirection by remember(viewModel) {
+        derivedStateOf {
+            when {
+                viewModel.breeze < -WIND_ACTIVE -> -1
+                viewModel.breeze > WIND_ACTIVE -> 1
+                else -> 0
             }
         }
     }
@@ -371,24 +397,7 @@ fun BubblePoppingScreen(
             world = viewModel.world,
             backgroundId = settings.equippedBackground.takeIf { viewModel.stage == null },
         )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color.Black.copy(0.2f),
-
-                        )
-                    )
-                )
-        )
-        {
-            // Establish state dependency so the Canvas recomposes every frame even
-            // when bubble positions mutate in-place (not observed individually).
-            // effectFrame also ticks after game over, so bursts and texts finish.
-            val effectFrame = viewModel.effectFrame
+        Box(modifier = Modifier.fillMaxSize()) {
 
             // ── Game canvas ──────────────────────────────────────────────────────
             // Full-screen so the background gradient is always seamless.
@@ -433,6 +442,10 @@ fun BubblePoppingScreen(
                         }
                     }
             )  {
+                // Bubbles move in place without notifying anyone; reading effectFrame
+                // here redraws the canvas every frame (also after game over, so
+                // bursts and texts finish) without recomposing the screen.
+                viewModel.effectFrame
                 drawBreezeLines(viewModel.breeze, elapsedTime)
 
                 // Bosses sit behind the bubbles (a skull in front of a boss gets tapped first).
@@ -463,7 +476,7 @@ fun BubblePoppingScreen(
             }
 
             // ── Sting tint (taps locked) ─────────────────────────────────────────
-            if (viewModel.tapLockLeft > 0f) {
+            if (isTapLocked) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -472,7 +485,7 @@ fun BubblePoppingScreen(
             }
 
             // ── Freeze tint ──────────────────────────────────────────────────────
-            if (viewModel.freezeTimeLeft > 0f) {
+            if (isFrozen) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -507,7 +520,7 @@ fun BubblePoppingScreen(
                 BreezeControls(
                     onBreezeLeft  = { viewModel.triggerBreeze(-1f) },
                     onBreezeRight = { viewModel.triggerBreeze(+1f) },
-                    breeze        = viewModel.breeze,
+                    breezeDirection = breezeDirection,
                     modifier      = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
@@ -525,10 +538,10 @@ fun BubblePoppingScreen(
                     viewModel.togglePause()
                 },
                 modifier = Modifier.align(Alignment.TopStart),
-                comboTimeLeft = viewModel.comboTimeLeft,
+                comboTimeLeft = { viewModel.comboTimeLeft },
                 comboMultiplier = viewModel.comboMultiplier,
                 shieldActive = viewModel.shieldActive,
-                freezeTimeLeft = viewModel.freezeTimeLeft,
+                freezeSecondsLeft = freezeSecondsLeft,
             )
 
             // ── Stage: timer + goal progress under the HUD ──────────────────────
@@ -554,7 +567,7 @@ fun BubblePoppingScreen(
                 // ── Endless: wave progress under the HUD, banner between waves ──
                 WavePill(
                     wave     = viewModel.wave,
-                    progress = viewModel.waveProgress,
+                    progress = { viewModel.waveProgress },
                     isCalm   = viewModel.isWaveCalm,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
@@ -686,12 +699,12 @@ private fun PauseOverlay(
 // BreezeControls
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Optional on-screen wind buttons (swiping always works). The active side lights up blue. */
+/** Optional on-screen wind buttons (swiping always works). The side of [breezeDirection] (-1, 0 or +1) lights up blue. */
 @Composable
 private fun BreezeControls(
     onBreezeLeft: () -> Unit,
     onBreezeRight: () -> Unit,
-    breeze: Float,
+    breezeDirection: Int,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -702,14 +715,14 @@ private fun BreezeControls(
         GameButton(
             text = "← Wind",
             onClick = onBreezeLeft,
-            color = if (breeze < -WIND_ACTIVE) ButtonColor.BLUE else ButtonColor.GLASS,
+            color = if (breezeDirection < 0) ButtonColor.BLUE else ButtonColor.GLASS,
             size = ButtonSize.SMALL,
             icon = GameIcons.Wind,
         )
         GameButton(
             text = "Wind →",
             onClick = onBreezeRight,
-            color = if (breeze > WIND_ACTIVE) ButtonColor.BLUE else ButtonColor.GLASS,
+            color = if (breezeDirection > 0) ButtonColor.BLUE else ButtonColor.GLASS,
             size = ButtonSize.SMALL,
             icon = GameIcons.Wind,
         )

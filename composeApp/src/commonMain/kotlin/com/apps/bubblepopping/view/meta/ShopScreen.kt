@@ -2,6 +2,9 @@ package com.apps.bubblepopping.view.meta
 
 import com.apps.bubblepopping.ui.theme.GameTheme
 import com.apps.bubblepopping.ui.theme.GameColors
+import com.apps.bubblepopping.ui.components.ProvideAmbientClock
+import com.apps.bubblepopping.ui.components.ambientLoop
+import com.apps.bubblepopping.ui.components.ambientTime
 import com.apps.bubblepopping.ui.components.sunkenWell
 import com.apps.bubblepopping.ui.components.ResourcePill
 import com.apps.bubblepopping.ui.components.OutlinedText
@@ -10,12 +13,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.Image
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -115,7 +112,8 @@ fun ShopScreen(
     val kind = CosmeticKind.entries[tab]
 
     // The grid scrolls itself, so the screen column doesn't.
-    GameScreen(title = "Shop", onBack = onBack, actions = { CoinCounter() }, scrollable = false) {
+    // The cards' previews animate, so the content isn't cached.
+    GameScreen(title = "Shop", onBack = onBack, actions = { CoinCounter() }, scrollable = false, cacheContent = false) {
         GameTabs(
             options = CosmeticKind.entries.map { it.title },
             selected = tab,
@@ -127,23 +125,26 @@ fun ShopScreen(
             OutlinedText("Collection", GameTheme.type.headline, maxLines = 1, modifier = Modifier.weight(1f))
             ResourcePill(GameIcons.Check, "${items.count { it.id in owned }}/${items.size} owned", tint = GameColors.Success)
         }
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            // Room at the sides and ends for the cards' outlines and shadows, which sit outside them.
-            contentPadding = PaddingValues(horizontal = GRID_EDGE, vertical = Spacing.s),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.m),
-            verticalArrangement = Arrangement.spacedBy(Spacing.m),
-            modifier = Modifier.weight(1f),
-        ) {
-            items(items, key = { it.id }) { cosmetic ->
-                ShopItem(
-                    cosmetic = cosmetic,
-                    owned = cosmetic.id in owned,
-                    equipped = settings.equipped(kind) == cosmetic.id,
-                    affordable = (cosmetic.price ?: 0) <= coins,
-                    onBuy = { onBuy(cosmetic) },
-                    onEquip = { onEquip(cosmetic) },
-                )
+        // The sky is still here; the previews get a clock of their own.
+        ProvideAmbientClock {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                // Room at the sides and ends for the cards' outlines and shadows, which sit outside them.
+                contentPadding = PaddingValues(horizontal = GRID_EDGE, vertical = Spacing.s),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.m),
+                verticalArrangement = Arrangement.spacedBy(Spacing.m),
+                modifier = Modifier.weight(1f),
+            ) {
+                items(items, key = { it.id }) { cosmetic ->
+                    ShopItem(
+                        cosmetic = cosmetic,
+                        owned = cosmetic.id in owned,
+                        equipped = settings.equipped(kind) == cosmetic.id,
+                        affordable = (cosmetic.price ?: 0) <= coins,
+                        onBuy = { onBuy(cosmetic) },
+                        onEquip = { onEquip(cosmetic) },
+                    )
+                }
             }
         }
         // A short note in a sunken strip.
@@ -211,26 +212,23 @@ private val CosmeticRarity.cardTier: CardTier
 
 /**
  * A looping preview: a turning bubble, a repeating pop, or the background colours.
- * [glow] lights the item from behind (the shop card's tier colour).
+ * [glow] lights the item from behind (the shop card's tier colour). Loops on the
+ * screen's [ambientTime], read only while drawing.
  */
 @Composable
-fun CosmeticPreview(cosmetic: Cosmetic, modifier: Modifier = Modifier, glow: Color = Color.Transparent) {
-    val transition = rememberInfiniteTransition(label = "preview")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(PREVIEW_LOOP_MS, easing = LinearEasing), RepeatMode.Restart),
-        label = "preview_phase",
-    )
+fun CosmeticPreview(cosmetic: Cosmetic, modifier: Modifier = Modifier, glow: () -> Color = { Color.Transparent }) {
+    val clock = ambientTime()
     val background = when (cosmetic.kind) {
         CosmeticKind.BACKGROUND -> playBackgroundColors(cosmetic.id) ?: worldMapColors(World.SKY)
         else -> listOf(Color(0xFF0D47A1), Color(0xFF1976D2))
     }
     Canvas(modifier.background(Brush.verticalGradient(background))) {
+        val phase = ambientLoop(clock.value, PREVIEW_LOOP_MS)
         val center = Offset(size.width / 2f, size.height / 2f)
         val radius = size.minDimension * 0.28f
-        if (glow.alpha > 0f) {
-            drawCircle(Brush.radialGradient(listOf(glow, Color.Transparent), center, radius * 2.2f), radius * 2.2f, center)
+        val glowColor = glow()
+        if (glowColor.alpha > 0f) {
+            drawCircle(Brush.radialGradient(listOf(glowColor, Color.Transparent), center, radius * 2.2f), radius * 2.2f, center)
         }
         when (cosmetic.kind) {
             CosmeticKind.SKIN -> drawSkinPreview(cosmetic.id, center, radius, rotation = phase * 360f)

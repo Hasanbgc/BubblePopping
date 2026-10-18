@@ -24,7 +24,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -46,7 +49,6 @@ import com.apps.bubblepopping.ui.theme.BubbleTheme
 import com.apps.bubblepopping.ui.theme.GameColors
 import com.apps.bubblepopping.ui.theme.GameTheme
 import com.apps.bubblepopping.ui.theme.Spacing
-import kotlin.math.ceil
 
 /** Height of the HUD content row (below the status bar). Bubbles escape at its bottom edge. */
 internal val HUD_CONTENT_HEIGHT: Dp = 56.dp
@@ -63,10 +65,10 @@ fun GameHud(
     isPaused: Boolean,
     onPlayPauseClick: () -> Unit,
     modifier: Modifier = Modifier,
-    comboTimeLeft: Float = 0f,
+    comboTimeLeft: () -> Float = { 0f },
     comboMultiplier: Int = 1,
     shieldActive: Boolean = false,
-    freezeTimeLeft: Float = 0f,
+    freezeSecondsLeft: Int = 0,
 ) {
     Box(
         modifier = modifier
@@ -91,7 +93,7 @@ fun GameHud(
                     horizontalArrangement = Arrangement.spacedBy(Spacing.s),
                 ) {
                     LivesView(lives = lives)
-                    PowerUpBadges(shieldActive = shieldActive, freezeTimeLeft = freezeTimeLeft)
+                    PowerUpBadges(shieldActive = shieldActive, freezeSecondsLeft = freezeSecondsLeft)
                 }
             },
             center = {
@@ -127,9 +129,9 @@ fun LivesView(lives: Int, modifier: Modifier = Modifier) {
     }
 }
 
-/** A shield badge while a shield is ready; a snowflake with seconds left while frozen. */
+/** A shield badge while a shield is ready; a snowflake with [freezeSecondsLeft] while frozen. */
 @Composable
-fun PowerUpBadges(shieldActive: Boolean, freezeTimeLeft: Float, modifier: Modifier = Modifier) {
+fun PowerUpBadges(shieldActive: Boolean, freezeSecondsLeft: Int, modifier: Modifier = Modifier) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.s),
@@ -140,8 +142,8 @@ fun PowerUpBadges(shieldActive: Boolean, freezeTimeLeft: Float, modifier: Modifi
                 Image(GameIcons.Shield, contentDescription = null, modifier = Modifier.size(HUD_ICON))
             }
         }
-        if (freezeTimeLeft > 0f) {
-            val seconds = ceil(freezeTimeLeft).toInt()
+        if (freezeSecondsLeft > 0) {
+            val seconds = freezeSecondsLeft
             HudPill(GameColors.PillFreeze, Modifier.semantics { contentDescription = "Frozen, $seconds seconds left" }) {
                 Image(GameIcons.Snowflake, contentDescription = null, modifier = Modifier.size(HUD_ICON))
                 OutlinedText("$seconds", GameTheme.type.label, color = GameColors.FreezeText)
@@ -215,7 +217,8 @@ private fun HudRow(
 /**
  * The score on a gold enamel capsule. The number springs towards [score] on
  * each increase. While a combo runs, a gold bar under the capsule drains as
- * [comboTimeLeft] goes 1 → 0, and a gold candy badge with the multiplier
+ * [comboTimeLeft] goes 1 → 0 (read only while laying out the bar, so the
+ * draining never recomposes the HUD), and a gold candy badge with the multiplier
  * ("×3") sits on the capsule's corner. The bar's space is always kept, so the
  * capsule never jumps.
  */
@@ -223,7 +226,7 @@ private fun HudRow(
 fun ScoreView(
     score: Int,
     modifier: Modifier = Modifier,
-    comboTimeLeft: Float = 0f,
+    comboTimeLeft: () -> Float = { 0f },
     comboMultiplier: Int = 1,
 ) {
     val displayed by animateIntAsState(
@@ -231,7 +234,8 @@ fun ScoreView(
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "score",
     )
-    val comboRunning = comboTimeLeft > 0f
+    val currentComboTimeLeft by rememberUpdatedState(comboTimeLeft)
+    val comboRunning by remember { derivedStateOf { currentComboTimeLeft() > 0f } }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(COMBO_BAR_GAP),
@@ -299,10 +303,10 @@ fun GameHudPreview() {
                 lives = 3,
                 isPaused = false,
                 onPlayPauseClick = {},
-                comboTimeLeft = 0.6f,
+                comboTimeLeft = { 0.6f },
                 comboMultiplier = 3,
                 shieldActive = true,
-                freezeTimeLeft = 2.2f,
+                freezeSecondsLeft = 3,
             )
         }
     }

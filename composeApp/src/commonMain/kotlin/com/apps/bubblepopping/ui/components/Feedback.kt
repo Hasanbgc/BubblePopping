@@ -44,6 +44,6 @@ fun UiFeedbackProvider(
     CompositionLocalProvider(LocalUiFeedback provides feedback, content = content)
 }
 
-private const val CLICK_SAMPLE = "files/pop_2.mp3"
+private const val CLICK_SAMPLE = "files/pop_2.wav"
 /** Pitched up: a quick, light "tick" rather than a full bubble pop. */
 private const val CLICK_RATE = 1.7f

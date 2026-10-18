@@ -34,6 +34,7 @@ import com.apps.bubblepopping.view.meta.TodayScreenRoot
 import com.apps.bubblepopping.view.settings.SettingsScreenRoot
 import com.apps.bubblepopping.ui.components.UiFeedbackProvider
 import com.apps.bubblepopping.ui.components.BottomDock
+import com.apps.bubblepopping.ui.components.LimitFrameRate
 import com.apps.bubblepopping.ui.components.DockItem
 import com.apps.bubblepopping.ui.components.LocalBottomDockHeight
 import com.apps.bubblepopping.ui.icons.GameIcons
@@ -84,6 +85,8 @@ fun NavGraph(
     onExitApp: (() -> Unit)? = null,
 ) {
     BubbleTheme {
+        // The whole app is tuned for 60 fps; 90 and 120 Hz would only add heat.
+        LimitFrameRate(APP_MAX_FPS)
         UiFeedbackProvider(container.settingsRepository, hapticFeedback) {
             PlayerResourcesProvider(container) {
                 AppNavigation(container, hapticFeedback, onExitApp)
@@ -91,6 +94,9 @@ fun NavGraph(
         }
     }
 }
+
+/** The app never asks the display for more than this. */
+private const val APP_MAX_FPS = 60f
 
 /** Keeps coins and stars up to date for every top bar. */
 @Composable

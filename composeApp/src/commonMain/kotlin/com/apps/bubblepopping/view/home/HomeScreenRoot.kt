@@ -135,7 +135,9 @@ fun HomeContent(
     /** Shows the close button; null hides it. */
     onCloseClick: (() -> Unit)? = null,
 ) {
-    GameBackground(modifier, style = BackgroundStyle.ART) {
+    // The mode cards' PLAY buttons breathe, so the content isn't cached.
+    // The mode cards' PLAY buttons breathe on the ambient clock, so the content isn't cached.
+    GameBackground(modifier, style = BackgroundStyle.ART, animated = true, cacheContent = false) {
         Column(
             modifier = Modifier
                 .fillMaxSize()

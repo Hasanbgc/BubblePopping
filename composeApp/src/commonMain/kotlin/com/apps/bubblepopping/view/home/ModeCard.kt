@@ -9,7 +9,6 @@ import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.Box
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -17,14 +16,9 @@ import androidx.compose.ui.graphics.drawscope.scale
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -42,6 +36,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.apps.bubblepopping.ui.components.ambientPingPong
+import com.apps.bubblepopping.ui.components.ambientTime
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -93,7 +89,8 @@ fun ModeCard(
 /**
  * [ModeCard] with drawn [art] (given the modifier that sizes it), an optional
  * [subtitle] under the title, and a [locked] state: dimmed art, a greyed-out slate
- * LOCKED button instead of PLAY (not breathing), and no press.
+ * LOCKED button instead of PLAY (not breathing), and no press. With [breathing] off
+ * the PLAY button stays still too (a card out of focus).
  *
  * The card is a raised candy tile: a darker lip of its own colour underneath and a
  * soft shadow, a gold rim with an engraved light line inside it, soft rays and a
@@ -108,6 +105,7 @@ fun ModeCard(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     locked: Boolean = false,
+    breathing: Boolean = true,
     artSize: Dp = ART_SIZE,
     art: @Composable (Modifier) -> Unit,
     info: @Composable () -> Unit,
@@ -119,16 +117,11 @@ fun ModeCard(
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessHigh),
         label = "mode_card_press",
     )
-    // The PLAY button breathes; locked cards stay still. Read only in layers, so it never
-    // recomposes or redraws the card.
-    val breath = if (!locked) {
-        rememberInfiniteTransition(label = "mode_card").animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(BREATH_MS, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-            label = "breath",
-        )
-    } else null
+    // The PLAY button breathes on the screen's ambient clock; locked cards stay still.
+    // Read only in layers, so it never recomposes or redraws the card.
+    val clock = ambientTime()
+    val breathes = breathing && !locked
+    val breath = { if (breathes) ambientPingPong(clock.value, BREATH_MS) else 0f }
     val feedback = LocalUiFeedback.current
 
     Column(
@@ -226,13 +219,13 @@ fun ModeCard(
         // The standard game button (or LOCKED, greyed out). Tapping it or anywhere on the card plays.
         // Inset, so even at the top of a breath the button stays inside the card's inner frame.
         Box(Modifier.fillMaxWidth().padding(horizontal = Spacing.xs), contentAlignment = Alignment.Center) {
-            if (breath != null) {
+            if (breathes) {
                 // A soft green glow behind the button, brightening and swelling as it breathes.
                 Box(
                     Modifier
                         .matchParentSize()
                         .graphicsLayer {
-                            val b = breath.value
+                            val b = breath()
                             alpha = BREATH_GLOW_MIN + (1f - BREATH_GLOW_MIN) * b
                             scaleX = 1f + BREATH_GLOW_GROW * b
                             scaleY = 1f + BREATH_GLOW_GROW * 2f * b
@@ -263,7 +256,7 @@ fun ModeCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .graphicsLayer {
-                        val grow = 1f + BREATH_SCALE * (breath?.value ?: 0f)
+                        val grow = 1f + BREATH_SCALE * breath()
                         scaleX = grow
                         scaleY = grow
                     },

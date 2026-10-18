@@ -40,6 +40,7 @@ import com.apps.bubblepopping.data.ProgressRepository
 import com.apps.bubblepopping.game.EndlessUnlocks
 import com.apps.bubblepopping.ui.components.CoinCounter
 import com.apps.bubblepopping.ui.components.GameBackground
+import com.apps.bubblepopping.ui.components.cachedLayer
 import com.apps.bubblepopping.ui.components.GameTopBar
 import com.apps.bubblepopping.ui.components.screenBottomPadding
 import com.apps.bubblepopping.ui.components.ResourcePill
@@ -107,7 +108,8 @@ fun EndlessScreen(
         initialPage = 1,
         pageCount = { Difficulty.entries.size }
     )
-    GameBackground {
+    // The difficulty cards' PLAY buttons breathe on the ambient clock, so the content isn't cached.
+    GameBackground(animated = true, cacheContent = false) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -149,15 +151,21 @@ fun EndlessScreen(
                     difficulty = difficulty,
                     card = cards?.getOrNull(page),
                     onClick = { onDifficultySelected(difficulty) },
+                    // Only the card in the middle breathes; the dimmed ones beside it stay still.
+                    breathing = page == pagerState.currentPage,
                     modifier = Modifier
                         .fillMaxSize()
-                        // Room for the card's outline and shadow, which sit just outside it.
-                        .padding(vertical = Spacing.s)
                         .graphicsLayer {
                             scaleX = scale
                             scaleY = scale
                             this.alpha = alpha
-                        },
+                        }
+                        // Kept ready-drawn, so a still card (the dimmed side ones) costs one
+                        // image draw a frame instead of being re-rendered behind its alpha.
+                        .cachedLayer()
+                        // Room inside the layer for the card's outline and shadow, which sit
+                        // just outside it (the layer clips at its edges).
+                        .padding(horizontal = CARD_EDGE, vertical = Spacing.s),
                 )
             }
             Spacer(Modifier.weight(1f))
@@ -176,6 +184,7 @@ private fun DifficultyCard(
     difficulty: Difficulty,
     card: DifficultyCardState?,
     onClick: () -> Unit,
+    breathing: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val locked = card?.unlocked == false
@@ -186,6 +195,7 @@ private fun DifficultyCard(
         // Taps wait until progress has loaded.
         onClick = { if (card?.unlocked == true) onClick() },
         locked = locked,
+        breathing = breathing,
         artSize = ART_SIZE,
         modifier = modifier,
         art = { artModifier -> DifficultyArt(difficulty, artModifier) },
@@ -279,6 +289,8 @@ private fun DifficultyArt(difficulty: Difficulty, modifier: Modifier) {
 
 /** Taller than the screen allows on small phones; the pager shrinks it to fit. */
 private val PAGER_MAX_HEIGHT = 440.dp
+/** Room round each card for its outline and shadow. */
+private val CARD_EDGE = 4.dp
 private val ART_SIZE = 150.dp
 private const val SPEED_LEVELS = 3
 private val PIP_WIDTH = 18.dp

@@ -45,7 +45,8 @@ dependencies {
     implementation(libs.androidx.core.ktx)
 
     debugImplementation(libs.compose.uiTooling)
-    debugImplementation(libs.compose.uiToolingPreview)
+    // The @Preview annotation is used in main code, so it is needed in release builds too.
+    implementation(libs.compose.uiToolingPreview)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.testExt.junit)

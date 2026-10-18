@@ -2,16 +2,13 @@ package com.apps.bubblepopping.view.home
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.apps.bubblepopping.meta.Cosmetics
+import com.apps.bubblepopping.ui.components.ambientTime
 import com.apps.bubblepopping.view.play.component.drawSkinPreview
 import kotlin.math.sin
 import kotlin.random.Random
@@ -28,11 +25,12 @@ private class Drifter(
 )
 
 /**
- * Soap bubbles rising slowly behind the Home screen, wrapping from top to
- * bottom forever. Purely decorative — it doesn't take touches.
+ * Soap bubbles rising slowly behind the menus, wrapping from top to bottom
+ * forever, faded to [alpha]. Purely decorative — it doesn't take touches. Moves on
+ * the screen's [ambientTime] and drawn from the bubble sprites.
  */
 @Composable
-fun DriftingBubbles(modifier: Modifier = Modifier, count: Int = BUBBLE_COUNT) {
+fun DriftingBubbles(modifier: Modifier = Modifier, count: Int = BUBBLE_COUNT, alpha: Float = 1f) {
     val drifters = remember(count) {
         val random = Random(SEED)
         List(count) {
@@ -46,18 +44,11 @@ fun DriftingBubbles(modifier: Modifier = Modifier, count: Int = BUBBLE_COUNT) {
             )
         }
     }
-    var time by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(Unit) {
-        var last = 0L
-        while (true) {
-            withFrameNanos { now ->
-                if (last != 0L) time += (now - last) / 1_000_000_000f
-                last = now
-            }
-        }
-    }
+    val clock = ambientTime()
 
-    Canvas(modifier) {
+    // Its own layer, so each tick re-records only the bubbles, not the screen on top of them.
+    Canvas(modifier.graphicsLayer()) {
+        val time = clock.value
         for (d in drifters) {
             val r = d.radiusDp.dp.toPx()
             // Rise and wrap. The span leaves room for the bubble to clear the
@@ -66,7 +57,7 @@ fun DriftingBubbles(modifier: Modifier = Modifier, count: Int = BUBBLE_COUNT) {
             val y = ((d.startY * span - d.speed * time) % span + span) % span
             val cy = y * size.height - r
             val cx = d.x * size.width + sin(time * SWAY_SPEED + d.swayPhase) * SWAY_DP.dp.toPx()
-            drawSkinPreview(Cosmetics.CLASSIC.id, Offset(cx, cy), r, rotation = time * d.spin)
+            drawSkinPreview(Cosmetics.CLASSIC.id, Offset(cx, cy), r, rotation = time * d.spin, alpha = alpha)
         }
     }
 }

@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.ui.layout.layout
+import kotlin.math.roundToInt
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -354,6 +356,18 @@ fun GameProgressBar(
     modifier: Modifier = Modifier,
     color: Color = GameColors.Gold,
     height: Dp = 12.dp,
+) = GameProgressBar({ fraction }, modifier, color, height)
+
+/**
+ * [GameProgressBar] for a [fraction] that changes every frame: it is read only
+ * while measuring the fill, so the bar never recomposes as it moves.
+ */
+@Composable
+fun GameProgressBar(
+    fraction: () -> Float,
+    modifier: Modifier = Modifier,
+    color: Color = GameColors.Gold,
+    height: Dp = 12.dp,
 ) {
     Box(
         modifier
@@ -375,7 +389,11 @@ fun GameProgressBar(
     ) {
         Box(
             Modifier
-                .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                .layout { measurable, constraints ->
+                    val width = (constraints.maxWidth * fraction().coerceIn(0f, 1f)).roundToInt()
+                    val placeable = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
+                    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+                }
                 .fillMaxHeight()
                 .clip(Corners.pill)
                 .background(

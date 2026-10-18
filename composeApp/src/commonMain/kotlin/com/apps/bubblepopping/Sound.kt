@@ -9,13 +9,22 @@ import kotlin.random.Random
  */
 class SoundManager(
     val sampleCount: Int,
-    private val player: (sample: Int, rate: Float) -> Unit,
+    /** Plays the sample and returns true, or returns false if it can't (e.g. it failed to load). */
+    private val player: (sample: Int, rate: Float) -> Boolean,
 ) {
     var onDispose: (() -> Unit)? = null
 
-    /** Plays [sample] at [rate]: 0.5 = an octave lower, 2 = an octave higher. */
+    /**
+     * Plays [sample] at [rate]: 0.5 = an octave lower, 2 = an octave higher.
+     * If that sample can't play, the next one that can plays instead, so a pop
+     * is never silent.
+     */
     fun play(sample: Int, rate: Float = 1f) {
-        if (sample in 0 until sampleCount) player(sample, rate.coerceIn(MIN_RATE, MAX_RATE))
+        if (sample !in 0 until sampleCount) return
+        val clamped = rate.coerceIn(MIN_RATE, MAX_RATE)
+        for (offset in 0 until sampleCount) {
+            if (player((sample + offset) % sampleCount, clamped)) return
+        }
     }
 
     fun dispose() = onDispose?.invoke()

@@ -4,6 +4,11 @@ import com.apps.bubblepopping.view.Decoration
 import com.apps.bubblepopping.view.sceneryDecorations
 import com.apps.bubblepopping.view.SceneArea
 import com.apps.bubblepopping.ui.components.TOP_BAR_HEIGHT
+import com.apps.bubblepopping.ui.components.ProvideAmbientClock
+import com.apps.bubblepopping.ui.components.ambientTime
+import com.apps.bubblepopping.ui.components.ambientLoop
+import com.apps.bubblepopping.ui.components.ambientPingPong
+import com.apps.bubblepopping.ui.components.cachedLayer
 import com.apps.bubblepopping.ui.components.LocalBottomDockHeight
 import kotlin.random.Random
 import com.apps.bubblepopping.ui.components.EnamelTone
@@ -23,16 +28,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -153,7 +155,7 @@ fun StageMapScreen(
     progress: Map<Int, StageProgress>?,
     onStageSelected: (Int) -> Unit,
     onBack: () -> Unit,
-) {
+) = ProvideAmbientClock {
     // The map runs edge to edge; the top bar (and the app's bottom dock) float over it.
     // The map's own top and bottom margins keep every stage reachable from under them.
     Box(
@@ -377,30 +379,38 @@ private fun MapSlice(
                 layout(placeable.width, height) { placeable.place(0, 0) }
             }
             .zIndex(index.toFloat())
-            .graphicsLayer()
-            .drawWithCache {
-                // The road always starts at stage 1, so the dashes line up across slices.
-                val roadEnd = minOf(index + 1, layout.nodeCount - 1)
-                val centers = (0..roadEnd).map { layout.nodeCenter(it).let { c -> Offset(c.x.toPx(), c.y.toPx()) } }
-                val road = roadPath(centers)
-                val doneRoad = if (roadDone >= 2) roadPath(centers.take(roadDone)) else null
-                val dashes = PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 10.dp.toPx()))
-                val background = mapBackground(layout)
-                // Reading the scenery here rebuilds this cache when a world's scenery arrives.
-                val pieces = layout.sections.flatMap { scenery[it.world].orEmpty() }
-                    .filter { it.bottom > topPx && it.top < bottomPx }
-                onDrawBehind {
-                    clipRect {
-                        translate(top = -topPx.toFloat()) {
-                            // The map-wide gradient, drawn over this slice's band only.
-                            drawRect(background, topLeft = Offset(0f, topPx.toFloat()), size = Size(size.width, (bottomPx - topPx).toFloat()))
-                            pieces.forEach { it.draw(this) }
-                            drawRoad(road, doneRoad, dashes)
+            .graphicsLayer(),
+    ) {
+        // The slice's ground: only changes when its scenery arrives or the road
+        // progresses, so it is kept ready-drawn, in a layer of its own that the
+        // animating node above doesn't touch.
+        Spacer(
+            Modifier
+                .matchParentSize()
+                .cachedLayer()
+                .drawWithCache {
+                    // The road always starts at stage 1, so the dashes line up across slices.
+                    val roadEnd = minOf(index + 1, layout.nodeCount - 1)
+                    val centers = (0..roadEnd).map { layout.nodeCenter(it).let { c -> Offset(c.x.toPx(), c.y.toPx()) } }
+                    val road = roadPath(centers)
+                    val doneRoad = if (roadDone >= 2) roadPath(centers.take(roadDone)) else null
+                    val dashes = PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 10.dp.toPx()))
+                    val background = mapBackground(layout)
+                    // Reading the scenery here rebuilds this cache when a world's scenery arrives.
+                    val pieces = layout.sections.flatMap { scenery[it.world].orEmpty() }
+                        .filter { it.bottom > topPx && it.top < bottomPx }
+                    onDrawBehind {
+                        clipRect {
+                            translate(top = -topPx.toFloat()) {
+                                // The map-wide gradient, drawn over this slice's band only.
+                                drawRect(background, topLeft = Offset(0f, topPx.toFloat()), size = Size(size.width, (bottomPx - topPx).toFloat()))
+                                pieces.forEach { it.draw(this) }
+                                drawRoad(road, doneRoad, dashes)
+                            }
                         }
                     }
-                }
-            },
-    ) {
+                },
+        )
         if (layout.isFirstOfWorld(index)) {
             WorldBanner(
                 world = stage.world,
@@ -647,24 +657,9 @@ private fun StageNode(
     modifier: Modifier = Modifier,
 ) {
     val isBoss = stage.boss != null
-    // The stage to play next gently pulses.
-    val pulse = if (state == NodeState.CURRENT) {
-        rememberInfiniteTransition(label = "stage_pulse").animateFloat(
-            initialValue = 1f,
-            targetValue = 1.1f,
-            animationSpec = infiniteRepeatable(tween(durationMillis = 700), RepeatMode.Reverse),
-            label = "pulse",
-        )
-    } else null
-    // Only bosses turn a starburst.
-    val spin = if (isBoss) {
-        rememberInfiniteTransition(label = "boss_spin").animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(tween(BURST_TURN_MS, easing = LinearEasing), RepeatMode.Restart),
-            label = "burst_spin",
-        )
-    } else null
+    // The stage to play next gently pulses, and bosses turn a starburst, on the
+    // map's ambient clock (read only in layers, so nothing recomposes or redraws).
+    val clock = ambientTime()
     val feedback = LocalUiFeedback.current
     val color = when (state) {
         NodeState.CURRENT -> ButtonColor.BLUE
@@ -681,9 +676,10 @@ private fun StageNode(
                     .requiredSize(bubbleSize)
                     // Always its own layer, so the pulse and the starburst never redraw the slice.
                     .graphicsLayer {
-                        if (pulse != null) {
-                            scaleX = pulse.value
-                            scaleY = pulse.value
+                        if (state == NodeState.CURRENT) {
+                            val pulse = 1f + PULSE_GROW * ambientPingPong(clock.value, PULSE_MS)
+                            scaleX = pulse
+                            scaleY = pulse
                         }
                     }
                     .drawBehind {
@@ -714,8 +710,8 @@ private fun StageNode(
             ) {
                 // Boss: a gold starburst turning inside the bubble, behind the crown (or lock).
                 // Drawn once; the layer rotates it.
-                if (spin != null) {
-                    Canvas(Modifier.matchParentSize().graphicsLayer { rotationZ = spin.value }) {
+                if (isBoss) {
+                    Canvas(Modifier.matchParentSize().graphicsLayer { rotationZ = ambientLoop(clock.value, BURST_TURN_MS) * 360f }) {
                         val r = size.minDimension / 2f
                         drawStarburst(r * BURST_REACH, r * BURST_INNER, dimmed = state == NodeState.LOCKED)
                     }
@@ -823,6 +819,9 @@ private const val BURST_POINTS = 14
 private const val BURST_REACH = 0.92f
 private const val BURST_INNER = 0.66f
 private const val BURST_TURN_MS = 16_000
+/** The current stage's pulse: how much it grows, and how long each way takes. */
+private const val PULSE_GROW = 0.1f
+private const val PULSE_MS = 700
 /** How visible the starburst is: faint on purpose. */
 private const val BURST_ALPHA = 0.22f
 private const val BURST_ALPHA_LOCKED = 0.1f

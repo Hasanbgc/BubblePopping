@@ -32,7 +32,6 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -73,16 +72,37 @@ enum class BackgroundStyle {
 }
 
 /**
- * The sky behind menu screens, with bubbles drifting up. [BackgroundStyle.ART]
- * is the sunset picture with a soft indigo scrim for readability;
- * [BackgroundStyle.NIGHT_SKY] is the quieter night sky with dimmer bubbles,
- * shaded with black so cards and text stand out.
+ * The sky behind menu screens. [BackgroundStyle.ART] is the sunset picture;
+ * [BackgroundStyle.NIGHT_SKY] is the quieter night sky, shaded with black so cards
+ * and text stand out.
+ *
+ * [animated] (Home, Endless): bubbles drift up and the night sky twinkles and
+ * sways, and the whole screen, [content] included, shares one ambient clock
+ * ([ProvideAmbientClock]) for that motion. Otherwise the sky is still apart from
+ * the odd shooting star, and no clock runs, so the screen sits idle; content that
+ * animates provides its own [ProvideAmbientClock].
+ * With [cacheContent], the content is kept ready-drawn ([cachedLayer]) while the sky
+ * moves behind it; turn it off when the content animates on that clock itself
+ * (it would be re-rendered every tick anyway).
  */
 @Composable
 fun GameBackground(
     modifier: Modifier = Modifier,
     style: BackgroundStyle = BackgroundStyle.NIGHT_SKY,
-    bubbles: Boolean = true,
+    animated: Boolean = false,
+    cacheContent: Boolean = true,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    if (animated) ProvideAmbientClock { Sky(modifier, style, animated = true, cacheContent, content) }
+    else Sky(modifier, style, animated = false, cacheContent, content)
+}
+
+@Composable
+private fun Sky(
+    modifier: Modifier,
+    style: BackgroundStyle,
+    animated: Boolean,
+    cacheContent: Boolean,
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(modifier.fillMaxSize().background(GameColors.NightTop)) {
@@ -94,7 +114,7 @@ fun GameBackground(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
-                if (bubbles) DriftingBubbles(Modifier.fillMaxSize())
+                if (animated) DriftingBubbles(Modifier.fillMaxSize())
                 /*Box(
                     Modifier
                         .fillMaxSize()
@@ -108,13 +128,13 @@ fun GameBackground(
                 )*/
             }
             BackgroundStyle.NIGHT_SKY -> {
-                NightSky(Modifier.fillMaxSize())
-                if (bubbles) DriftingBubbles(Modifier.fillMaxSize().alpha(NIGHT_BUBBLE_ALPHA))
+                NightSky(Modifier.fillMaxSize(), animated = animated)
+                if (animated) DriftingBubbles(Modifier.fillMaxSize(), alpha = NIGHT_BUBBLE_ALPHA)
                 // Shade the whole sky down so the content on top gets the focus.
                 Box(Modifier.fillMaxSize().background(GameColors.BackgroundShade))
             }
         }
-        content()
+        Box(Modifier.fillMaxSize().then(if (cacheContent) Modifier.cachedLayer() else Modifier), content = content)
     }
 }
 
@@ -186,6 +206,7 @@ fun GameTopBar(
 /**
  * Standard menu screen: sky background, top bar, and a scrolling column of
  * content with the standard side padding and spacing. [bottomBar] sits below.
+ * [cacheContent]: see [GameBackground].
  */
 @Composable
 fun GameScreen(
@@ -196,9 +217,10 @@ fun GameScreen(
     scrollable: Boolean = true,
     horizontalAlignment: Alignment.Horizontal = Alignment.Start,
     bottomBar: (@Composable () -> Unit)? = null,
+    cacheContent: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    GameBackground(modifier) {
+    GameBackground(modifier, cacheContent = cacheContent) {
         Column(Modifier.fillMaxSize().screenBottomPadding()) {
             GameTopBar(title = title, onBack = onBack, actions = actions)
             Column(

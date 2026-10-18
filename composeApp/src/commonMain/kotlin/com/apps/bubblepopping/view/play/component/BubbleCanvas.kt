@@ -3,11 +3,14 @@ package com.apps.bubblepopping.view.play.component
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import com.apps.bubblepopping.stage.World
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -22,8 +25,10 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apps.bubblepopping.game.GameRules
@@ -34,7 +39,9 @@ import com.apps.bubblepopping.view.BossHpLowColor
 import com.apps.bubblepopping.view.NearMissColor
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 
@@ -97,6 +104,8 @@ private val POISON_SCHEME = BubbleScheme(
  *
  * [wobble] squashes and stretches the bubble a little (positive = wider), so it
  * reads as soft soap. About ten draw calls, with every gradient cached per scheme.
+ * Live game bubbles use [drawSoapBubbleSprite] instead: the same layers, drawn
+ * once into images.
  */
 internal fun DrawScope.drawSoapBubble(
     cx: Float,
@@ -106,14 +115,12 @@ internal fun DrawScope.drawSoapBubble(
     scheme: BubbleScheme,
     wobble: Float = 0f,
 ) {
-    val brushes = bubbleBrushes(scheme)
-
     // 1. Shadow, a little below — lifts the bubble off the background. Not squashed.
     withTransform({
-        translate(cx, cy + r * SHADOW_DROP)
+        translate(cx, cy)
         scale(r, r, pivot = Offset.Zero)
     }) {
-        drawCircle(ShadowBrush, radius = SHADOW_SIZE, center = Offset.Zero)
+        drawBubbleShadow()
     }
 
     // Everything else is drawn around the origin at unit radius, then moved, sized and squashed.
@@ -121,56 +128,168 @@ internal fun DrawScope.drawSoapBubble(
         translate(cx, cy)
         scale(scaleX = r * (1f + wobble), scaleY = r * (1f - wobble), pivot = Offset.Zero)
     }) {
-        // 2. Body.
-        drawCircle(brushes.body, radius = 1f, center = Offset.Zero)
-
-        // 3. Soap film, swirling: a bright ring at the edge and a wide faint one fading inwards.
-        rotate(degrees = rot, pivot = Offset.Zero) {
-            drawCircle(brushes.film, radius = 0.86f, center = Offset.Zero, style = Stroke(width = 0.26f), alpha = FILM_INNER_ALPHA)
-            drawCircle(brushes.film, radius = 0.9f, center = Offset.Zero, style = Stroke(width = 0.13f), alpha = FILM_ALPHA)
-        }
-
-        // 4. Thicker, warmer film pooled along the bottom (fixed: gravity, not swirl).
-        drawArc(
-            brush = brushes.filmPool,
-            startAngle = 20f,
-            sweepAngle = 140f,
-            useCenter = false,
-            topLeft = Offset(-0.88f, -0.88f),
-            size = Size(1.76f, 1.76f),
-            style = Stroke(width = 0.16f, cap = StrokeCap.Round),
-            alpha = POOL_ALPHA,
-        )
-
-        // 5. Crisp rim.
-        drawCircle(scheme.outlineColor, radius = 0.985f, center = Offset.Zero, style = Stroke(width = RIM_WIDTH))
-
-        // 6. Light, fixed top-left: the curved window reflection…
-        drawArc(
-            color = Color.White.copy(alpha = WINDOW_ALPHA),
-            startAngle = 196f,
-            sweepAngle = 58f,
-            useCenter = false,
-            topLeft = Offset(-0.7f, -0.7f),
-            size = Size(1.4f, 1.4f),
-            style = Stroke(width = 0.15f, cap = StrokeCap.Round),
-        )
-        // …a small bright spot beside it…
-        drawCircle(Color.White.copy(alpha = 0.9f), radius = 0.075f, center = Offset(-0.18f, -0.62f))
-        // …a soft bounce light opposite, tinted by the scheme…
-        drawArc(
-            color = scheme.crescentColor.copy(alpha = BOUNCE_ALPHA),
-            startAngle = 28f,
-            sweepAngle = 44f,
-            useCenter = false,
-            topLeft = Offset(-0.76f, -0.76f),
-            size = Size(1.52f, 1.52f),
-            style = Stroke(width = 0.07f, cap = StrokeCap.Round),
-        )
-        // …and a glint right on the rim.
-        drawCircle(scheme.sparkleColor.copy(alpha = 0.95f), radius = 0.05f, center = Offset(-0.69f, -0.69f))
+        drawBubbleBody(scheme)
+        rotate(degrees = rot, pivot = Offset.Zero) { drawBubbleFilm(scheme) }
+        drawBubbleFront(scheme)
     }
 }
+
+/** Layer 1, at unit radius around the origin: the shadow on the scene below. */
+private fun DrawScope.drawBubbleShadow() {
+    drawCircle(ShadowBrush, radius = SHADOW_SIZE, center = Offset(0f, SHADOW_DROP))
+}
+
+/** Layer 2: the body. */
+private fun DrawScope.drawBubbleBody(scheme: BubbleScheme) {
+    drawCircle(bubbleBrushes(scheme).body, radius = 1f, center = Offset.Zero)
+}
+
+/** Layer 3, the one that swirls: a bright ring at the edge and a wide faint one fading inwards. */
+private fun DrawScope.drawBubbleFilm(scheme: BubbleScheme) {
+    val film = bubbleBrushes(scheme).film
+    drawCircle(film, radius = 0.86f, center = Offset.Zero, style = Stroke(width = 0.26f), alpha = FILM_INNER_ALPHA)
+    drawCircle(film, radius = 0.9f, center = Offset.Zero, style = Stroke(width = 0.13f), alpha = FILM_ALPHA)
+}
+
+/** Layers 4–6: pooled film, rim and the fixed lights. */
+private fun DrawScope.drawBubbleFront(scheme: BubbleScheme) {
+    // 4. Thicker, warmer film pooled along the bottom (fixed: gravity, not swirl).
+    drawArc(
+        brush = bubbleBrushes(scheme).filmPool,
+        startAngle = 20f,
+        sweepAngle = 140f,
+        useCenter = false,
+        topLeft = Offset(-0.88f, -0.88f),
+        size = Size(1.76f, 1.76f),
+        style = Stroke(width = 0.16f, cap = StrokeCap.Round),
+        alpha = POOL_ALPHA,
+    )
+
+    // 5. Crisp rim.
+    drawCircle(scheme.outlineColor, radius = 0.985f, center = Offset.Zero, style = Stroke(width = RIM_WIDTH))
+
+    // 6. Light, fixed top-left: the curved window reflection…
+    drawArc(
+        color = Color.White.copy(alpha = WINDOW_ALPHA),
+        startAngle = 196f,
+        sweepAngle = 58f,
+        useCenter = false,
+        topLeft = Offset(-0.7f, -0.7f),
+        size = Size(1.4f, 1.4f),
+        style = Stroke(width = 0.15f, cap = StrokeCap.Round),
+    )
+    // …a small bright spot beside it…
+    drawCircle(Color.White.copy(alpha = 0.9f), radius = 0.075f, center = Offset(-0.18f, -0.62f))
+    // …a soft bounce light opposite, tinted by the scheme…
+    drawArc(
+        color = scheme.crescentColor.copy(alpha = BOUNCE_ALPHA),
+        startAngle = 28f,
+        sweepAngle = 44f,
+        useCenter = false,
+        topLeft = Offset(-0.76f, -0.76f),
+        size = Size(1.52f, 1.52f),
+        style = Stroke(width = 0.07f, cap = StrokeCap.Round),
+    )
+    // …and a glint right on the rim.
+    drawCircle(scheme.sparkleColor.copy(alpha = 0.95f), radius = 0.05f, center = Offset(-0.69f, -0.69f))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sprites: the bubble's layers drawn once into images
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A scheme's bubble as three images, so a live bubble costs three image draws
+ * instead of about ten blended gradients: [back] (shadow and body), [film] (turned
+ * by the swirl) and [front] (pool, rim, lights). Each is a square [side] pixels
+ * wide with the bubble's centre in the middle, drawn at [unitPx] pixels per radius.
+ */
+private class BubbleSprite(val back: ImageBitmap, val film: ImageBitmap, val front: ImageBitmap, val unitPx: Int) {
+    val side = back.width
+}
+
+private data class SpriteKey(val scheme: BubbleScheme, val unitPx: Int)
+
+private val spriteCache = HashMap<SpriteKey, BubbleSprite>()
+
+/**
+ * The sprite for [scheme] that a bubble of radius [r] pixels is drawn from: by
+ * default the largest game bubble's size on this screen, so game bubbles share one
+ * sprite that is only ever scaled down; bigger bubbles (menus, shop previews) get
+ * one sized up in [SPRITE_STEP_PX] steps. Made on first use, then reused.
+ */
+private fun DrawScope.bubbleSprite(scheme: BubbleScheme, r: Float): BubbleSprite {
+    val gameUnitPx = (GameRules.MAX_RADIUS_DP * density).roundToInt()
+    val unitPx = if (r <= gameUnitPx) gameUnitPx else ceil(r / SPRITE_STEP_PX).toInt() * SPRITE_STEP_PX
+    return bubbleSpriteAt(scheme, unitPx.coerceIn(SPRITE_MIN_UNIT_PX, SPRITE_MAX_UNIT_PX))
+}
+
+private fun bubbleSpriteAt(scheme: BubbleScheme, unitPx: Int): BubbleSprite =
+    spriteCache.getOrPut(SpriteKey(scheme, unitPx)) {
+        BubbleSprite(
+            back = bakeLayer(unitPx) {
+                drawBubbleShadow()
+                drawBubbleBody(scheme)
+            },
+            film = bakeLayer(unitPx) { drawBubbleFilm(scheme) },
+            front = bakeLayer(unitPx) { drawBubbleFront(scheme) },
+            unitPx = unitPx,
+        )
+    }
+
+/** Draws one unit-radius layer into a new square image, [unitPx] pixels per radius. */
+private fun bakeLayer(unitPx: Int, layer: DrawScope.() -> Unit): ImageBitmap {
+    // Even, so the centre lands on a whole pixel.
+    val side = (ceil(unitPx * SPRITE_EXTENT).toInt() * 2)
+    val image = ImageBitmap(side, side)
+    CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, Canvas(image), Size(side.toFloat(), side.toFloat())) {
+        withTransform({
+            translate(side / 2f, side / 2f)
+            scale(unitPx.toFloat(), unitPx.toFloat(), pivot = Offset.Zero)
+        }) { layer() }
+    }
+    return image
+}
+
+/**
+ * [drawSoapBubble] from the scheme's sprite: the same bubble, swirl and wobble in
+ * three image draws. The wobble squashes the shadow too, which is too faint to see.
+ * [alpha] fades each layer, for bubbles kept in the background.
+ */
+internal fun DrawScope.drawSoapBubbleSprite(
+    cx: Float,
+    cy: Float,
+    r: Float,
+    rot: Float,
+    scheme: BubbleScheme,
+    wobble: Float = 0f,
+    alpha: Float = 1f,
+) {
+    val sprite = bubbleSprite(scheme, r)
+    val half = sprite.side / 2
+    val topLeft = IntOffset(-half, -half)
+    val size = IntSize(sprite.side, sprite.side)
+    withTransform({
+        translate(cx, cy)
+        scale(r * (1f + wobble) / sprite.unitPx, r * (1f - wobble) / sprite.unitPx, pivot = Offset.Zero)
+    }) {
+        drawImage(sprite.back, dstOffset = topLeft, dstSize = size, alpha = alpha, filterQuality = SPRITE_FILTER)
+        rotate(degrees = rot, pivot = Offset.Zero) {
+            drawImage(sprite.film, dstOffset = topLeft, dstSize = size, alpha = alpha, filterQuality = SPRITE_FILTER)
+        }
+        drawImage(sprite.front, dstOffset = topLeft, dstSize = size, alpha = alpha, filterQuality = SPRITE_FILTER)
+    }
+}
+
+/** How far a sprite reaches from the centre, in radii: the shadow hangs lowest (0.22 + 1.05). */
+private const val SPRITE_EXTENT = 1.3f
+private const val SPRITE_MIN_UNIT_PX = 24
+/** Caps a sprite at about 420 px square, whatever the screen density; bigger bubbles are scaled up. */
+private const val SPRITE_MAX_UNIT_PX = 160
+/** Sprite sizes for bubbles bigger than a game bubble, in pixels per radius. */
+private const val SPRITE_STEP_PX = 32
+/** Mipmapped, so small bubbles scaled far down keep a clean rim. */
+private val SPRITE_FILTER = FilterQuality.Medium
 
 /**
  * The soap film's colours around the ring: both of the scheme's rainbows without
@@ -238,7 +357,7 @@ private const val WOBBLE_PER_PX = 0.02f
  * each bubble out of step with the others.
  */
 private fun DrawScope.drawSoapBubble(bubble: Bubble, scheme: BubbleScheme) =
-    drawSoapBubble(
+    drawSoapBubbleSprite(
         cx = bubble.x,
         cy = bubble.y,
         r = bubble.radius,
@@ -788,24 +907,27 @@ fun DrawScope.drawFloatingText(text: FloatingText, measurer: TextMeasurer, fontF
     val alpha = if (p < 0.6f) 1f else (1f - (p - 0.6f) / 0.4f) // fade over the last 40%
     val baseSize = if (text.isMilestone) 30f else 18f
     val rise = (if (text.isMilestone) 24f else 48f).dp.toPx() * p
+    val fade = alpha.coerceIn(0f, 1f)
 
+    // Laid out once at full size (the measurer caches it); the pop-in scale and the
+    // fade are applied while drawing, so no frame lays the text out again.
     val layout = measurer.measure(
         text = text.text,
         style = TextStyle(
-            color = text.color.copy(alpha = alpha.coerceIn(0f, 1f)),
-            fontSize = (baseSize * (0.6f + 0.4f * popIn)).sp,
+            fontSize = baseSize.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = fontFamily,
-            shadow = Shadow(color = Color.Black.copy(alpha = 0.5f * alpha), blurRadius = 6f),
         ),
     )
-    drawText(
-        textLayoutResult = layout,
-        topLeft = Offset(
-            text.x - layout.size.width / 2f,
-            text.y - rise - layout.size.height / 2f,
-        ),
-    )
+    val center = Offset(text.x, text.y - rise)
+    scale(0.6f + 0.4f * popIn, pivot = center) {
+        drawText(
+            textLayoutResult = layout,
+            color = text.color.copy(alpha = fade),
+            topLeft = Offset(center.x - layout.size.width / 2f, center.y - layout.size.height / 2f),
+            shadow = Shadow(color = Color.Black.copy(alpha = 0.5f * fade), blurRadius = 6f),
+        )
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

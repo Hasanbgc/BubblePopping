@@ -124,6 +124,16 @@ class BubbleGameViewModel(
     var frameCount     by mutableStateOf(0);         private set
     /** Increments every frame effects animate — also after game over, so bursts finish. */
     var effectFrame    by mutableStateOf(0);         private set
+    /** Set by [update] once the round is over and its slow motion, effects and revive offer are done. */
+    private var isSettled by mutableStateOf(false)
+    /**
+     * True while the round is over and nothing on screen moves (no slow-motion
+     * drift, bursts, texts, confetti or shake, and no revive on offer): the screen
+     * can stop asking for frames. Observable, so it turns false again as soon as
+     * a new effect appears or the round restarts.
+     */
+    val isAtRest: Boolean
+        get() = isGameOver && isSettled && popAnimations.isEmpty() && floatingTexts.isEmpty() && confetti.isEmpty()
     /** True when the round that just ended beat the saved best score. */
     var isNewBest      by mutableStateOf(false);     private set
 
@@ -308,8 +318,11 @@ class BubbleGameViewModel(
         if (isGameOver) {
             gameOverSlowmoStep(dt)
             reviveCountdownStep(dt)
+            isSettled = isGameOver && reviveOffer == null && gameOverSlowmoLeft <= 0f &&
+                    popAnimations.isEmpty() && floatingTexts.isEmpty() && confetti.isEmpty() && shakeTimeLeft <= 0f
             return
         }
+        isSettled = false
         if (hitStopLeft > 0f) {
             hitStopLeft -= dt
             return

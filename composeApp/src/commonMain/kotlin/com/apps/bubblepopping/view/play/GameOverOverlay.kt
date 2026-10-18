@@ -10,10 +10,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -166,13 +162,12 @@ internal fun ScorePlaque(score: String, celebrate: Boolean) {
         animationSpec = tween(RAYS_FADE_MS),
         label = "rays",
     )
-    // Read only while drawing, so the turning rays never recompose the card.
-    val spin = rememberInfiniteTransition(label = "plaque").animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(RAYS_TURN_MS, easing = LinearEasing), RepeatMode.Restart),
-        label = "spin",
-    )
+    // Read only while drawing, so the turning rays never recompose the card. They
+    // turn a few times and then rest, so a results screen left open costs no frames.
+    val spin = remember { Animatable(0f) }
+    LaunchedEffect(celebrate) {
+        if (celebrate) spin.animateTo(360f * RAYS_TURNS, tween(RAYS_TURN_MS * RAYS_TURNS, easing = LinearEasing))
+    }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -246,6 +241,7 @@ private val TAG_ICON = 22.dp
 private const val RAY_COUNT = 12
 private const val RAYS_FADE_MS = 500
 private const val RAYS_TURN_MS = 12_000
+private const val RAYS_TURNS = 2
 
 @Preview
 @Composable

@@ -2,11 +2,6 @@ package com.apps.bubblepopping.ui.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -70,13 +65,17 @@ enum class CardTier(val label: String, val tag: ButtonColor, val glow: Color) {
  * - [owned] turning true (a purchase) sweeps a shimmer across the window.
  * - Legendary cards get a brighter rim and twinkling sparkles.
  *
- * [preview] draws the item and gets the glow colour to light it from behind.
+ * [preview] draws the item and gets the glow colour to light it from behind (read it
+ * while drawing: it pulses on an equipped card).
+ *
+ * The pulse and sparkles move on the screen's [ambientTime] and are read only while
+ * drawing, so a shelf of cards never recomposes as they animate.
  */
 @Composable
 fun ShopCard(
     name: String,
     tier: CardTier,
-    preview: @Composable (glow: Color, modifier: Modifier) -> Unit,
+    preview: @Composable (glow: () -> Color, modifier: Modifier) -> Unit,
     action: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     owned: Boolean = false,
@@ -84,19 +83,7 @@ fun ShopCard(
     locked: Boolean = false,
 ) {
     val legendary = tier == CardTier.LEGENDARY
-    val transition = rememberInfiniteTransition(label = "shop_card")
-    val pulse by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(PULSE_MS, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "pulse",
-    )
-    val twinkle by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 2f * PI.toFloat(),
-        animationSpec = infiniteRepeatable(tween(TWINKLE_MS, easing = LinearEasing), RepeatMode.Restart),
-        label = "twinkle",
-    )
+    val clock = ambientTime()
     // Shimmer once when the item becomes owned (not on first show). 1 = finished.
     val shimmer = remember { Animatable(1f) }
     var wasOwned by remember { mutableStateOf(owned) }
@@ -108,10 +95,12 @@ fun ShopCard(
         wasOwned = owned
     }
 
-    val glow = when {
-        locked -> Color.Transparent
-        equipped -> GameColors.Success.copy(alpha = 0.4f + 0.35f * pulse)
-        else -> tier.glow.copy(alpha = GLOW_ALPHA)
+    val glow = {
+        when {
+            locked -> Color.Transparent
+            equipped -> GameColors.Success.copy(alpha = 0.4f + 0.35f * ambientPingPong(clock.value, PULSE_MS))
+            else -> tier.glow.copy(alpha = GLOW_ALPHA)
+        }
     }
 
     Column(
@@ -163,6 +152,7 @@ fun ShopCard(
                     drawRect(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.35f), 0.2f to Color.Transparent))
                     drawRect(Brush.verticalGradient(0.8f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.3f)))
                     if (legendary && !locked) {
+                        val twinkle = ambientLoop(clock.value, TWINKLE_MS) * 2f * PI.toFloat()
                         SPARKLES.forEachIndexed { i, (fx, fy) ->
                             val alpha = 0.5f + 0.5f * sin(twinkle + i * 1.7f)
                             sparkle(Offset(fx * size.width, fy * size.height), SPARKLE.toPx() * (0.6f + 0.4f * alpha), Color.White.copy(alpha = alpha))
@@ -285,7 +275,7 @@ fun ShopCardPreview() {
                     locked = index == 3,
                     preview = { glow, modifier ->
                         Canvas(modifier.background(GameColors.NightBottom)) {
-                            drawCircle(Brush.radialGradient(listOf(glow, Color.Transparent)), radius = size.minDimension * 0.6f)
+                            drawCircle(Brush.radialGradient(listOf(glow(), Color.Transparent)), radius = size.minDimension * 0.6f)
                         }
                     },
                     action = { GameButton("250", onClick = {}, color = ButtonColor.GOLD, size = ButtonSize.SMALL, icon = GameIcons.Coin) },

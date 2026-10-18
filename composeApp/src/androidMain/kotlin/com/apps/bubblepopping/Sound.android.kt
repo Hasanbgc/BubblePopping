@@ -12,7 +12,7 @@ actual fun createSoundManager(samples: List<ByteArray>): SoundManager {
         .build()
 
     val soundPool = SoundPool.Builder()
-        .setMaxStreams(8)
+        .setMaxStreams(16) // a bomb chain pops many bubbles at once
         .setAudioAttributes(attributes)
         .build()
 
@@ -26,7 +26,7 @@ actual fun createSoundManager(samples: List<ByteArray>): SoundManager {
     }
 
     val soundIds = samples.mapIndexed { index, bytes ->
-        val file = File.createTempFile("sound_$index", ".mp3").apply { writeBytes(bytes) }
+        val file = File.createTempFile("sound_$index", ".wav").apply { writeBytes(bytes) }
         soundPool.load(file.absolutePath, 1).also { pendingFiles[it] = file }
     }
 
@@ -34,7 +34,7 @@ actual fun createSoundManager(samples: List<ByteArray>): SoundManager {
         sampleCount = samples.size,
         player = { sample, rate ->
             val soundId = soundIds[sample]
-            if (soundId in loaded) soundPool.play(soundId, 1f, 1f, 1, 0, rate)
+            soundId in loaded && soundPool.play(soundId, 1f, 1f, 1, 0, rate) != 0
         },
     ).also { it.onDispose = { soundPool.release() } }
 }

@@ -69,9 +69,12 @@ private fun buildSkinScheme(skinId: String): BubbleScheme? = when (skinId) {
     else -> null
 }
 
-/** A sample bubble in [skinId] (Classic shows the Sky palette), for the shop. */
-fun DrawScope.drawSkinPreview(skinId: String, center: Offset, radius: Float, rotation: Float) {
-    drawSoapBubble(center.x, center.y, radius, rotation, skinScheme(skinId) ?: NORMAL_SCHEME)
+/**
+ * A sample bubble in [skinId] (Classic shows the Sky palette), for the shop and the
+ * menus' drifting bubbles. Drawn from the bubble sprites; [alpha] fades it.
+ */
+fun DrawScope.drawSkinPreview(skinId: String, center: Offset, radius: Float, rotation: Float, alpha: Float = 1f) {
+    drawSoapBubbleSprite(center.x, center.y, radius, rotation, skinScheme(skinId) ?: NORMAL_SCHEME, alpha = alpha)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

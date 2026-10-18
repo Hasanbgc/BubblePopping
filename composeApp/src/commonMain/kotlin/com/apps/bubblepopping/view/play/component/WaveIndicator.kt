@@ -31,14 +31,15 @@ import com.apps.bubblepopping.ui.theme.Spacing
 
 /**
  * Endless, below the HUD: a light violet enamel pill with the wave number on a candy
- * medallion at its left, then "WAVE 3" over a progress bar for the wave.
+ * medallion at its left, then "WAVE 3" over a progress bar for the wave
+ * ([progress], read only while laying out the bar, so it never recomposes the pill).
  * During the calm between waves the medallion shows a bubble and the label reads
  * "GET READY".
  */
 @Composable
 fun WavePill(
     wave: Int,
-    progress: Float,
+    progress: () -> Float,
     isCalm: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -96,8 +97,8 @@ private const val BANNER_SCALE = 1.4f
 fun WavePillPreview() {
     BubbleTheme {
         Column(verticalArrangement = Arrangement.spacedBy(Spacing.m), modifier = Modifier.padding(Spacing.l)) {
-            WavePill(wave = 3, progress = 0.4f, isCalm = false)
-            WavePill(wave = 4, progress = 0f, isCalm = true)
+            WavePill(wave = 3, progress = { 0.4f }, isCalm = false)
+            WavePill(wave = 4, progress = { 0f }, isCalm = true)
         }
     }
 }
