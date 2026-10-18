@@ -641,9 +641,14 @@ fun BubblePoppingScreen(
                     icons = bubbleIcons,
                     skinId = settings.equippedSkin,
                     highContrastSkulls = settings.highContrastSkulls,
-                    onPop = {
-                        if (settings.soundEnabled) gameSounds?.pop(combo = 0)
-                        if (settings.hapticsEnabled) hapticFeedback.medium()
+                    onPop = { type ->
+                        val bomb = type == BubbleType.BOMB
+                        if (settings.soundEnabled) gameSounds?.let { if (bomb) it.bomb() else it.pop(combo = 0) }
+                        if (settings.hapticsEnabled) { if (bomb) hapticFeedback.heavy() else hapticFeedback.medium() }
+                    },
+                    onWind = {
+                        if (settings.soundEnabled) gameSounds?.windSave()
+                        if (settings.hapticsEnabled) hapticFeedback.light()
                     },
                     onFinish = {
                         tutorialFinished = true

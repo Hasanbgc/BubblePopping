@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.draw.paint
 import com.apps.bubblepopping.ui.components.formatCount
 import com.apps.bubblepopping.ui.components.ResourcePill
 import com.apps.bubblepopping.ui.components.EnamelTone
@@ -135,7 +136,6 @@ fun HomeContent(
     /** Shows the close button; null hides it. */
     onCloseClick: (() -> Unit)? = null,
 ) {
-    // The mode cards' PLAY buttons breathe, so the content isn't cached.
     // The mode cards' PLAY buttons breathe on the ambient clock, so the content isn't cached.
     GameBackground(modifier, style = BackgroundStyle.ART, animated = true, cacheContent = false) {
         Column(
@@ -171,14 +171,14 @@ fun HomeContent(
                     .fillMaxWidth()
                     .height(LOGO_HEIGHT),
             )
-            Image(
-                painter = painterResource(Res.drawable.ribbon),
-                contentDescription = null,
-                contentScale = ContentScale.FillWidth,
-                modifier = Modifier
+            // The ribbon art is taller than the room it takes up (it has clear space above and
+            // below), so it's painted without a clip: Image would slice off the ribbon's tails.
+            Box(
+                Modifier
                     .fillMaxWidth(0.85f)
                     .height(RIBBON_HEIGHT)
-                    .offset(y = -Spacing.xl),
+                    .offset(y = -Spacing.xl)
+                    .paint(painterResource(Res.drawable.ribbon), contentScale = ContentScale.FillWidth),
             )
 
             // The two modes as cards side by side, centred in the space left: as tall as

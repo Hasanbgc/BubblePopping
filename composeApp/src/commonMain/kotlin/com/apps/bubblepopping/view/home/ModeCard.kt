@@ -250,7 +250,7 @@ fun ModeCard(
                 text = if (locked) "LOCKED" else "PLAY",
                 onClick = onClick,
                 color = if (locked) ButtonColor.SLATE else ButtonColor.GREEN,
-                size = ButtonSize.MEDIUM,
+                size = ButtonSize.SMALL,
                 icon = if (locked) rememberVectorPainter(GameIcons.Lock) else playIcon(),
                 enabled = !locked,
                 modifier = Modifier
