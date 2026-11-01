@@ -110,7 +110,7 @@ object Bosses {
     val CLOUD_KING = BossConfig(
         id = "cloud_king",
         name = "Cloud King",
-        hpPerGeneration = listOf(165),
+        hpPerGeneration = listOf(132),
         phases = listOf(
             emptyList(),
             listOf(BossTrick.ThrowSkulls(everyHits = 4)),
@@ -123,7 +123,7 @@ object Bosses {
     val STORM_CLOUD = BossConfig(
         id = "storm_cloud",
         name = "Storm Cloud",
-        hpPerGeneration = listOf(260),
+        hpPerGeneration = listOf(180),
         phases = listOf(
             listOf(BossTrick.ThrowSkulls(everyHits = 5)),
             listOf(BossTrick.Gust(everyHits = 6), BossTrick.ThrowSkulls(everyHits = 4)),
@@ -136,7 +136,7 @@ object Bosses {
     val JELLY_QUEEN = BossConfig(
         id = "jelly_queen",
         name = "Jelly Queen",
-        hpPerGeneration = listOf(150),
+        hpPerGeneration = listOf(80),
         phases = listOf(
             listOf(BossTrick.Sting(everyHits = 6, seconds = 1f)),
             listOf(BossTrick.Sting(everyHits = 5, seconds = 1.25f)),

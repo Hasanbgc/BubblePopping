@@ -139,8 +139,8 @@ object StageCatalog {
         stage(
             10, World.SKY, "👑 The Cloud King! Once he's hurt he throws skulls from below — don't tap them!",
             goal = Objective.DefeatBoss(Bosses.CLOUD_KING),
-            bonus = listOf(Objective.FinishUnder(100), Objective.NoLivesLost),
-            pace = Pace.P2, top = Pace.P4, mix = SKY_HEARTS, designSec = 90,
+            bonus = listOf(Objective.FinishUnder(85), Objective.NoLivesLost),
+            pace = Pace.P2, top = Pace.P4, mix = SKY_HEARTS, designSec = 75,
         ),
         stage(
             11, World.SKY, "Clock bubbles add 10 seconds to the timer!",
@@ -199,8 +199,8 @@ object StageCatalog {
         stage(
             20, World.SKY, "👑 The Storm Cloud! It throws skulls, then gusts blow every bubble aside.",
             goal = Objective.DefeatBoss(Bosses.STORM_CLOUD),
-            bonus = listOf(Objective.FinishUnder(160), Objective.LivesLostAtMost(1)),
-            pace = Pace.P3, top = Pace.P5, mix = SKY_HEARTS, designSec = 140, lives = 4,
+            bonus = listOf(Objective.FinishUnder(125), Objective.LivesLostAtMost(2)),
+            pace = Pace.P3, top = Pace.P5, mix = SKY_HEARTS, designSec = 110, lives = 4,
         ),
 
         // ── World 2 — Ocean (21–40): golden, ice from 23, ×2 from 31 ────────────
@@ -261,8 +261,8 @@ object StageCatalog {
         stage(
             30, World.OCEAN, "👑 The Jelly Queen! Every few hits she stings — your taps stop working for a moment.",
             goal = Objective.DefeatBoss(Bosses.JELLY_QUEEN),
-            bonus = listOf(Objective.FinishUnder(150), Objective.Accuracy(85)),
-            pace = Pace.P3, top = Pace.P5, mix = OCEAN_ICE, designSec = 130, lives = 4,
+            bonus = listOf(Objective.FinishUnder(80), Objective.Accuracy(85)),
+            pace = Pace.P3, top = Pace.P5, mix = OCEAN_ICE, designSec = 70, lives = 4,
         ),
         stage(
             31, World.OCEAN, "×2 bubbles double every point for 8 seconds!",

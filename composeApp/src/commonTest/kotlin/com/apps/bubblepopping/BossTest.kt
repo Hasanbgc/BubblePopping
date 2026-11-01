@@ -296,7 +296,7 @@ class BossTest {
 
     @Test
     fun bossTotals_includeEverySplitCopy() {
-        assertEquals(165, Bosses.CLOUD_KING.totalHp)
+        assertEquals(132, Bosses.CLOUD_KING.totalHp)
         assertEquals(140 + 3 * 45 + 9 * 16, Bosses.GUMBALL_GIANT.totalHp)
     }
 
