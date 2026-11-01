@@ -3,6 +3,7 @@ package com.apps.bubblepopping
 import com.apps.bubblepopping.stage.StageCatalog
 import com.apps.bubblepopping.meta.Booster
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import com.apps.bubblepopping.game.ComboTracker
 import com.apps.bubblepopping.game.GameEvent
 import com.apps.bubblepopping.game.GameMode
@@ -468,24 +469,25 @@ class BubbleGameViewModelTest {
     }
 
     @Test
-    fun timedStage_keepsRunningAfterGoal_untilBonusIsMetToo() = runTest {
+    fun timedStage_playsOutItsClock_evenWithEveryStarEarned() = runTest {
         val viewModel = newViewModel(
             stage = testStage(
                 goal = Objective.PopCount(1),
                 bonusGoals = listOf(Objective.PopCount(3)),
-                durationSec = 30,
+                durationSec = 3,
             ),
+            spawn = HEART_ONLY,   // hearts never cost lives
         )
         val events = collectEvents(viewModel)
-        viewModel.runFor(0.5f)
+        repeat(3) {
+            viewModel.runUntilBubble()
+            viewModel.popFirst(events)
+        }
+        assertTrue(viewModel.objectives.all { it.satisfied })
+        assertFalse(viewModel.isGameOver)          // every star earned, but the clock still runs
 
-        viewModel.popFirst(events)
-        assertFalse(viewModel.isGameOver)          // goal met, bonus not yet
-        assertTrue(viewModel.objectives.first().satisfied)
-
-        repeat(2) { viewModel.popFirst(events) }
-
-        assertTrue(viewModel.isGameOver)           // every objective met → ends early
+        viewModel.runUntilGameOver()
+        assertEquals(GameOverReason.TIME_UP, viewModel.gameOverReason)
         assertEquals(2, viewModel.stageResult?.stars)
     }
 
@@ -837,6 +839,49 @@ class BubbleGameViewModelTest {
         val viewModel = newViewModel(spawn = FAST_NORMAL_ONLY.copy(typeWeights = mapOf(BubbleType.ARMORED to 1)))
         viewModel.runUntilGameOver()
         assertEquals(GameOverReason.OUT_OF_LIVES, viewModel.gameOverReason)
+    }
+    // ── Ghost and chain bubbles ─────────────────────────────────────────────
+
+    @Test
+    fun ghost_canOnlyBePopped_whileItShows() {
+        // No spawning; one ghost that stays put.
+        val viewModel = newViewModel(spawn = NORMAL_ONLY.copy(spawnInterval = 1_000f, minSpawnInterval = 1_000f))
+        val ghost = Bubble(
+            id = "ghost", x = 500f, y = 1_500f, radius = 60f, size = BubbleSize.LARGE, speed = 0f, amplitude = 0f,
+            baseX = 500f, phase = 0f, color = Color.White, shimmerAngle = 0f, type = BubbleType.GHOST,
+        )
+        viewModel.bubbles += ghost
+        fun waitUntil(condition: () -> Boolean) {
+            var frames = 0
+            while (!condition() && frames++ < 1_000) viewModel.update(FRAME)
+        }
+        // Wait for it to fade out, then try.
+        waitUntil { ghost.visibility < GameRules.GHOST_TAPPABLE }
+        assertFalse(viewModel.tryPop(Offset(ghost.x, ghost.y)))
+        waitUntil { ghost.visibility >= GameRules.GHOST_TAPPABLE }
+        assertTrue(viewModel.tryPop(Offset(ghost.x, ghost.y)))
+    }
+
+    @Test
+    fun chainPair_paysABonus_whenBothPopInTime_orThePoppedOneComesBack() = runTest {
+        val viewModel = newViewModel(spawn = FAST_NORMAL_ONLY.copy(spawnInterval = 3f, minSpawnInterval = 3f, typeWeights = mapOf(BubbleType.CHAIN to 1)))
+        val events = collectEvents(viewModel)
+        repeat(20_000) { if (viewModel.bubbles.size < 2) viewModel.update(FRAME) }
+        val (first, second) = viewModel.bubbles.toList()
+        assertEquals(first.linkId, second.linkId)
+
+        viewModel.tryPop(Offset(first.x, first.y))
+        viewModel.tryPop(Offset(second.x, second.y))
+        assertEquals(1, events.count { it is GameEvent.ChainPaired })
+
+        // A fresh pair, half popped and left: the popped one comes back.
+        viewModel.restartGame()
+        repeat(20_000) { if (viewModel.bubbles.size < 2) viewModel.update(FRAME) }
+        val half = viewModel.bubbles.first()
+        viewModel.tryPop(Offset(half.x, half.y))
+        assertEquals(1, viewModel.bubbles.size)
+        viewModel.runFor(GameRules.CHAIN_WINDOW_SECONDS + 0.1f)
+        assertEquals(2, viewModel.bubbles.size)
     }
 
     private fun assertClose(expected: Float, actual: Float, tolerance: Float = 0.01f) {

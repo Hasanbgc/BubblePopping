@@ -159,6 +159,8 @@ data class ObjectiveProgress(
     val current: Int,
     val target: Int,
     val satisfied: Boolean,
+    /** For [Objective.AllOf]: each part's own progress, in order. Empty otherwise. */
+    val parts: List<ObjectiveProgress> = emptyList(),
 ) {
     /** 0 → 1 progress towards a goal; constraints report 1 while met, 0 once broken. */
     val fraction: Float

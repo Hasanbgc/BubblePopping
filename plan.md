@@ -246,7 +246,7 @@ not yet compiled on a Mac). All tuning numbers live in `game/GameRules.kt`, colo
 - [x] `game/ComboTracker.kt`: each pop within **0.8 s** (game time) of the previous one extends the combo.
 - [x] Multiplier tiers: ×1 (1–2), ×2 (3–5), ×3 (6–9), ×5 (10+); applied to the points of each pop.
 - [x] Milestone text at the pop: "NICE!" (5), "GREAT!" (10), "PERFECT!" (15), "INSANE!" (25).
-- [x] HUD combo meter: gold ring around the score drains over the window; "×N" shown beside it.
+- [x] HUD combo meter: a small gold "×N" badge on the score's top-right, with a gold ring around it that drains over the window.
 - [x] An escaped normal bubble or a poison pop breaks the combo (`ComboChanged(broken = true)`).
 - [x] Best combo saved in `StatsEntity.bestCombo` and shown on the Profile screen.
 
@@ -313,8 +313,15 @@ compiled on a Mac).
 ### 3.4 UI
 - [x] **Stage intro card** (`view/stage/StageIntroScreen.kt`): stage number, earned stars, tip text,
       goal, timer, bonus objectives with ☆, best score, PLAY.
-- [x] **Goal bar under the HUD** (`StageGoalBar`): timer pill (red under 10 s) and goal pill
-      "Pop 10 bubbles 7 / 10" with progress bar; turns green when met.
+- [x] **Goals in the HUD** (`StageHud.kt`): on the left one 34 dp star per objective, side by side (they run at the
+      same time, in no order), each filling with its own progress, the objective's picture as a badge on its corner and its live number under it
+      ("75/120s", "1/2", "240/3.1k"). Cream until earned, gold once earned (bonuses only once the main goal is met);
+      a broken constraint empties grey with a red ✕. Score alone in the middle; the timer (red under 10 s) over the power-up
+      chips on the right, gear in the corner. One 70 dp jewel-teal panel with a gold rim, glass shine, a darker lip and a shadow;
+      white-to-gold score that bumps as it rises; 8 dp padding and gaps. Lit stars glow (breathing) and sparkle once when
+      earned; cream stars shimmer every few seconds. On a ~320 dp phone the middle
+      narrows, gaps go to 4 dp, the stars shrink and their numbers go short ("75s", "240") — checked on the A35 at 320 dp.
+      The timer pops on every tick of its last 10 s (and turns red).
 - [x] **Result overlay** (`StageResultOverlay`): STAGE CLEAR / FAILED, stars spring in one by one
       with a rising pop sound + haptic each, score counts up, ✓/✗ per objective, NEW BEST / BEST.
       Buttons: Next (cleared + next exists) / Retry / Stages.
@@ -495,7 +502,7 @@ compiled on a Mac). Waves in `game/WaveDirector.kt`, unlock rules in `game/Endle
       where the last one peaked. Spawn interval ×0.85 per level, top speed +15% of base per level,
       both clamped by the difficulty's `minSpawnInterval` / `maxSpeedCap` (reached around wave 6–8).
       Works the same for all three cards, or for a single Endless mode later.
-- [x] HUD pill under the score: "WAVE N" with a progress bar ("GET READY" during the calm).
+- [x] Endless HUD: the wave number and its progress bar on the left (where stages show their stars); the wave banner announces each wave.
       `WaveCleared(wave)` / `WaveStarted(wave)` events (sound + haptics now; missions later).
 - [x] **New bubble types join Endless once unlocked in Stages:** a special type is unlocked when the
       first stage that spawns it has ≥1★. Endless weights next to 75 / 15 / 10: golden 6, ice 4,
@@ -568,9 +575,9 @@ Home now has a coin counter and **Today** 📅 (red dot while the login reward i
 - [x] Best combo on the Profile screen (Phase 2).
 - [x] Total stars on the Profile screen (Phase 3), plus coins, missions completed and achievements.
 - [x] Until sign-in exists: default avatar + editable local player name (tap the name; DataStore, max 16).
-- [x] Leaderboard **Local** tab: the 20 best Endless rounds on this device from Room (mock data removed).
-      Reached from the 🏆 button on Home.
-- [x] **Global** tab: kept, shows "Coming soon" until the backend phase.
+- [x] Leaderboard is always **global**, with one tab per difficulty: **Easy / Medium / Hard** (scores on
+      different difficulties aren't comparable, so no Local tab and no difficulty chips). Until the backend
+      exists each tab shows the 20 best rounds on this device for that difficulty, with a hint saying so.
 - [ ] Playtest coin amounts and prices.
 
 ### 8.7 Sign-in & online (later — needs Firebase or Supabase)
@@ -578,7 +585,8 @@ Home now has a coin counter and **Today** 📅 (red dot while the login reward i
       authenticated through Firebase Auth or Supabase Auth.
 - [ ] Profile picture and display name come from the signed-in Google/Facebook account
       (loaded with Coil, as `ProfileButton` already does).
-- [ ] Global leaderboard + Daily Challenge rankings stored in the backend.
+- [ ] Global leaderboard (per difficulty, feeding the existing Easy / Medium / Hard tabs) + Daily
+      Challenge rankings stored in the backend.
 - [ ] Optional: sync Room/DataStore progress to the cloud so it survives reinstall / new device.
 
 ---
@@ -625,7 +633,7 @@ compiled on a Mac — nothing here has been seen or heard on real hardware yet).
 **Status: done** (Android build and 142 unit tests pass; not yet seen on a device or in Android
 Studio previews, iOS not yet compiled on a Mac). Replaced the stock Material look with a game UI.
 
-**Style:** glossy, rounded, casual-game. Frosted glass panels over the sunset-sky art, chunky
+**Style:** glossy, rounded, casual-game. Frosted glass panels over a calm night sky (Home keeps the sunset art), chunky
 candy buttons that sink onto a darker lip when pressed, Baloo 2 everywhere with an indigo outline
 on titles (like the logo), and icons drawn in code. Colours come from the existing art: indigo
 (logo outline), violet and gold (ribbon), pale glass blue (cards).
@@ -646,8 +654,8 @@ on titles (like the logo), and icons drawn in code. Colours come from the existi
     bouncy pop-in), `OverlayScrim` (in-game cards; scrolls on short screens), `DialogButtons`.
   - `GameTopBar` (back or avatar, outlined title that never overlaps the right side, counters),
     `CoinCounter` / `StarCounter` (one app-wide source, `LocalPlayerResources`), `AvatarButton`
-    (ready for the sign-in photo), `BottomDock` (Home), `GameScreen` (standard scrolling screen),
-    `GameBackground` (sky art + drifting bubbles + scrim).
+    (ready for the sign-in photo), `BottomDock` (tab bar on every menu screen, current tab highlighted; hidden in rounds), `GameScreen` (standard scrolling screen),
+    `GameBackground` — Home: the sunset art; every other menu screen: `NightSky`, a calm navy-to-glowing-sky-blue gradient with soft glows, twinkling stars and dimmed bubbles under a 40% black shade (`GameColors.BackgroundShade`), so cards and text stand out. The stage map keeps its world colours.
   - `GameSwitch`, `ToggleRow`, `GameTabs`, `GameProgressBar`, `GameTextField`, `ResourcePill`,
     `CoinAmount`, `BadgeDot`, `OutlinedText`, `Ribbon`.
 - `ui/UiKitScreen.kt` — every component on one screen; view it as `UiKitScreenPreview` in
@@ -657,13 +665,18 @@ on titles (like the logo), and icons drawn in code. Colours come from the existi
 components above instead of Material ones; no emojis — add a `GameIcons` icon instead.
 
 **Screens converted:** every dialog (daily reward, reset progress, name, in-game settings), every
-menu screen (Home with bottom dock, Endless, Stage map, Stage card, Today, Shop, Profile, Settings,
+menu screen (Home, Endless, Stage map, Stage card, Today, Shop, Profile, Settings,
 Leaderboard), and every in-game layer (HUD, timer / goal / wave pills, wave banner, pause menu,
 game-over and stage-result cards, rewards panel, wind buttons, tutorial).
 
+**Home top bar & quit:** avatar left, star and coin counters centred (`GameTopBar`'s `center` slot),
+red close button right. The close button and system back on Home open a "Leaving?" dialog
+(Keep playing / Quit); Quit finishes the Activity. iOS passes no `onExitApp`, so the button is hidden
+there (iOS apps don't close themselves).
+
 - [ ] Look at every screen on a real phone, including a small one (~320 dp wide). Checked in code
-      only: the top bar title and the Profile counters were fixed to fit; the HUD can get crowded
-      on very narrow screens while a shield, a freeze and a combo are all showing at once.
+      only: the top bar title and the Profile counters were fixed to fit. The HUD (checked on a Galaxy A35) is one panel that fits down to
+      ~320 dp (checked by running the A35 at 320 dp).
 - [ ] Optional: check font scaling (large system text) on the dialogs and HUD.
 
 ---
@@ -677,6 +690,20 @@ Only after the game is fun and retaining players.
 - ❌ No energy / lives timers.
 - ❌ No interstitial ads between rounds.
 - ❌ No pay-to-win power-ups.
+
+### Revive (continue once)
+
+- [x] **Coin revive:** a lost round (out of lives, skull, or a stage's timer with 0 stars) offers
+      "Continue?" for 5 s — **50 coins**, once per round, in every mode including the Daily
+      Challenge. Only offered when the player can afford it; otherwise the result shows as before.
+      Out of lives → 2 lives back; skull → every skull on screen bursts; time up → +15 s. Then a
+      2.5 s grace period: bubbles slowed, escapes cost no life, skulls are harmless.
+      Nothing is saved until the offer is declined or runs out (`BubbleGameViewModel.endGame` →
+      `finishRound`); back declines it. "Lose no lives" stays failed after a revive.
+      Tuning in `GameRules.REVIVE_*`, UI in `view/play/ReviveOverlay.kt`, tests in `ReviveTest`.
+- [ ] **Rewarded-ad revive:** a "Watch ad" button beside the coin one (AdMob behind a
+      `RewardedAdProvider` interface; needs an AdMob account and ad unit IDs).
+- [ ] Playtest the price and the grace length on a real phone.
 
 ---
 

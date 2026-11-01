@@ -5,6 +5,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.geometry.Offset
@@ -42,6 +43,10 @@ fun OutlinedText(
     outlineWidth: Dp = 2.dp,
     textAlign: TextAlign? = null,
     maxLines: Int = Int.MAX_VALUE,
+    // Ellipsis clips to the text box, which also cuts off the outline at its sides; Visible doesn't.
+    overflow: TextOverflow = TextOverflow.Ellipsis,
+    // A gradient fill in place of [color] (the HUD's gold score).
+    brush: Brush? = null,
 ) {
     // A stroke is centred on the glyph edge, so twice the width shows [outlineWidth] outside it.
     val strokePx = with(LocalDensity.current) { outlineWidth.toPx() } * 2f
@@ -56,14 +61,14 @@ fun OutlinedText(
             ),
             textAlign = textAlign,
             maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
+            overflow = overflow,
         )
         Text(
             text = text,
-            style = style.copy(color = color),
+            style = if (brush != null) style.copy(brush = brush) else style.copy(color = color),
             textAlign = textAlign,
             maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
+            overflow = overflow,
         )
     }
 }

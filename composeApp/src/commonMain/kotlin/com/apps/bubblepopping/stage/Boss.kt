@@ -110,7 +110,7 @@ object Bosses {
     val CLOUD_KING = BossConfig(
         id = "cloud_king",
         name = "Cloud King",
-        hpPerGeneration = listOf(150),
+        hpPerGeneration = listOf(165),
         phases = listOf(
             emptyList(),
             listOf(BossTrick.ThrowSkulls(everyHits = 4)),
@@ -123,7 +123,7 @@ object Bosses {
     val STORM_CLOUD = BossConfig(
         id = "storm_cloud",
         name = "Storm Cloud",
-        hpPerGeneration = listOf(220),
+        hpPerGeneration = listOf(260),
         phases = listOf(
             listOf(BossTrick.ThrowSkulls(everyHits = 5)),
             listOf(BossTrick.Gust(everyHits = 6), BossTrick.ThrowSkulls(everyHits = 4)),
@@ -149,7 +149,7 @@ object Bosses {
     val TIDE_KRAKEN = BossConfig(
         id = "tide_kraken",
         name = "Tide Kraken",
-        hpPerGeneration = listOf(260),
+        hpPerGeneration = listOf(320),
         phases = listOf(
             listOf(BossTrick.ThrowSkulls(everyHits = 6)),
             listOf(BossTrick.IceShield(everyHits = 15), BossTrick.ThrowSkulls(everyHits = 5)),
@@ -162,7 +162,7 @@ object Bosses {
     val NEBULA_CORE = BossConfig(
         id = "nebula_core",
         name = "Nebula Core",
-        hpPerGeneration = listOf(300),
+        hpPerGeneration = listOf(270),
         phases = listOf(
             listOf(BossTrick.DropBombs(count = 3), BossTrick.ThrowSkulls(everyHits = 6)),
             listOf(BossTrick.BlastArmor(everySec = 5f, bombs = 2)),
@@ -176,7 +176,7 @@ object Bosses {
     val BLACK_HOLE = BossConfig(
         id = "black_hole",
         name = "Black Hole",
-        hpPerGeneration = listOf(330),
+        hpPerGeneration = listOf(460),
         phases = listOf(
             listOf(BossTrick.Gravity(strength = 0.25f)),
             listOf(BossTrick.Gravity(strength = 0.4f), BossTrick.ThrowSkulls(everyHits = 4, count = 2)),
@@ -186,11 +186,11 @@ object Bosses {
         lightningDamage = GameRules.LIGHTNING_BOSS_DAMAGE * 2,
     )
 
-    /** Stage 70: 110 HP, then 3 copies × 35 HP, then 9 copies × 12 HP; the smallest copies throw skulls. */
+    /** Stage 70: 140 HP, then 3 copies × 45 HP, then 9 copies × 16 HP; the smallest copies throw skulls. */
     val GUMBALL_GIANT = BossConfig(
         id = "gumball_giant",
         name = "Gumball Giant",
-        hpPerGeneration = listOf(110, 35, 12),
+        hpPerGeneration = listOf(140, 45, 16),
         phases = listOf(
             emptyList(),
             listOf(BossTrick.ThrowSkulls(everyHits = 8)),
@@ -204,7 +204,7 @@ object Bosses {
     val SUGAR_GOLEM = BossConfig(
         id = "sugar_golem",
         name = "Sugar Golem",
-        hpPerGeneration = listOf(340),
+        hpPerGeneration = listOf(460),
         phases = listOf(
             listOf(BossTrick.Plates(count = 3, tapsEach = 3)),
             listOf(BossTrick.HealOnEscape(hp = 5), BossTrick.ThrowSkulls(everyHits = 5)),
@@ -217,7 +217,7 @@ object Bosses {
     val PHANTOM = BossConfig(
         id = "phantom",
         name = "Phantom",
-        hpPerGeneration = listOf(320),
+        hpPerGeneration = listOf(430),
         phases = listOf(
             listOf(BossTrick.Fade(visibleShare = 0.65f)),
             listOf(BossTrick.Fade(visibleShare = 0.5f), BossTrick.ThrowGhosts(everyHits = 4, count = 2)),
@@ -233,7 +233,7 @@ object Bosses {
     val FROST_TITAN = BossConfig(
         id = "frost_titan",
         name = "Frost Titan",
-        hpPerGeneration = listOf(330, 30),
+        hpPerGeneration = listOf(210, 18),
         phases = listOf(
             listOf(BossTrick.Plates(count = 3, tapsEach = 4), BossTrick.ThrowSkulls(everyHits = 6)),
             listOf(BossTrick.Sting(everyHits = 5, seconds = 1.5f), BossTrick.ThrowSkulls(everyHits = 4)),

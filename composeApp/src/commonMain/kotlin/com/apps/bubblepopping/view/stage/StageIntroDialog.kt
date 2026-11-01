@@ -1,58 +1,59 @@
 package com.apps.bubblepopping.view.stage
 
-import com.apps.bubblepopping.ui.icons.playIcon
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.clickable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import com.apps.bubblepopping.meta.Booster
-import com.apps.bubblepopping.ui.components.LocalPlayerResources
-import com.apps.bubblepopping.ui.components.LocalUiFeedback
-import com.apps.bubblepopping.ui.components.candyFace
-import com.apps.bubblepopping.ui.components.sunkenWell
-import com.apps.bubblepopping.ui.theme.Corners
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import com.apps.bubblepopping.data.StageProgress
+import com.apps.bubblepopping.meta.Booster
 import com.apps.bubblepopping.stage.StageCatalog
 import com.apps.bubblepopping.stage.StageConfig
 import com.apps.bubblepopping.ui.components.ButtonColor
 import com.apps.bubblepopping.ui.components.ButtonSize
-import com.apps.bubblepopping.ui.components.OutlinedText
 import com.apps.bubblepopping.ui.components.GameButton
-import com.apps.bubblepopping.ui.components.EnamelTone
 import com.apps.bubblepopping.ui.components.GameDialog
-import com.apps.bubblepopping.ui.components.ResourcePill
+import com.apps.bubblepopping.ui.components.LocalPlayerResources
+import com.apps.bubblepopping.ui.components.OutlinedText
+import com.apps.bubblepopping.ui.components.PressableSurface
+import com.apps.bubblepopping.ui.components.StatusBadge
+import com.apps.bubblepopping.ui.components.enamelPill
 import com.apps.bubblepopping.ui.components.formatCount
-import com.apps.bubblepopping.ui.components.goldInset
 import com.apps.bubblepopping.ui.icons.GameIcons
+import com.apps.bubblepopping.ui.icons.playIcon
 import com.apps.bubblepopping.ui.theme.BubbleTheme
 import com.apps.bubblepopping.ui.theme.GameColors
 import com.apps.bubblepopping.ui.theme.GameTheme
 import com.apps.bubblepopping.ui.theme.Spacing
 
 /**
- * Shown over the stage map when a stage is tapped, built to be read in one
- * glance: stars earned, a one-line story, the goal and bonus stars in one box,
- * the best score once played, and Play.
+ * Shown over the stage map when a stage is tapped, built to be taken in at a
+ * glance rather than read: the stars earned, then every target in one gold
+ * well (picture, short title, number — the main goal big, springing in last so
+ * the eye lands there, the bonus stars below), the power-ups as round buttons,
+ * and Play.
  */
 @Composable
 fun StageIntroDialog(
@@ -73,58 +74,30 @@ fun StageIntroDialog(
                 Text("BOSS · ${boss.name}", style = GameTheme.type.label, color = GameColors.Gold)
             }
         }
-        StarRow(earned = progress?.stars ?: 0, total = stage.maxStars, starSize = STAR_SIZE)
-        Text(
-            text = stage.introText,
-            style = GameTheme.type.body,
-            color = GameColors.TextSecondary,
-            textAlign = TextAlign.Center,
-            maxLines = STORY_LINES,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        // No best score here: a stage is played for its targets, not for a record.
+        StageStars(earned = progress?.stars ?: 0, total = stage.maxStars)
 
-        // "GOAL" centred just above the box holding the goal, then the bonus stars.
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
-                Image(GameIcons.Target, contentDescription = null, modifier = Modifier.size(GOAL_TITLE_ICON))
-                OutlinedText("GOAL", GameTheme.type.headline, color = GameColors.Gold)
-            }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .goldInset()
-                    .padding(horizontal = Spacing.m, vertical = Spacing.xs),
-            ) {
-                ObjectiveRow(description = stage.goal.description, progress = null, isBonus = false, goalIcon = goalIcon(stage.goal))
-                stage.bonusGoals.forEach { objective ->
-                    ObjectiveRow(description = objective.description, progress = null, isBonus = true)
-                }
-            }
-        }
-
-        // The best score, once the stage has been played.
-        progress?.bestScore?.takeIf { it > 0 }?.let { best ->
-            ResourcePill(GameIcons.Star, "Best ${formatCount(best)}", tint = GameColors.VioletTop, tone = EnamelTone.VIOLET)
-        }
+        TargetsSection(stage.goal, stage.bonusGoals, stage.world, popIn = true)
 
         // Head starts for this attempt, paid when PLAY is pressed.
         if (offered.isNotEmpty()) {
-            OutlinedText("BOOSTERS", GameTheme.type.label, color = GameColors.Gold)
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), modifier = Modifier.fillMaxWidth()) {
-                offered.forEach { booster ->
-                    val selected = booster in picked
-                    BoosterTile(
-                        booster = booster,
-                        selected = selected,
-                        affordable = selected || cost + booster.price <= coins,
-                        onClick = { picked = if (selected) picked - booster else picked + booster },
-                        modifier = Modifier.weight(1f),
-                    )
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                SectionTitle("POWER-UPS")
+                // Up to five fit side by side on the narrowest phone.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.s, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.Top,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    offered.forEach { booster ->
+                        val selected = booster in picked
+                        BoosterButton(
+                            booster = booster,
+                            selected = selected,
+                            affordable = selected || cost + booster.price <= coins,
+                            onClick = { picked = if (selected) picked - booster else picked + booster },
+                        )
+                    }
                 }
             }
         }
@@ -142,36 +115,81 @@ fun StageIntroDialog(
 }
 
 /**
- * One booster on a stage card: its icon, name and price. Tapping picks it (green) or
- * drops it; one the player can't afford is greyed out and can't be picked.
+ * The stage's stars as one shape, the classic way: the middle star bigger and
+ * the side ones a little lower, so the row reads as an arc. Earned stars are
+ * gold, the rest faded. An even count has no middle, so its stars stay level.
  */
 @Composable
-private fun BoosterTile(
+private fun StageStars(earned: Int, total: Int, modifier: Modifier = Modifier) {
+    val middle = if (total % 2 == 1 && total >= 3) total / 2 else -1
+    Row(modifier, verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+        repeat(total) { index ->
+            Image(
+                imageVector = GameIcons.Star,
+                contentDescription = null,
+                modifier = Modifier
+                    .padding(top = if (index == middle || middle < 0) 0.dp else SIDE_STAR_DROP)
+                    .size(if (index == middle) MIDDLE_STAR else SIDE_STAR)
+                    .alpha(if (index < earned) 1f else UNEARNED_STAR_ALPHA),
+            )
+        }
+    }
+}
+
+/**
+ * One booster: a round candy button with its icon, and its price on a coin tag
+ * tucked under it. Tapping picks it — the button turns green with a tick on its
+ * corner — or drops it. One the player can't afford is greyed out.
+ */
+@Composable
+private fun BoosterButton(
     booster: Booster,
     selected: Boolean,
     affordable: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val feedback = LocalUiFeedback.current
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-        modifier = modifier
-            .alpha(if (affordable) 1f else UNAFFORDABLE_ALPHA)
-            .then(if (selected) Modifier.candyFace(ButtonColor.GREEN, Corners.medium) else Modifier.sunkenWell())
-            .clickable(enabled = affordable, onClickLabel = booster.description) {
-                feedback.click()
-                onClick()
-            }
-            .semantics { contentDescription = "${booster.title}, ${booster.price} coins" }
-            .padding(vertical = Spacing.s),
+        modifier = modifier.semantics(mergeDescendants = true) {
+            contentDescription = "${booster.title}: ${booster.description}, ${booster.price} coins"
+            this.selected = selected
+        },
     ) {
-        Image(booster.icon, contentDescription = null, modifier = Modifier.size(BOOSTER_ICON))
-        OutlinedText(booster.title, GameTheme.type.caption, maxLines = 1)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Box {
+            PressableSurface(
+                onClick = onClick,
+                color = if (selected) ButtonColor.GREEN else ButtonColor.GLASS,
+                shape = CircleShape,
+                lip = BOOSTER_LIP,
+                enabled = affordable,
+                role = Role.Checkbox,
+                modifier = Modifier.size(width = BOOSTER_SIZE, height = BOOSTER_SIZE + BOOSTER_LIP),
+            ) {
+                Image(booster.icon, contentDescription = null, modifier = Modifier.size(BOOSTER_ICON))
+            }
+            if (selected) {
+                StatusBadge(
+                    GameIcons.Tick,
+                    ButtonColor.GREEN,
+                    size = TICK_SIZE,
+                    modifier = Modifier.align(Alignment.TopEnd).offset(x = TICK_SIZE / 4, y = -TICK_SIZE / 4),
+                )
+            }
+        }
+        // The price tag overlaps the button's lip, like a label hung on it.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier
+                .offset(y = -PRICE_OVERLAP)
+                .alpha(if (affordable) 1f else UNAFFORDABLE_ALPHA)
+                .height(PRICE_HEIGHT)
+                .enamelPill(GameColors.PillCoin)
+                .padding(start = 2.dp, end = Spacing.s),
+        ) {
             Image(GameIcons.Coin, contentDescription = null, modifier = Modifier.size(PRICE_ICON))
-            OutlinedText("${booster.price}", GameTheme.type.caption, maxLines = 1)
+            OutlinedText("${booster.price}", GameTheme.type.caption, outlineWidth = 1.5.dp, maxLines = 1)
         }
     }
 }
@@ -185,22 +203,27 @@ private val Booster.icon: ImageVector
         Booster.LIGHTNING -> GameIcons.Bolt
     }
 
-private val BOOSTER_ICON = 30.dp
-private val PRICE_ICON = 14.dp
+private val BOOSTER_SIZE = 48.dp
+private val BOOSTER_LIP = 4.dp
+private val BOOSTER_ICON = 28.dp
+private val TICK_SIZE = 22.dp
+private val PRICE_HEIGHT = 20.dp
+private val PRICE_ICON = 16.dp
+private val PRICE_OVERLAP = 6.dp
 private const val UNAFFORDABLE_ALPHA = 0.45f
 private val BOSS_ICON = 28.dp
-private val GOAL_TITLE_ICON = 26.dp
-private val STAR_SIZE = 38.dp
-/** The story is one short line or two; anything longer is cut, so the card stays a glance. */
-private const val STORY_LINES = 2
+private val SIDE_STAR = 38.dp
+private val MIDDLE_STAR = 50.dp
+private val SIDE_STAR_DROP = 10.dp
+private const val UNEARNED_STAR_ALPHA = 0.3f
 
 @Preview
 @Composable
 fun StageIntroDialogPreview() {
     BubbleTheme {
         StageIntroDialog(
-            stage = StageCatalog.stage(3),
-            progress = StageProgress(3, stars = 2, bestScore = 44),
+            stage = StageCatalog.stage(12),
+            progress = StageProgress(12, stars = 2, bestScore = 44),
             onPlay = {},
             onDismiss = {},
         )

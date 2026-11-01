@@ -296,8 +296,8 @@ class BossTest {
 
     @Test
     fun bossTotals_includeEverySplitCopy() {
-        assertEquals(150, Bosses.CLOUD_KING.totalHp)
-        assertEquals(110 + 3 * 35 + 9 * 12, Bosses.GUMBALL_GIANT.totalHp)
+        assertEquals(165, Bosses.CLOUD_KING.totalHp)
+        assertEquals(140 + 3 * 45 + 9 * 16, Bosses.GUMBALL_GIANT.totalHp)
     }
 
     @Test
@@ -373,5 +373,19 @@ class BossTest {
         viewModel.runFor(1f)
         val spread = viewModel.bubbles.map { kotlin.math.abs(it.baseX - boss.x) }.average()
         assertTrue(spread < 1080f / 4f, "bubbles should gather under the boss, spread $spread")
+    }
+
+    @Test
+    fun fadingBoss_canOnlyBeHitWhileItShows() = runTest {
+        val viewModel = bossViewModel(boss(30, tricks = listOf(BossTrick.Fade(visibleShare = 0.4f))))
+        collectEvents(viewModel)
+        val boss = viewModel.bosses.single()
+        var waited = 0f
+        while (boss.visibility >= GameRules.GHOST_TAPPABLE && waited < 10f) {
+            viewModel.update(FRAME)
+            waited += FRAME
+        }
+        assertFalse(viewModel.tapBoss())
+        assertEquals(30, boss.hp)
     }
 }

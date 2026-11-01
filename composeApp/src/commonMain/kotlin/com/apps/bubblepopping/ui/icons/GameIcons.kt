@@ -35,6 +35,9 @@ object GameIcons {
 
     val Check: ImageVector get() = CheckArt
 
+    /** A plain white tick, for a coloured badge where the green [Check] would vanish. */
+    val Tick: ImageVector by lazy { twoPassStroke("Tick") { moveTo(5.5f, 12.5f); lineTo(10f, 17f); lineTo(18.5f, 7f) } }
+
     val Play: ImageVector by lazy {
         icon("Play") {
             path(fill = SolidColor(Color.White), stroke = InkStroke, strokeLineWidth = OUTLINE, strokeLineJoin = StrokeJoin.Round) {
@@ -149,6 +152,34 @@ object GameIcons {
             path(fill = SolidColor(Color(0xFFFFEA00)), stroke = InkStroke, strokeLineWidth = OUTLINE, strokeLineJoin = StrokeJoin.Round) {
                 moveTo(14f, 2f); lineTo(5f, 13.5f); lineTo(11f, 13.5f)
                 lineTo(9.5f, 22f); lineTo(19f, 10f); lineTo(13f, 10f); close()
+            }
+        }
+    }
+
+    /** A flame — a hot streak, for combo goals. */
+    val Flame: ImageVector by lazy {
+        icon("Flame") {
+            // Outer flame: orange, leaning a little, with a lick on the right.
+            path(fill = SolidColor(Color(0xFFFF7A1F)), stroke = InkStroke, strokeLineWidth = OUTLINE, strokeLineJoin = StrokeJoin.Round) {
+                moveTo(12f, 22f)
+                curveTo(7.2f, 22f, 4.5f, 18.8f, 4.5f, 15f)
+                curveTo(4.5f, 11f, 7.5f, 8.5f, 8.5f, 4.5f)
+                curveTo(10.5f, 6f, 11.5f, 8f, 11.5f, 10f)
+                curveTo(12.8f, 8.2f, 13.6f, 5.2f, 13f, 2f)
+                curveTo(17f, 4.5f, 19.5f, 9.5f, 19.5f, 14.5f)
+                curveTo(19.5f, 18.8f, 16.6f, 22f, 12f, 22f)
+                close()
+            }
+            // Hot yellow core.
+            path(fill = SolidColor(Color(0xFFFFE066))) {
+                moveTo(12f, 20.5f)
+                curveTo(9.6f, 20.5f, 8.2f, 18.9f, 8.2f, 17f)
+                curveTo(8.2f, 14.8f, 10f, 13.6f, 10.8f, 11.5f)
+                curveTo(12f, 12.6f, 12.4f, 13.8f, 12.4f, 15f)
+                curveTo(13.2f, 14.4f, 13.8f, 13.4f, 14f, 12.3f)
+                curveTo(15.2f, 13.6f, 15.8f, 15.2f, 15.8f, 16.8f)
+                curveTo(15.8f, 18.9f, 14.3f, 20.5f, 12f, 20.5f)
+                close()
             }
         }
     }

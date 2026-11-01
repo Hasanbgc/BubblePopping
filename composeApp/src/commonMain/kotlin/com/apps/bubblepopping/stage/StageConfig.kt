@@ -9,7 +9,8 @@ import com.apps.bubblepopping.game.SpawnConfig
  * How a stage ends:
  * - **Untimed** ([durationSec] null): as soon as [goal] is met. Bonus objectives
  *   must therefore be constraints (checked at that moment).
- * - **Timed**: when time runs out, or earlier once every objective is met.
+ * - **Timed**: when time runs out, however early the stars were earned — the clock
+ *   is the stage, and the score keeps counting.
  * - Either way, running out of lives or popping poison ends it immediately.
  *
  * Stars: 1 for [goal], plus 1 per met [bonusGoals] entry. 0 stars = failed.

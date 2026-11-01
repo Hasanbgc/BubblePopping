@@ -31,19 +31,13 @@ import kotlinx.coroutines.flow.first
 import kotlin.math.ceil
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigationevent.NavigationEventInfo
@@ -60,13 +54,12 @@ import com.apps.bubblepopping.game.GameRules
 import com.apps.bubblepopping.view.BalooFontFamily
 import com.apps.bubblepopping.view.play.component.drawFloatingText
 import com.apps.bubblepopping.view.play.component.drawNearMissWarning
-import com.apps.bubblepopping.view.play.component.StageGoalBar
+import com.apps.bubblepopping.view.play.component.TimerLabel
 import com.apps.bubblepopping.view.play.component.WaveBanner
-import com.apps.bubblepopping.view.play.component.WavePill
+import com.apps.bubblepopping.view.play.component.WaveMeter
+import com.apps.bubblepopping.view.play.component.StarMeters
 import androidx.compose.foundation.layout.statusBarsPadding
 import kotlinx.coroutines.launch
-import com.apps.bubblepopping.heart
-import com.apps.bubblepopping.skull
 import com.apps.bubblepopping.view.BubbleGameViewModel
 import com.apps.bubblepopping.view.play.component.BubbleType
 import com.apps.bubblepopping.view.play.component.GameHud
@@ -76,7 +69,9 @@ import com.apps.bubblepopping.view.play.component.drawGameBubble
 import com.apps.bubblepopping.view.play.component.drawBoss
 import com.apps.bubblepopping.view.play.component.drawConfetti
 import com.apps.bubblepopping.view.StingColor
-import com.apps.bubblepopping.view.play.component.BubbleIcons
+import com.apps.bubblepopping.view.play.component.rememberBubbleIcons
+import com.apps.bubblepopping.stage.ObjectiveProgress
+import com.apps.bubblepopping.view.stage.TargetsSection
 import com.apps.bubblepopping.view.FreezeColor
 import com.apps.bubblepopping.game.GameMode
 import com.apps.bubblepopping.audio.GameMusic
@@ -108,7 +103,6 @@ import kotlin.math.abs
 import com.apps.bubblepopping.view.play.component.drawPopAnimation
 import com.apps.bubblepopping.view.play.component.drawLightningBolt
 import com.apps.bubblepopping.view.play.component.drawChainLink
-import org.jetbrains.compose.resources.painterResource
 
 /** Pop sounds; one is picked at random per pop. */
 private val POP_SAMPLES = listOf("files/pop_1.wav", "files/pop_2.wav", "files/pop_3.wav")
@@ -196,9 +190,7 @@ fun BubblePoppingScreen(
 
     var elapsedTime by remember { mutableStateOf(0f) }
 
-    val heartBitmap = rememberIconBitmap(painterResource(Res.drawable.heart))
-    val skullBitmap = rememberIconBitmap(painterResource(Res.drawable.skull))
-    val bubbleIcons = remember(heartBitmap, skullBitmap) { BubbleIcons(heart = heartBitmap, skull = skullBitmap) }
+    val bubbleIcons = rememberBubbleIcons()
 
     val isPaused by viewModel.isPaused.collectAsStateWithLifecycle()
 
@@ -542,6 +534,8 @@ fun BubblePoppingScreen(
             if (isPaused && !viewModel.isGameOver) {
                 PauseOverlay(
                     score     = viewModel.score,
+                    objectives = viewModel.objectives,
+                    world     = viewModel.world,
                     onResume  = { viewModel.togglePause() },
                     onRestart = { viewModel.restartGame() },
                     onSettings = { showSettings = true },
@@ -573,6 +567,8 @@ fun BubblePoppingScreen(
 
             // ── HUD — drawn last, always on top ──────────────────────────────────
             // Manages its own statusBarsPadding; no external top padding needed.
+            // In a stage: a star per target, the timer and score; in Endless: the wave and score.
+            val inStage = viewModel.stage != null
             GameHud(
                 score = viewModel.score,
                 lives = viewModel.livesLeft,
@@ -586,38 +582,26 @@ fun BubblePoppingScreen(
                 shieldActive = viewModel.shieldActive,
                 freezeSecondsLeft = freezeSecondsLeft,
                 doubleSecondsLeft = doubleSecondsLeft,
+                timer = viewModel.timeLeftSec?.takeIf { inStage }?.let { secondsLeft -> { TimerLabel(secondsLeft) } },
+                goals = {
+                    if (inStage) StarMeters(viewModel.objectives, viewModel.world)
+                    else WaveMeter(viewModel.wave, { viewModel.waveProgress }, viewModel.isWaveCalm)
+                },
             )
 
-            // ── Stage: timer + goal progress under the HUD ──────────────────────
-            if (viewModel.stage != null) {
-                StageGoalBar(
-                    goal = viewModel.objectives.firstOrNull(),
-                    timeLeftSec = viewModel.timeLeftSec,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .statusBarsPadding()
-                        .padding(top = HUD_CONTENT_HEIGHT + 4.dp),
-                )
+            if (inStage) {
                 // The goal in full, big in the middle as the round starts.
                 viewModel.objectives.firstOrNull()?.let { goal ->
                     GoalBanner(
-                        text = goal.objective.description,
+                        goal = goal.objective,
+                        world = viewModel.world,
                         // Hidden while paused, so it never sits on top of the pause menu.
                         visible = goalBannerVisible && !isPaused,
                         modifier = Modifier.align(Alignment.Center),
                     )
                 }
             } else {
-                // ── Endless: wave progress under the HUD, banner between waves ──
-                WavePill(
-                    wave     = viewModel.wave,
-                    progress = { viewModel.waveProgress },
-                    isCalm   = viewModel.isWaveCalm,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .statusBarsPadding()
-                        .padding(top = HUD_CONTENT_HEIGHT + 4.dp),
-                )
+                // ── Endless: banner between waves ──────────────────────────────
                 WaveBanner(
                     wave     = viewModel.wave,
                     // Hidden while paused, so it never sits on top of the pause menu;
@@ -717,9 +701,18 @@ fun BubblePoppingScreen(
 // PauseOverlay
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The pause menu. In a stage it also reminds the player what they're playing
+ * for: the same targets section as the stage card, with the main goal filling
+ * up ("7/15") and each bonus marked — a green tick once met, a red cross once broken. The goals take the score plaque's
+ * place there (the HUD shows the score), so the card stays short.
+ */
 @Composable
 private fun PauseOverlay(
     score: Int,
+    /** The stage's objectives with progress, main goal first; empty outside stages. */
+    objectives: List<ObjectiveProgress>,
+    world: World,
     onResume: () -> Unit,
     onRestart: () -> Unit,
     onSettings: () -> Unit,
@@ -730,7 +723,12 @@ private fun PauseOverlay(
     // Tapping the dim area outside the card also resumes.
     OverlayScrim(modifier = modifier, onScrimClick = onResume) {
         GameDialogCard(title = "Paused", onClose = onResume) {
-            ScorePlaque(score = formatCount(score), celebrate = false)
+            val goal = objectives.firstOrNull()
+            if (goal == null) {
+                ScorePlaque(score = formatCount(score), celebrate = false)
+            } else {
+                TargetsSection(goal.objective, objectives.drop(1).map { it.objective }, world, progress = objectives, compact = true)
+            }
             GameButton("Resume", onClick = onResume, size = ButtonSize.LARGE, icon = playIcon(), modifier = Modifier.fillMaxWidth())
             // Secondary actions under a divider, as round buttons with labels, so Resume stays the obvious one.
             PanelDivider()
@@ -780,27 +778,3 @@ private fun BreezeControls(
 
 /** Breeze above this strength lights up its button. */
 private const val WIND_ACTIVE = 0.03f
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Icon helper
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Rasterises a Painter into an ImageBitmap once, then caches it.
-// drawImage in a DrawScope is reliable on all Compose Multiplatform targets;
-// painter.draw() directly in a Canvas DrawScope is not.
-@Composable
-private fun rememberIconBitmap(painter: Painter, sizePx: Int = 256): ImageBitmap {
-    val density = LocalDensity.current
-    return remember(painter, sizePx) {
-        val bitmap = ImageBitmap(sizePx, sizePx)
-        CanvasDrawScope().draw(
-            density         = density,
-            layoutDirection = LayoutDirection.Ltr,
-            canvas          = Canvas(bitmap),
-            size            = Size(sizePx.toFloat(), sizePx.toFloat()),
-        ) {
-            with(painter) { draw(Size(sizePx.toFloat(), sizePx.toFloat())) }
-        }
-        bitmap
-    }
-}

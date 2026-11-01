@@ -108,6 +108,12 @@ object GameColors {
     // Ocean enamel (stage map world name plates): light cyan body and rim
     val EnamelOceanTop = Color(0xFF3FC6D6)
     val EnamelOceanBottom = Color(0xFF178AA6)
+
+    // The HUD panel's jewel teal: bright aqua at the top, deep sea at the bottom, a darker lip below
+    val HudTealTop = Color(0xFF7AF0F0)
+    val HudTealMid = Color(0xFF14A6C2)
+    val HudTealBottom = Color(0xFF07507A)
+    val HudTealLip = Color(0xFF043653)
     val OceanTint = Color(0xFF8CF0F5)
 
     // Leaderboard podium: soft mid-violet cards (between the light enamel and the dialogs) and avatar backgrounds

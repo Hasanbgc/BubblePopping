@@ -30,6 +30,9 @@ data class SpawnConfig(
      * instead of with the score — see [paced]. Endless always uses waves.
      */
     val inWaves: Boolean = false,
+    /** Bubbles per spawn, from [groupMin] to [groupMax]: they rise together in a loose cluster. */
+    val groupMin: Int = 1,
+    val groupMax: Int = 1,
 ) {
     init {
         require(typeWeights.values.all { it >= 0 } && typeWeights.values.sum() > 0) {
@@ -38,6 +41,8 @@ data class SpawnConfig(
     }
 
     companion object {
+        private const val PACED_MIN_SPEED = 0.05f
+
         val DEFAULT_TYPE_WEIGHTS = mapOf(
             BubbleType.NORMAL to 75,
             BubbleType.POISON to 15,
@@ -71,10 +76,14 @@ data class SpawnConfig(
             return SpawnConfig(
                 spawnInterval = start.spawnInterval,
                 minSpawnInterval = top.spawnInterval,
+                // Nothing crawls: the slowest bubbles still cross the screen in about 20 s.
+                minSpeed = PACED_MIN_SPEED,
                 maxSpeed = start.maxSpeed,
                 maxSpeedCap = top.maxSpeed,
                 typeWeights = typeWeights,
                 inWaves = true,
+                groupMin = start.groupMin,
+                groupMax = top.groupMax,
             )
         }
     }

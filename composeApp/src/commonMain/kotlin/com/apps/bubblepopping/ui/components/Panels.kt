@@ -347,6 +347,27 @@ fun BadgeDot(modifier: Modifier = Modifier) {
 }
 
 /**
+ * A small candy disc with an icon, for the corner of a tile or button: a green
+ * tick on a picked booster or a met goal, a red cross on a broken one, a star on
+ * a bonus goal.
+ */
+@Composable
+fun StatusBadge(icon: ImageVector, color: ButtonColor, modifier: Modifier = Modifier, size: Dp = 20.dp) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(size)
+            .drawBehind {
+                val outline = 1.5.dp.toPx()
+                drawCircle(GameColors.ButtonOutline, radius = this.size.minDimension / 2f + outline / 2f, style = Stroke(outline))
+            }
+            .candyFace(color, CircleShape),
+    ) {
+        Image(icon, contentDescription = null, modifier = Modifier.size(size * 0.72f))
+    }
+}
+
+/**
  * Rounded progress bar: a track sunk into the surface (dark, shaded at the top,
  * lit along the bottom edge) holding a shaded, glossy [color] fill.
  */

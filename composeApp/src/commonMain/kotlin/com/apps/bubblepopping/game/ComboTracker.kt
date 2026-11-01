@@ -52,7 +52,7 @@ class ComboTracker(private val window: Float = WINDOW_SECONDS) {
     }
 
     companion object {
-        const val WINDOW_SECONDS = 0.8f
+        const val WINDOW_SECONDS = 1.0f
 
         /** Score multiplier for a combo: ×1 (1–2), ×2 (3–5), ×3 (6–9), ×5 (10+). */
         fun multiplierFor(combo: Int): Int = when {

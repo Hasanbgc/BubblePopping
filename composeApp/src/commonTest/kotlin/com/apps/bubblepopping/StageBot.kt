@@ -27,10 +27,10 @@ data class PlayerSkill(
     val focus: Float,
 ) {
     companion object {
-        val GOOD = PlayerSkill("good", tapInterval = 0.32f, aim = 0.93f, focus = 1f)
-        val CASUAL = PlayerSkill("casual", tapInterval = 0.7f, aim = 0.75f, focus = 0.4f)
+        val GOOD = PlayerSkill("good", tapInterval = 0.2f, aim = 0.93f, focus = 1f)
+        val CASUAL = PlayerSkill("casual", tapInterval = 0.4f, aim = 0.75f, focus = 0.4f)
         /** A player who has got better by the later worlds: the yardstick from stage 41 on. */
-        val IMPROVING = PlayerSkill("improving", tapInterval = 0.5f, aim = 0.85f, focus = 0.7f)
+        val IMPROVING = PlayerSkill("improving", tapInterval = 0.3f, aim = 0.85f, focus = 0.7f)
     }
 }
 
@@ -104,7 +104,8 @@ class StageBot(private val skill: PlayerSkill) {
         private val goals = stage.allObjectives.flatMap { if (it is Objective.AllOf) it.goals else listOf(it) }
         val types = goals.filterIsInstance<Objective.PopType>().map { it.type }.toSet() +
             (if (goals.any { it is Objective.CrackArmored }) setOf(BubbleType.ARMORED) else emptySet()) +
-            (if (goals.any { it is Objective.LightningZaps }) setOf(BubbleType.LIGHTNING) else emptySet())
+            (if (goals.any { it is Objective.LightningZaps }) setOf(BubbleType.LIGHTNING) else emptySet()) +
+            (if (goals.any { it is Objective.ChainPairs }) setOf(BubbleType.CHAIN) else emptySet())
         /** Leave armored bubbles for bombs and lightning. */
         val blastArmor = goals.any { it is Objective.BreakArmoredWithBlast }
         val sizes = goals.filterIsInstance<Objective.PopSize>().map { it.size }.toSet()
@@ -115,14 +116,6 @@ class StageBot(private val skill: PlayerSkill) {
             ?: if (BubbleType.BOMB in types) 0 else DEFAULT_BOMB_CROWD
         /** Let bubbles gather around bombs instead of popping them one by one. */
         val chains = goals.any { it is Objective.BombChain }
-        /** The longest combo asked for, if any: worth letting a crowd gather first. */
-        val combo = goals.mapNotNull {
-            when (it) {
-                is Objective.ReachCombo -> it.combo
-                is Objective.ComboTimes -> it.combo
-                else -> null
-            }
-        }.maxOrNull()
     }
 
     private fun tap(game: BubbleGameViewModel, wants: Wants, random: Random) {
@@ -138,6 +131,8 @@ class StageBot(private val skill: PlayerSkill) {
         val blast = GameRules.BOMB_RADIUS_DP * DENSITY
         val candidates = game.bubbles
             .filter { it.type != BubbleType.POISON && it.y < HEIGHT && it.y > TOP }
+            // A ghost can only be popped while it shows; wait until it's clearly there.
+            .filter { it.type != BubbleType.GHOST || it.visibility >= GHOST_SEEN }
             .filter { it.type != BubbleType.BOMB || bombIsWorthIt(game, it, skulls, wants) }
             // Lightning zaps the nearest bubbles, so it's saved for a crowd (or a boss).
             .filter { bubble ->
@@ -155,7 +150,7 @@ class StageBot(private val skill: PlayerSkill) {
 
         // Bosses: keep hitting unless a normal bubble is about to escape — but never stop for
         // long (every few taps go to the boss regardless), and never into an ice shield.
-        val boss = game.bosses.lastOrNull()?.takeIf { !it.shielded && !it.blastOnly }
+        val boss = game.bosses.lastOrNull()?.takeIf { !it.shielded && !it.blastOnly && it.visibility >= GHOST_SEEN }
         val rushed = candidates.any { it.type == BubbleType.NORMAL && urgency(it) > BOSS_IGNORE_URGENCY }
         tapsSinceBoss++
         if (boss != null && (!rushed || tapsSinceBoss >= BOSS_EVERY_TAPS)) {
@@ -166,13 +161,6 @@ class StageBot(private val skill: PlayerSkill) {
                     tapsSinceBoss = 0
                     return it
                 }
-        }
-        // Combo goals: start a burst only once a crowd has gathered (or something is about to escape).
-        val comboTarget = wants.combo
-        if (comboTarget != null && game.combo == 0) {
-            val crowd = minOf((comboTarget * COMBO_CROWD_SHARE).toInt() + 1, MAX_COMBO_CROWD)
-            val urgent = candidates.any { it.type == BubbleType.NORMAL && urgency(it) > COMBO_RELEASE_URGENCY }
-            if (candidates.size < crowd && !urgent) return null
         }
         val reachable = candidates.filter { firstBubbleAt(game, Offset(it.x, it.y)) === it }
         if (reachable.isEmpty()) return null
@@ -186,7 +174,9 @@ class StageBot(private val skill: PlayerSkill) {
 
     private fun priority(game: BubbleGameViewModel, bubble: Bubble, wants: Wants, skullsAround: Boolean): Float {
         // Only normal bubbles cost a life when they escape.
-        var value = urgency(bubble) * if (bubble.type == BubbleType.NORMAL || bubble.type == BubbleType.ARMORED) 1f else OTHER_URGENCY
+        var value = urgency(bubble) * if (bubble.type in LIFE_BUBBLES) 1f else OTHER_URGENCY
+        // Half a chain pair left: finish it before the popped one comes back.
+        if (bubble.type == BubbleType.CHAIN && game.bubbles.none { it !== bubble && it.linkId == bubble.linkId }) value += CHAIN_FINISH
         if (bubble.type in wants.types) value += WANTED
         if (bubble.size in wants.sizes && bubble.type == BubbleType.NORMAL) value += WANTED
         value += when (bubble.type) {
@@ -268,11 +258,10 @@ class StageBot(private val skill: PlayerSkill) {
         const val BOSS_IGNORE_URGENCY = 0.6f
         /** Even while saving bubbles, at least one tap in this many goes to the boss. */
         const val BOSS_EVERY_TAPS = 3
-        /** Combo goals: wait for about this share of the combo on screen before starting… */
-        const val COMBO_CROWD_SHARE = 0.55f
-        const val MAX_COMBO_CROWD = 14
-        /** …unless a bubble is this close to escaping. */
-        const val COMBO_RELEASE_URGENCY = 0.75f
+        /** Ghosts (and a fading boss) are tapped only from this visible. */
+        const val GHOST_SEEN = 0.55f
+        const val CHAIN_FINISH = 2f
+        val LIFE_BUBBLES = setOf(BubbleType.NORMAL, BubbleType.ARMORED, BubbleType.GHOST, BubbleType.CHAIN)
 
         const val WIND_ZONE = 0.5f
         /** A swipe across this fraction of the screen width. */

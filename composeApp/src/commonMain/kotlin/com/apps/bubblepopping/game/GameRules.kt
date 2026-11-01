@@ -112,6 +112,10 @@ object GameRules {
     const val CHAIN_BONUS = 10
     /** The two bubbles of a pair start this far apart. */
     const val CHAIN_GAP_DP = 64f
+    /** A spawn group spreads up to this far either side of its first bubble… */
+    const val GROUP_SPREAD_DP = 120f
+    /** …each bubble starting this much lower than the one before. */
+    const val GROUP_STAGGER_DP = 45f
     /** A lightning strike shows a fading boss in plain sight this long. */
     const val PHANTOM_REVEAL_SECONDS = 3f
     /** A fading boss goes round its fade this often. */

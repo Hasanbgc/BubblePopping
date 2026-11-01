@@ -114,6 +114,7 @@ class ObjectiveTracker {
                 current = parts.sumOf { minOf(it.current, it.target) },
                 target = parts.sumOf { it.target },
                 satisfied = parts.all { it.satisfied },
+                parts = parts,
             )
         }
         is Objective.FinishUnder ->

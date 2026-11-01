@@ -1348,7 +1348,28 @@ class BubbleGameViewModel(
         spawnTimer += dt
         if (spawnTimer >= interval) {
             spawnTimer = 0f
-            val bubble = createBubble()
+            spawnGroup()
+        }
+    }
+
+    /**
+     * One spawn: a group of [SpawnConfig.groupMin]–[SpawnConfig.groupMax] bubbles rising
+     * together in a loose cluster, each a little lower than the last, so there's always
+     * something to pop and pops chain into combos.
+     */
+    private fun spawnGroup() {
+        val count = if (spawn.groupMax > spawn.groupMin) random.nextInt(spawn.groupMin, spawn.groupMax + 1) else spawn.groupMin
+        val spread = GameRules.GROUP_SPREAD_DP * density
+        val stagger = GameRules.GROUP_STAGGER_DP * density
+        var anchor = 0f
+        repeat(count) { i ->
+            var bubble = createBubble()
+            if (i == 0) {
+                anchor = bubble.baseX
+            } else {
+                val x = (anchor + (random.nextFloat() * 2f - 1f) * spread).coerceIn(bubble.radius, canvasWidth - bubble.radius)
+                bubble = bubble.copy(x = x, baseX = x, y = bubble.y + i * stagger)
+            }
             if (bubble.type == BubbleType.CHAIN) addChainPair(bubble) else bubbles.add(bubble)
         }
     }
@@ -1423,8 +1444,8 @@ class BubbleGameViewModel(
     }
 
     /**
-     * Stage only. Ends the stage when its objectives are met (untimed: main goal;
-     * timed: every objective) or when the timer runs out.
+     * Stage only. An untimed stage ends when its main goal is met; a timed one when
+     * its timer runs out, however early its stars were earned.
      */
     private fun checkStageEnd() {
         val stage = stage ?: return
@@ -1436,7 +1457,7 @@ class BubbleGameViewModel(
         val goalMet = tracker.isSatisfied(stage.goal)
         val duration = stage.durationSec
         when {
-            goalMet && (duration == null || stage.allObjectives.all(tracker::isSatisfied)) ->
+            goalMet && duration == null ->
                 endGame(GameOverReason.GOAL_COMPLETE)
             duration != null && playTime >= duration + bonusSeconds ->
                 endGame(GameOverReason.TIME_UP)

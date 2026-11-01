@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -145,9 +146,11 @@ private const val NIGHT_BUBBLE_ALPHA = 0.35f
  * Top bar used by every screen: round back button on the left, outlined
  * title in the middle, resource pills (or other [actions]) on the right.
  *
- * The title stays centred on the screen but never runs under the side
- * content: it gets the width left between the wider side, mirrored, and is
- * shortened with "…" if that isn't enough (narrow phones, long titles).
+ * The title stays centred on the screen when it fits, but never runs under the
+ * side content: it gets all the width between the two sides and, if one side is
+ * much wider (the stage map's star counter), is centred in the space between them
+ * instead. If even that is too narrow it shrinks a little ([TITLE_MIN_SCALE]), and
+ * only then is shortened with "…".
  */
 @Composable
 fun GameTopBar(
@@ -182,26 +185,45 @@ fun GameTopBar(
             Box {
                 when {
                     center != null -> center()
-                    title != null -> OutlinedText(text = title, style = GameTheme.type.title, outlineWidth = 3.dp, maxLines = 1)
+                    title != null -> TopBarTitle(title)
                 }
             }
         },
     ) { measurables, constraints ->
         val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val width = constraints.maxWidth
         val start = measurables[0].measure(loose)
         val end = measurables[1].measure(loose)
         val gap = Spacing.s.roundToPx()
-        val side = maxOf(start.width, end.width) + gap
-        val titleWidth = (constraints.maxWidth - side * 2).coerceAtLeast(0)
-        val title = measurables[2].measure(loose.copy(maxWidth = titleWidth))
+        val from = start.width + gap
+        val to = width - end.width - gap
+        val title = measurables[2].measure(loose.copy(maxWidth = (to - from).coerceAtLeast(0)))
+        // Centred on the screen; if that would run under a side, centred in the space between the sides.
+        val centred = (width - title.width) / 2
+        val titleX = if (centred >= from && centred + title.width <= to) centred else from + (to - from - title.width) / 2
         val height = constraints.maxHeight
-        layout(constraints.maxWidth, height) {
+        layout(width, height) {
             start.place(0, (height - start.height) / 2)
-            end.place(constraints.maxWidth - end.width, (height - end.height) / 2)
-            title.place((constraints.maxWidth - title.width) / 2, (height - title.height) / 2)
+            end.place(width - end.width, (height - end.height) / 2)
+            title.place(titleX, (height - title.height) / 2)
         }
     }
 }
+
+/** The top bar's title, shrunk a little (to [TITLE_MIN_SCALE]) before it would be cut short. */
+@Composable
+private fun TopBarTitle(title: String) {
+    BoxWithConstraints {
+        val style = GameTheme.type.title
+        val measurer = rememberTextMeasurer()
+        val natural = remember(title, style) { measurer.measure(title, style, maxLines = 1).size.width }
+        val room = constraints.maxWidth
+        val scale = if (natural <= room) 1f else (room.toFloat() / natural).coerceAtLeast(TITLE_MIN_SCALE)
+        OutlinedText(text = title, style = style.copy(fontSize = style.fontSize * scale), outlineWidth = 3.dp, maxLines = 1)
+    }
+}
+
+private const val TITLE_MIN_SCALE = 0.8f
 
 /**
  * Standard menu screen: sky background, top bar, and a scrolling column of
