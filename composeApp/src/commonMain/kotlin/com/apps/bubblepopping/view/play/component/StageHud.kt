@@ -58,6 +58,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -107,6 +110,19 @@ fun StarMeters(objectives: List<ObjectiveProgress>, world: World, modifier: Modi
         val share = maxWidth / objectives.size.coerceAtLeast(1)
         val roomy = share >= ROOMY_SHARE
         val star = if (roomy) STAR else (share - Spacing.s).coerceIn(MIN_STAR, STAR)
+        // The numbers must each fit their share, or they run into each other (and off the
+        // panel's edge): the full "2.5k/5.7k" if all fit, else the short "2.5k", else smaller.
+        val measurer = rememberTextMeasurer()
+        val roomPx = with(LocalDensity.current) { (share - READOUT_GAP).toPx() }
+        fun fits(short: Boolean, style: TextStyle) =
+            objectives.all { measurer.measure(it.hudReadout(short), style, maxLines = 1).size.width <= roomPx }
+        val readoutStyle = READOUT_STYLE()
+        val (short, style) = when {
+            roomy && fits(short = false, readoutStyle) -> false to readoutStyle
+            roomy && fits(short = true, readoutStyle) -> true to readoutStyle
+            else -> true to HUD_LABEL_STYLE()
+        }
+        val small = style != readoutStyle
         Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth()) {
             objectives.forEachIndexed { i, p ->
                 val state = states[i]
@@ -125,10 +141,10 @@ fun StarMeters(objectives: List<ObjectiveProgress>, world: World, modifier: Modi
                         )
                     }
                     OutlinedText(
-                        p.hudReadout(short = !roomy),
-                        if (roomy) READOUT_STYLE() else HUD_LABEL_STYLE(),
+                        p.hudReadout(short = short),
+                        style,
                         color = if (state.broken) GameColors.RedTop else GameColors.TextPrimary,
-                        outlineWidth = if (roomy) 1.5.dp else 1.dp,
+                        outlineWidth = if (small) 1.dp else 1.5.dp,
                         maxLines = 1,
                         overflow = TextOverflow.Visible,
                         // Its natural width, centred under the star, even if a little wider than its share.
@@ -381,6 +397,8 @@ private val STAR = 34.dp
 private val MIN_STAR = 24.dp
 /** A star's share of the width below which the narrow layout is used. */
 private val ROOMY_SHARE = 34.dp
+/** Kept clear between neighbouring numbers under the stars. */
+private val READOUT_GAP = 3.dp
 /** The objective's picture on a star's corner, as a fraction of the star. */
 private const val BADGE_FRACTION = 0.47f
 private val BROKEN_MARK = 12.dp

@@ -60,7 +60,12 @@ import com.apps.bubblepopping.stage.World
 import com.apps.bubblepopping.ui.components.ButtonColor
 import com.apps.bubblepopping.ui.components.GameIconButton
 import com.apps.bubblepopping.ui.components.OutlinedText
-import com.apps.bubblepopping.ui.components.enamelPill
+import com.apps.bubblepopping.ui.components.drawRoundGlaze
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.geometry.Rect
 import com.apps.bubblepopping.ui.icons.GameIcons
 import com.apps.bubblepopping.ui.theme.BubbleTheme
 import com.apps.bubblepopping.ui.theme.GameColors
@@ -132,13 +137,13 @@ fun GameHud(
                     }
                 },
                 corner = {
-                    // The gear, tucked into the top-right corner; it pauses and opens the pause menu.
+                    // The pause button, tucked into the top-right corner; it opens the pause menu.
                     GameIconButton(
-                        icon = GameIcons.Gear,
+                        icon = GameIcons.PauseBars,
                         contentDescription = if (isPaused) "Resume" else "Pause",
                         onClick = onPlayPauseClick,
                         color = ButtonColor.BLUE,
-                        size = PAUSE_BUTTON_SIZE,
+                        size = 28.dp,
                     )
                 },
             )
@@ -201,7 +206,10 @@ private fun Modifier.hudPanel(): Modifier = this.drawBehind {
  *
  * The middle is [CENTER_WIDTH] wide, but gives way so the right side always keeps
  * [END_WIDTH] for the timer and chips; on a narrow phone (~320 dp) the gaps also
- * tighten to [NARROW_GAP]. The middle is told its width, and fits itself to it.
+ * tighten to [NARROW_GAP]. When several chips are up the right side widens to fit
+ * them where the phone allows, the middle moving left and narrowing (to [MIN_CENTER])
+ * rather than the stars losing their room ([MIN_START]). The middle is told its
+ * width, and fits itself to it.
  */
 @Composable
 private fun HudSections(
@@ -221,14 +229,25 @@ private fun HudSections(
         fun sideNeed(gap: Int) = cornerW + END_WIDTH.roundToPx() + gap * 2
         val wide = width - sideNeed(Spacing.s.roundToPx()) * 2 >= CENTER_WIDTH.roundToPx()
         val gap = (if (wide) Spacing.s else NARROW_GAP).roundToPx()
-        val centerW = (width - sideNeed(gap) * 2).coerceIn(0, CENTER_WIDTH.roundToPx())
+        // The timer and chips get END_WIDTH at least, and more when several chips are up and
+        // the left and middle can spare it (keeping MIN_START and MIN_CENTER).
+        val minEnd = END_WIDTH.roundToPx()
+        val endRoom = (width - cornerW - gap * 3 - MIN_START.roundToPx() - MIN_CENTER.roundToPx()).coerceAtLeast(minEnd)
+        val endP = ends.map { it.measure(loose.copy(maxWidth = endRoom)) }
+        val endW = maxOf(minEnd, endP.maxOfOrNull { it.width } ?: 0)
+        val endFrom = width - cornerW - gap - endW
+        // The middle stays centred on the panel while it can; when the right side grows it
+        // moves left, then narrows so the left side keeps MIN_START.
+        var centerW = (width - sideNeed(gap) * 2).coerceIn(0, CENTER_WIDTH.roundToPx())
+        var centerX = (width - centerW) / 2
+        val centerRight = endFrom - gap
+        if (centerX + centerW > centerRight) {
+            centerX = maxOf(centerRight - centerW, MIN_START.roundToPx() + gap).coerceAtMost(centerRight)
+            centerW = (centerRight - centerX).coerceAtLeast(0)
+        }
         val centerP = centers.map { it.measure(loose.copy(minWidth = centerW, maxWidth = centerW)) }
-        val centerX = (width - centerW) / 2
         val startW = (centerX - gap).coerceAtLeast(0)
         val startP = starts.map { it.measure(loose.copy(minWidth = startW, maxWidth = startW)) }
-        val endFrom = centerX + centerW + gap
-        val endW = (width - cornerW - gap - endFrom).coerceAtLeast(0)
-        val endP = ends.map { it.measure(loose.copy(maxWidth = endW)) }
         layout(width, height) {
             startP.forEach { it.place(0, (height - it.height) / 2) }
             centerP.forEach { it.place(centerX, (height - it.height) / 2) }
@@ -245,40 +264,43 @@ private fun HudSections(
 @Composable
 private fun PowerUpChips(lives: Int, shieldActive: Boolean, freezeSecondsLeft: Int, doubleSecondsLeft: Int) {
     OverlapRow(spacing = Spacing.xs) {
-        HudChip(GameColors.PillHeart, tag = "$lives", modifier = Modifier.semantics { contentDescription = "$lives lives" }) {
+        HudChip(RUBY, tag = "$lives", modifier = Modifier.semantics { contentDescription = "$lives lives" }) {
             Image(GameIcons.Heart, contentDescription = null, modifier = Modifier.size(CHIP_ICON).alpha(if (lives > 0) 1f else 0.4f))
         }
         if (shieldActive) {
-            HudChip(GameColors.PillBubble, modifier = Modifier.semantics { contentDescription = "Shield ready" }) {
+            HudChip(SAPPHIRE, modifier = Modifier.semantics { contentDescription = "Shield ready" }) {
                 Image(GameIcons.Shield, contentDescription = null, modifier = Modifier.size(CHIP_ICON))
             }
         }
         if (freezeSecondsLeft > 0) {
             val seconds = freezeSecondsLeft
-            HudChip(GameColors.PillFreeze, tag = "$seconds", modifier = Modifier.semantics { contentDescription = "Frozen, $seconds seconds left" }) {
+            HudChip(AQUAMARINE, tag = "$seconds", modifier = Modifier.semantics { contentDescription = "Frozen, $seconds seconds left" }) {
                 Image(GameIcons.Snowflake, contentDescription = null, modifier = Modifier.size(CHIP_ICON))
             }
         }
         if (doubleSecondsLeft > 0) {
             val seconds = doubleSecondsLeft
-            HudChip(GameColors.PillHeart, tag = "$seconds", modifier = Modifier.semantics { contentDescription = "Double points, $seconds seconds left" }) {
-                OutlinedText("×2", GameTheme.type.caption, maxLines = 1)
+            HudChip(AMETHYST, tag = "$seconds", modifier = Modifier.semantics { contentDescription = "Double points, $seconds seconds left" }) {
+                OutlinedText("×2", GameTheme.type.caption, maxLines = 1, brush = SCORE_GOLD)
             }
         }
     }
 }
 
-/** A round enamel chip with an icon, and [tag] (a count) on a small dark tag at its bottom-right. */
+/**
+ * A power-up chip: a jewel in a gold bezel ([jewelChip]) holding an icon, and
+ * [tag] (a count) on a small gold-rimmed tag at its bottom-right.
+ */
 @Composable
 private fun HudChip(
-    tint: Color,
+    gem: Gem,
     modifier: Modifier = Modifier,
     tag: String? = null,
     content: @Composable () -> Unit,
 ) {
     // requiredSize: always a true circle, even when the space left under the timer is a little short.
     Box(modifier.requiredSize(CHIP_SIZE)) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(CHIP_SIZE).enamelPill(tint)) { content() }
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(CHIP_SIZE).jewelChip(gem)) { content() }
         if (tag != null) {
             Box(
                 contentAlignment = Alignment.Center,
@@ -287,7 +309,13 @@ private fun HudChip(
                     .offset(x = TAG_NUDGE, y = TAG_NUDGE)
                     .height(TAG_HEIGHT)
                     .widthIn(min = TAG_HEIGHT)
-                    .background(GameColors.ButtonOutline, RoundedCornerShape(50))
+                    .drawBehind {
+                        val outline = 1.dp.toPx()
+                        val corner = CornerRadius(size.height / 2f + outline)
+                        drawRoundRect(GameColors.ButtonOutline, Offset(-outline, -outline), Size(size.width + outline * 2f, size.height + outline * 2f), corner)
+                    }
+                    .background(Brush.verticalGradient(listOf(lerp(GameColors.ButtonOutline, gem.deep, 0.6f), GameColors.ButtonOutline)), CircleShape)
+                    .border(1.dp, Brush.verticalGradient(listOf(GameColors.GoldTop, GameColors.GoldLip)), CircleShape)
                     .padding(horizontal = 3.dp),
             ) {
                 OutlinedText(tag, HUD_LABEL_STYLE(), outlineWidth = 1.dp, maxLines = 1)
@@ -297,8 +325,103 @@ private fun HudChip(
 }
 
 /**
+ * The chip's surface: a soft shadow and dark outline, a gold bezel lit from the
+ * top-left, and inside it the [gem] — bright where the light hits, deep at
+ * the far edge — with the round glass glaze over it.
+ */
+private fun Modifier.jewelChip(gem: Gem): Modifier = this.drawBehind {
+    val r = size.minDimension / 2f
+    val outline = 1.5.dp.toPx()
+    val bezel = CHIP_BEZEL.toPx()
+    drawCircle(Color.Black.copy(alpha = 0.35f), radius = r + outline / 2f, center = center + Offset(0f, 1.5.dp.toPx()))
+    drawCircle(GameColors.ButtonOutline, radius = r + outline / 2f)
+    // Gold bezel: bright top-left, deep bottom-right.
+    drawCircle(
+        Brush.linearGradient(
+            0f to GameColors.GoldTop,
+            0.5f to GameColors.Gold,
+            1f to GameColors.GoldLip,
+            start = Offset.Zero,
+            end = Offset(size.width, size.height),
+        ),
+        radius = r - outline / 2f,
+    )
+    // A dark seat between the bezel and the jewel, so the stone looks set in.
+    val stoneR = r - outline / 2f - bezel
+    drawCircle(GameColors.ButtonOutline.copy(alpha = 0.7f), radius = stoneR + 0.75.dp.toPx())
+    val stoneTopLeft = center - Offset(stoneR, stoneR)
+    val stone = Size(stoneR * 2f, stoneR * 2f)
+    clipPath(Path().apply { addOval(Rect(stoneTopLeft, stone)) }) {
+        // The body: lit at the top-left, saturated through the middle, near-black at the far edge.
+        drawCircle(
+            Brush.radialGradient(
+                0f to gem.light,
+                0.3f to gem.body,
+                0.75f to lerp(gem.body, gem.deep, 0.55f),
+                1f to gem.deep,
+                center = center + Offset(-stoneR * 0.4f, -stoneR * 0.45f),
+                radius = stoneR * 1.75f,
+            ),
+            radius = stoneR,
+        )
+        // Light glowing back through the stone at the bottom-right, in the gem's own warm/cool glow.
+        val glowAt = center + Offset(stoneR * 0.45f, stoneR * 0.55f)
+        drawCircle(
+            Brush.radialGradient(
+                0f to gem.glow.copy(alpha = 0.85f),
+                0.5f to gem.glow.copy(alpha = 0.25f),
+                1f to Color.Transparent,
+                center = glowAt,
+                radius = stoneR * 0.8f,
+            ),
+            radius = stoneR * 0.8f,
+            center = glowAt,
+        )
+        // Facet lines: two faint diagonals catching light, like a cut stone's crown.
+        val facet = Color.White.copy(alpha = 0.16f)
+        val facetWidth = 0.75.dp.toPx()
+        drawLine(facet, center + Offset(-stoneR, stoneR * 0.15f), center + Offset(stoneR * 0.15f, -stoneR), facetWidth)
+        drawLine(facet, center + Offset(-stoneR * 0.15f, stoneR), center + Offset(stoneR, -stoneR * 0.15f), facetWidth)
+        // A dark inner edge, so the stone reads as deep rather than flat.
+        drawCircle(
+            Brush.radialGradient(
+                0.7f to Color.Transparent,
+                1f to gem.deep.copy(alpha = 0.8f),
+                center = center,
+                radius = stoneR,
+            ),
+            radius = stoneR,
+        )
+        drawRoundGlaze(stoneTopLeft, stone)
+    }
+    // A tiny four-pointed sparkle on the bezel's top-right, where the gold catches the light.
+    val s = center + Offset(r * 0.62f, -r * 0.62f)
+    val arm = r * 0.26f
+    drawPath(
+        Path().apply {
+            moveTo(s.x, s.y - arm)
+            quadraticTo(s.x, s.y, s.x + arm, s.y)
+            quadraticTo(s.x, s.y, s.x, s.y + arm)
+            quadraticTo(s.x, s.y, s.x - arm, s.y)
+            quadraticTo(s.x, s.y, s.x, s.y - arm)
+            close()
+        },
+        Color.White.copy(alpha = 0.95f),
+    )
+}
+
+/** A power-up chip's stone: its highlight, body and deep edge, and the light glowing back through it. */
+private class Gem(val light: Color, val body: Color, val deep: Color, val glow: Color)
+
+private val RUBY = Gem(GameColors.RubyLight, GameColors.RubyBody, GameColors.RubyDeep, GameColors.RubyGlow)
+private val SAPPHIRE = Gem(GameColors.SapphireLight, GameColors.SapphireBody, GameColors.SapphireDeep, GameColors.SapphireGlow)
+private val AQUAMARINE = Gem(GameColors.AquaLight, GameColors.AquaBody, GameColors.AquaDeep, GameColors.AquaGlow)
+private val AMETHYST = Gem(GameColors.AmethystLight, GameColors.AmethystBody, GameColors.AmethystDeep, GameColors.AmethystGlow)
+
+/**
  * A row spaced by [spacing] that never grows past its width: when its children
- * don't fit, they overlap evenly (later ones on top) instead.
+ * don't fit, they overlap evenly instead — earlier ones on top, so each chip's
+ * count tag (at its bottom-right) is never covered by the next chip.
  */
 @Composable
 private fun OverlapRow(spacing: Dp, content: @Composable () -> Unit) {
@@ -312,8 +435,8 @@ private fun OverlapRow(spacing: Dp, content: @Composable () -> Unit) {
         val squeeze = if (natural > width && placeables.size > 1) (natural - width) / (placeables.size - 1) else 0
         layout(width, height) {
             var x = 0
-            placeables.forEach {
-                it.place(x, (height - it.height) / 2)
+            placeables.forEachIndexed { i, it ->
+                it.place(x, (height - it.height) / 2, zIndex = (placeables.size - i).toFloat())
                 x += it.width + gap - squeeze
             }
         }
@@ -381,7 +504,7 @@ private fun ScoreCenter(
                     comboMultiplier,
                     comboTimeLeft,
                     // Just past the number's right edge, so it never covers a digit.
-                    Modifier.align(Alignment.TopEnd).offset(x = badgeRoom, y = Spacing.xs),
+                    Modifier.align(Alignment.TopEnd).offset(x = badgeRoom, y = 1.dp),
                 )
             }
         }
@@ -442,11 +565,17 @@ private val PAUSE_BUTTON_SIZE = 36.dp
 private val CENTER_WIDTH = 120.dp
 /** What the right side keeps for the timer and chips (the timer is ~54 dp wide). */
 private val END_WIDTH = 56.dp
+/** The least the middle (the score) is squeezed to when the chips need more room. */
+private val MIN_CENTER = 84.dp
+/** The least the left side keeps: three stars, each with room for its number. */
+private val MIN_START = 108.dp
 private val NARROW_GAP = 4.dp
 private val COMBO_RING = 2.dp
 private val COMBO_BADGE = 20.dp
-private val CHIP_SIZE = 26.dp
-private val CHIP_ICON = 16.dp
+private val CHIP_SIZE = 28.dp
+/** The gold ring around each chip's jewel. */
+private val CHIP_BEZEL = 2.5.dp
+private val CHIP_ICON = 15.dp
 private val TAG_HEIGHT = 14.dp
 private val TAG_NUDGE = 3.dp
 

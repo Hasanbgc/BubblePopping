@@ -34,6 +34,11 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.StrokeCap
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
@@ -290,9 +295,14 @@ internal fun Modifier.candyFace(color: ButtonColor, shape: Shape): Modifier = th
         // Glint: a small bright streak and dot near the top-left.
         val glintSize = Size(h * 0.32f, h * 0.1f)
         val glintTopLeft = Offset(shineInset + h * 0.08f, shineTop + h * 0.06f)
+        val round = shape == CircleShape
         onDrawBehind {
             drawRect(face)
             drawRect(shade)
+            if (round) {
+                drawRoundGlaze()
+                return@onDrawBehind
+            }
             drawRoundRect(shine, Offset(shineInset, shineTop), shineSize, CornerRadius(shineSize.height / 2f))
             drawRoundRect(Color.White.copy(alpha = 0.85f), glintTopLeft, glintSize, CornerRadius(glintSize.height / 2f))
             drawCircle(
@@ -312,6 +322,57 @@ internal fun Modifier.candyFace(color: ButtonColor, shape: Shape): Modifier = th
         ),
         shape,
     )
+
+/**
+ * The glaze of a round face, following its curve rather than a flat band: a dome
+ * of shine over the top, a curved glint along the upper-left rim with a dot after
+ * it, and a faint bounce of light along the bottom — like a glass marble.
+ */
+internal fun DrawScope.drawRoundGlaze(topLeft: Offset = Offset.Zero, area: Size = size) {
+    val h = area.height
+    val r = area.minDimension / 2f
+    val center = topLeft + Offset(area.width / 2f, area.height / 2f)
+    val domeTopLeft = topLeft + Offset(area.width * 0.16f, h * 0.05f)
+    val domeSize = Size(area.width * 0.68f, h * 0.44f)
+    drawOval(
+        Brush.verticalGradient(
+            0f to Color.White.copy(alpha = 0.6f),
+            0.7f to Color.White.copy(alpha = 0.12f),
+            1f to Color.White.copy(alpha = 0f),
+            startY = domeTopLeft.y,
+            endY = domeTopLeft.y + domeSize.height,
+        ),
+        domeTopLeft,
+        domeSize,
+    )
+    val glintR = r * 0.7f
+    val glintWidth = h * 0.08f
+    drawArc(
+        Color.White.copy(alpha = 0.9f),
+        startAngle = 196f,
+        sweepAngle = 44f,
+        useCenter = false,
+        topLeft = Offset(center.x - glintR, center.y - glintR),
+        size = Size(glintR * 2f, glintR * 2f),
+        style = Stroke(glintWidth, cap = StrokeCap.Round),
+    )
+    val dot = 254f * PI.toFloat() / 180f
+    drawCircle(
+        Color.White.copy(alpha = 0.9f),
+        radius = glintWidth * 0.55f,
+        center = Offset(center.x + glintR * cos(dot), center.y + glintR * sin(dot)),
+    )
+    val bounceR = r * 0.78f
+    drawArc(
+        Color.White.copy(alpha = 0.22f),
+        startAngle = 40f,
+        sweepAngle = 100f,
+        useCenter = false,
+        topLeft = Offset(center.x - bounceR, center.y - bounceR),
+        size = Size(bounceR * 2f, bounceR * 2f),
+        style = Stroke(h * 0.05f, cap = StrokeCap.Round),
+    )
+}
 
 private const val DISABLED_ALPHA = 0.45f
 /** Dark outline around the whole button, matching the outlines in the icon art. */

@@ -48,6 +48,19 @@ object GameIcons {
 
     val Pause: ImageVector get() = PauseArt
 
+    /**
+     * Two white bars with an ink outline, for the inside of a round button — the
+     * [Pause] art is a whole blue button of its own.
+     */
+    val PauseBars: ImageVector by lazy {
+        icon("PauseBars") {
+            path(fill = SolidColor(Color.White), stroke = InkStroke, strokeLineWidth = OUTLINE, strokeLineJoin = StrokeJoin.Round) {
+                roundRect(5.5f, 4.5f, 10f, 19.5f, 1.8f)
+                roundRect(14f, 4.5f, 18.5f, 19.5f, 1.8f)
+            }
+        }
+    }
+
     val Restart: ImageVector get() = RestartArt
 
     val Coin: ImageVector get() = CoinArt

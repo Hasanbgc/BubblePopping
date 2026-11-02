@@ -94,6 +94,24 @@ object GameColors {
     val PillBubble = Color(0xFF5CC2FF)
     val PillHeart = Color(0xFFFF6B8A)
     val PillFreeze = Color(0xFF7FDBFF)
+
+    // HUD power-up gems: highlight → body → deep edge, and the light glowing back through the stone
+    val RubyLight = Color(0xFFFFC2D1)
+    val RubyBody = Color(0xFFE8173F)
+    val RubyDeep = Color(0xFF5C0418)
+    val RubyGlow = Color(0xFFFF8A5C)
+    val SapphireLight = Color(0xFFBFE6FF)
+    val SapphireBody = Color(0xFF1F6BFF)
+    val SapphireDeep = Color(0xFF0A1A66)
+    val SapphireGlow = Color(0xFF5CF2FF)
+    val AquaLight = Color(0xFFE6FFFF)
+    val AquaBody = Color(0xFF26C9E8)
+    val AquaDeep = Color(0xFF07466B)
+    val AquaGlow = Color(0xFFA6FFE8)
+    val AmethystLight = Color(0xFFF0CCFF)
+    val AmethystBody = Color(0xFF9A2EE6)
+    val AmethystDeep = Color(0xFF2E0866)
+    val AmethystGlow = Color(0xFFFF7AD9)
     /** Seconds left on the freeze pill. */
     val FreezeText = Color(0xFFB3E5FC)
 
