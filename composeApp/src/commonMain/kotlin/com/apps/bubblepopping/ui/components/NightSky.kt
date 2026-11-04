@@ -11,13 +11,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Canvas
+import androidx.compose.ui.graphics.layer.CompositingStrategy
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.draw.CacheDrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.tooling.preview.Preview
@@ -25,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import com.apps.bubblepopping.ui.theme.GameColors
 import kotlinx.coroutines.delay
 import kotlin.math.PI
-import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -79,25 +79,21 @@ private fun StillNightSky(modifier: Modifier) {
     Spacer(
         // Its own layer, so a moment of motion redraws only the sky, not the screen on top of it.
         modifier.graphicsLayer().drawWithCache {
-            val width = ceil(size.width).toInt().coerceAtLeast(1)
-            val height = ceil(size.height).toInt().coerceAtLeast(1)
             // Without the aurora and stars, which are drawn live while the aurora moves…
-            val base = ImageBitmap(width, height)
-            CanvasDrawScope().draw(this, layoutDirection, Canvas(base), size) { drawSkyBase() }
+            val base = staticLayer { drawSkyBase() }
             // …and the whole sky at rest.
-            val still = ImageBitmap(width, height)
-            CanvasDrawScope().draw(this, layoutDirection, Canvas(still), size) {
-                drawImage(base)
+            val still = staticLayer {
+                drawLayer(base)
                 drawAuroraRibbon(0f)
                 drawStars(stars, 0f)
             }
             onDrawBehind {
                 val ms = moment.floatValue
                 if (ms < 0f) {
-                    drawImage(still)
+                    drawLayer(still)
                     return@onDrawBehind
                 }
-                drawImage(base)
+                drawLayer(base)
                 // Out to one side and back, easing in and out.
                 val swell = (ms / AURORA_SWELL_MS).coerceAtMost(1f)
                 drawAuroraRibbon(sin(swell * PI.toFloat()).let { it * it })
@@ -121,13 +117,12 @@ private fun AnimatedNightSky(modifier: Modifier) {
     Spacer(
         // Its own layer, so each tick re-records only the sky, not the screen on top of it.
         modifier.graphicsLayer().drawWithCache {
-            val sky = ImageBitmap(ceil(size.width).toInt().coerceAtLeast(1), ceil(size.height).toInt().coerceAtLeast(1))
-            CanvasDrawScope().draw(this, layoutDirection, Canvas(sky), size) { drawSkyBase() }
+            val sky = staticLayer { drawSkyBase() }
             onDrawBehind {
                 val seconds = time.value
                 // One full twinkle and aurora sway every TWINKLE_MS.
                 val t = seconds * 2f * PI.toFloat() * 1000f / TWINKLE_MS
-                drawImage(sky)
+                drawLayer(sky)
                 drawAuroraRibbon(sin(t))
                 drawStars(stars, t)
                 drawShootingStar(ambientLoop(seconds, SHOOTING_STAR_EVERY_MS))
@@ -135,6 +130,17 @@ private fun AnimatedNightSky(modifier: Modifier) {
         }
     )
 }
+
+/**
+ * A picture that never changes, painted once and then reused every frame. The
+ * GPU paints it and keeps it as a texture. (Painting into an ImageBitmap instead
+ * runs in software on the main thread: about 100 ms for a full screen.)
+ */
+internal fun CacheDrawScope.staticLayer(block: DrawScope.() -> Unit): GraphicsLayer =
+    obtainGraphicsLayer().apply {
+        compositingStrategy = CompositingStrategy.Offscreen
+        record { block() }
+    }
 
 @Composable
 private fun rememberStars(): List<Star> = remember {

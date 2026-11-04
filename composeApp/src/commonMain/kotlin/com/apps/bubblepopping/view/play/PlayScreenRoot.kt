@@ -86,8 +86,11 @@ import com.apps.bubblepopping.ui.components.OverlayScrim
 import com.apps.bubblepopping.ui.components.formatCount
 import com.apps.bubblepopping.ui.icons.GameIcons
 import com.apps.bubblepopping.ui.theme.Spacing
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.structuralEqualityPolicy
+import kotlinx.coroutines.flow.collectLatest
+import kotlin.coroutines.cancellation.CancellationException
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.rememberCoroutineScope
@@ -198,10 +201,14 @@ fun BubblePoppingScreen(
     // Playing → pause. Paused → leave. Revive offer → decline it (so the round is
     // saved). After game over the handler is disabled, so back falls through to
     // the navigation and leaves straight away.
-    val reviveOffer = viewModel.reviveOffer
+    // The offer's countdown changes every frame; the screen only needs what it is
+    // for and what it costs. The countdown itself is read by the overlay's ring.
+    val reviveTerms by remember(viewModel) {
+        derivedStateOf(structuralEqualityPolicy()) { viewModel.reviveOffer?.let { it.reason to it.cost } }
+    }
     NavigationBackHandler(
         state = rememberNavigationEventState(NavigationEventInfo.None),
-        isBackEnabled = !viewModel.isGameOver || reviveOffer != null,
+        isBackEnabled = !viewModel.isGameOver || reviveTerms != null,
         onBackCompleted = {
             when {
                 viewModel.reviveOffer != null -> viewModel.declineRevive()
@@ -215,7 +222,7 @@ fun BubblePoppingScreen(
     val gameSounds by produceState<GameSounds?>(initialValue = null) {
         try {
             val samples = POP_SAMPLES.map { Res.readBytes(it) }
-            value = GameSounds(createSoundManager(samples))
+            value = createOffMain({ GameSounds(createSoundManager(samples)) }, GameSounds::dispose)
         } catch (_: Exception) {
             // Missing or unreadable audio: play silently rather than crash.
         }
@@ -230,7 +237,8 @@ fun BubblePoppingScreen(
     // and the app is in the foreground. The drum layer follows the action.
     val music by produceState<GameMusic?>(initialValue = null, viewModel.world) {
         value = try {
-            GameMusic.create(withContext(Dispatchers.Default) { GameMusic.synthesize(viewModel.world) })
+            val layers = withContext(Dispatchers.Default) { GameMusic.synthesize(viewModel.world) }
+            createOffMain({ GameMusic.create(layers) }, GameMusic::release)
         } catch (_: Exception) {
             null // no music rather than a crash
         }
@@ -245,12 +253,15 @@ fun BubblePoppingScreen(
     LaunchedEffect(music, musicPlaying) {
         if (musicPlaying) music?.play() else music?.pause()
     }
-    val musicIntensity by animateFloatAsState(
-        targetValue = viewModel.musicIntensity,
-        animationSpec = tween(MUSIC_INTENSITY_FADE_MS),
-        label = "music_intensity",
-    )
-    LaunchedEffect(music, musicIntensity) { music?.setIntensity(musicIntensity) }
+    // Faded inside the effect, so the fade never recomposes the screen.
+    val musicIntensity = remember { Animatable(viewModel.musicIntensity) }
+    LaunchedEffect(music) {
+        val track = music ?: return@LaunchedEffect
+        track.setIntensity(musicIntensity.value)
+        snapshotFlow { viewModel.musicIntensity }.collectLatest { target ->
+            musicIntensity.animateTo(target, tween(MUSIC_INTENSITY_FADE_MS)) { track.setIntensity(value) }
+        }
+    }
 
     // ── Sound & haptics ──────────────────────────────────────────────────────
     // Driven by game events so feedback matches exactly what the game decided.
@@ -611,10 +622,14 @@ fun BubblePoppingScreen(
                 )
             }
 
-            if (reviveOffer != null) {
+            val terms = reviveTerms
+            if (terms != null) {
                 val coins by viewModel.coins.collectAsStateWithLifecycle()
                 ReviveOverlay(
-                    offer     = reviveOffer,
+                    reason    = terms.first,
+                    cost      = terms.second,
+                    timeLeft  = { viewModel.reviveOffer?.timeLeft ?: 0f },
+                    progress  = { viewModel.reviveOffer?.progress ?: 0f },
                     coins     = coins,
                     onRevive  = { viewModel.revive() },
                     onDecline = { viewModel.declineRevive() },
@@ -778,3 +793,17 @@ private fun BreezeControls(
 
 /** Breeze above this strength lights up its button. */
 private const val WIND_ACTIVE = 0.03f
+
+/**
+ * Runs [create] off the main thread (audio players block while they load). If the
+ * screen closes meanwhile, the result is [release]d rather than leaked.
+ */
+private suspend fun <T : Any> createOffMain(create: () -> T, release: (T) -> Unit): T {
+    var created: T? = null
+    try {
+        return withContext(Dispatchers.Default) { create().also { created = it } }
+    } catch (e: CancellationException) {
+        created?.let(release)
+        throw e
+    }
+}

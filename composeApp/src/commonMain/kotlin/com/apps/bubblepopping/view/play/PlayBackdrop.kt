@@ -8,11 +8,10 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
+import com.apps.bubblepopping.ui.components.staticLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.tooling.preview.Preview
@@ -22,7 +21,6 @@ import com.apps.bubblepopping.view.drawAuroraScenery
 import com.apps.bubblepopping.view.drawScenery
 import com.apps.bubblepopping.view.playBackgroundColors
 import com.apps.bubblepopping.view.worldMapColors
-import kotlin.math.ceil
 import kotlin.random.Random
 
 /**
@@ -32,18 +30,15 @@ import kotlin.random.Random
  * background cosmetic ([backgroundId]) brings its own colours and scenery:
  * Sunset — sun and clouds, Midnight — stars, Aurora — aurora bands.
  *
- * It never changes during a round, so it is painted once into an image and each
- * frame draws just that image, not several full-screen gradients.
+ * It never changes during a round, so it is painted once (by the GPU, kept as a
+ * texture) and each frame draws just that, not several full-screen gradients.
  */
 @Composable
 fun PlayBackdrop(world: World, backgroundId: String?, modifier: Modifier = Modifier) {
     Spacer(
         modifier.fillMaxSize().drawWithCache {
-            val image = ImageBitmap(ceil(size.width).toInt().coerceAtLeast(1), ceil(size.height).toInt().coerceAtLeast(1))
-            CanvasDrawScope().draw(this, layoutDirection, Canvas(image), size) {
-                drawBackdrop(world, backgroundId)
-            }
-            onDrawBehind { drawImage(image) }
+            val backdrop = staticLayer { drawBackdrop(world, backgroundId) }
+            onDrawBehind { drawLayer(backdrop) }
         }
     )
 }

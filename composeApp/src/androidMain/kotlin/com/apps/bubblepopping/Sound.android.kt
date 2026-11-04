@@ -36,5 +36,8 @@ actual fun createSoundManager(samples: List<ByteArray>): SoundManager {
             val soundId = soundIds[sample]
             soundId in loaded && soundPool.play(soundId, 1f, 1f, 1, 0, rate) != 0
         },
-    ).also { it.onDispose = { soundPool.release() } }
+    ).also {
+        // release() is a blocking call into the media server; keep it off the main thread.
+        it.onDispose = { Thread(soundPool::release, "SoundPoolRelease").start() }
+    }
 }

@@ -177,7 +177,7 @@ Mix: normal, hearts, skulls (12 % → 25 %). Clocks (2 %) from 11 in timed stage
 | 7 | Score 680 points | Score 1050 points | Score 1150 points | 60 s | 5 | P3 |
 | 8 | Pop 23 small bubbles | Hit 80% of your taps | Pop 37 small bubbles | 60 s | 5 | P3 |
 | 9 | Survive 60 seconds | Lose at most 1 life | Score 1350 points | 60 s | 5 | P3→P5 |
-| 10 | Defeat the Cloud King | Finish within 100 seconds | Lose no lives | ~90 s | 5 | P2→P4 |
+| 10 | Defeat the Cloud King | Finish within 85 seconds | Lose no lives | ~75 s | 5 | P2→P4 |
 | 11 | Score 1600 points | Pop 3 clock bubbles | Hit 85% of your taps | 60 s | 5 | P3 |
 | 12 | Pop 135 bubbles | Lose no lives | Finish within 68 seconds | ~70 s | 5 | P4 |
 | 13 | Pop 8 hearts | Score 2000 points | Hit 85% of your taps | 75 s | 3 | P5 |
@@ -187,7 +187,7 @@ Mix: normal, hearts, skulls (12 % → 25 %). Clocks (2 %) from 11 in timed stage
 | 17 | Pop 52 small bubbles | Hit 80% of your taps | Hit 90% of your taps | ~75 s | 5 | P4 |
 | 18 | Survive 75 seconds | Lose no lives | Hit 85% of your taps | 75 s | 2 | P4 |
 | 19 | Survive 120 seconds | Lose at most 2 lives | Score 3100 points | 120 s | 5 | P3→P4 |
-| 20 | Defeat the Storm Cloud | Finish within 160 seconds | Lose at most 1 life | ~140 s | 4 | P3→P5 |
+| 20 | Defeat the Storm Cloud | Finish within 125 seconds | Lose at most 2 lives | ~110 s | 4 | P3→P5 |
 
 ### 🌊 World 2 — Ocean (21–40)
 
@@ -204,7 +204,7 @@ Adds golden (8 %), ice from 23 (4 %), ×2 from 31 (4 %). Bosses: Jelly Queen, Ti
 | 27 | Pop 13 golden bubbles | Hit 85% of your taps | Finish within 95 seconds | ~85 s | 5 | P4 |
 | 28 | Score 1400 points | Score 3250 points | Hit 85% of your taps | 100 s | 2 | P5 |
 | 29 | Survive 120 seconds | Lose at most 2 lives | Score 3300 points | 120 s | 5 | P4→P6 |
-| 30 | Defeat the Jelly Queen | Finish within 150 seconds | Hit 85% of your taps | ~130 s | 4 | P3→P5 |
+| 30 | Defeat the Jelly Queen | Finish within 80 seconds | Hit 85% of your taps | ~70 s | 4 | P3→P5 |
 | 31 | Score 5700 points | Score 6000 points | Hit 85% of your taps | 90 s | 5 | P4 |
 | 32 | Pop 14 golden bubbles | Score 8250 points | Hit 85% of your taps | 110 s | 5 | P5 |
 | 33 | Pop 5 ice bubbles and pop 5 ×2 bubbles | Lose no lives | Hit 85% of your taps | 100 s | 5 | P6 |
@@ -312,9 +312,9 @@ Target: **30–50 % of players beat a boss on their first try** (a normal stage:
 
 | # | Boss | HP | Lives | Phase 1 | Phase 2 | Phase 3 | Length |
 |---|---|---|---|---|---|---|---|
-| 10 | Cloud King *(existing)* | 165 | 5 | Drifts slowly | Throws a skull every 4 hits | Skull every 2 hits, faster | ~1:30 |
-| 20 | Storm Cloud *(new)* | 260 | 4 | Throws skulls | Gusts push every bubble sideways (swipe back) | Gusts + skulls, fast | ~2:20 |
-| 30 | Jelly Queen *(existing)* | 150 | 4 | Stings every 6 hits | Stings every 5, longer lock | Stings every 4 + skulls | ~2:10 |
+| 10 | Cloud King *(existing)* | 132 | 5 | Drifts slowly | Throws a skull every 4 hits | Skull every 2 hits, faster | ~1:15 |
+| 20 | Storm Cloud *(new)* | 180 | 4 | Throws skulls | Gusts push every bubble sideways (swipe back) | Gusts + skulls, fast | ~1:50 |
+| 30 | Jelly Queen *(existing)* | 80 | 4 | Stings every 6 hits | Stings every 5, longer lock | Stings every 4 + skulls | ~1:10 |
 | 40 | Tide Kraken *(new)* | 320 | 4 | Moves in waves | Tentacle shield: immune until you pop an ice bubble | Shield + skulls rising from below | ~2:30 |
 | 50 | Nebula Core *(rebuilt)* | 270 (blasts deal 8) | 4 | Drops bombs + skulls | **Armor: only bomb blasts hurt it** | Bombs + skulls, fast | ~2:30 |
 | 60 | Black Hole *(new)* | 460 (lightning deals ×2) | 3 | Pulls bubbles toward itself | Stronger pull + skulls in pairs | Strongest pull, skulls faster | ~2:45 |

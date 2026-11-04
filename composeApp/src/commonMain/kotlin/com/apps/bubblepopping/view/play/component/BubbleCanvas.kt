@@ -1110,6 +1110,13 @@ fun DrawScope.drawConfetti(scrap: Confetti) {
 // Pop animation
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** The default burst's eight droplets, one colour each. */
+private val POP_DROP_COLORS = listOf(
+    Color(0xFF80D8FF), Color(0xFFFF80CE), Color(0xFF69F0AE),
+    Color(0xFFFFFF8D), Color(0xFFEA80FC), Color(0xFFFF6E40),
+    Color(0xFF80DEEA), Color(0xFFFFAB40),
+)
+
 /** Rainbow around the full circle, centred on the origin. */
 private val POP_RING_BRUSH = Brush.sweepGradient(
     listOf(Color(0xFFFF80CE), Color(0xFF80D8FF), Color(0xFF69F0AE), Color(0xFFFFFF8D), Color(0xFFFF80CE)),
@@ -1130,17 +1137,12 @@ internal fun DrawScope.drawRainbowPop(anim: PopAnimation) {
         drawCircle(brush = POP_RING_BRUSH, radius = ringR, center = Offset.Zero, alpha = alpha, style = Stroke(width = strokeW))
     }
 
-    val dropColors = listOf(
-        Color(0xFF80D8FF), Color(0xFFFF80CE), Color(0xFF69F0AE),
-        Color(0xFFFFFF8D), Color(0xFFEA80FC), Color(0xFFFF6E40),
-        Color(0xFF80DEEA), Color(0xFFFFAB40),
-    )
     val spread    = anim.radius * (1.5f + p * 3.5f * k)
     val dotRadius = (anim.radius * 0.12f * k * (1f - p * 0.7f)).coerceAtLeast(0f)
     for (i in 0 until 8) {
         val angle = (i.toFloat() / 8f) * 2f * PI.toFloat()
         drawCircle(
-            color  = dropColors[i].copy(alpha = alpha * 0.9f),
+            color  = POP_DROP_COLORS[i].copy(alpha = alpha * 0.9f),
             radius = dotRadius,
             center = Offset(anim.x + cos(angle) * spread, anim.y + sin(angle) * spread),
         )

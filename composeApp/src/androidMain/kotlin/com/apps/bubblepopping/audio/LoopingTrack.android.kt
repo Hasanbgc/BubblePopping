@@ -22,9 +22,12 @@ actual fun createLoopingTrack(audio: ByteArray): LoopingTrack {
         override fun play() = player.start()
         override fun pause() = player.pause()
         override fun setVolume(volume: Float) = player.setVolume(volume, volume)
+        // release() is a blocking call into the media server; keep it off the main thread.
         override fun release() {
-            player.release()
-            file.delete()
+            Thread({
+                player.release()
+                file.delete()
+            }, "MusicRelease").start()
         }
     }
 }

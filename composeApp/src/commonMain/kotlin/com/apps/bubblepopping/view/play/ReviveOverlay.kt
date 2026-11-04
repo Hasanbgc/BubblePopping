@@ -5,6 +5,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -16,7 +20,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.apps.bubblepopping.game.GameOverReason
 import com.apps.bubblepopping.game.GameRules
-import com.apps.bubblepopping.game.ReviveOffer
 import com.apps.bubblepopping.ui.components.ButtonColor
 import com.apps.bubblepopping.ui.components.ButtonSize
 import com.apps.bubblepopping.ui.components.DialogButtons
@@ -38,7 +41,12 @@ import kotlin.math.ceil
  */
 @Composable
 fun ReviveOverlay(
-    offer: ReviveOffer,
+    reason: GameOverReason,
+    cost: Int,
+    /** Seconds left on the offer. Changes every frame, so it is read only where shown. */
+    timeLeft: () -> Float,
+    /** Fraction of the offer's time left, 1 → 0; read only while drawing the ring. */
+    progress: () -> Float,
     /** The player's coins, shown under the buttons; null while loading. */
     coins: Int?,
     onRevive: () -> Unit,
@@ -48,16 +56,16 @@ fun ReviveOverlay(
     OverlayScrim(modifier = modifier) {
         GameDialogCard(title = "Continue?", onClose = onDecline) {
             Text(
-                reasonLine(offer.reason),
+                reasonLine(reason),
                 style = GameTheme.type.body,
                 color = GameColors.TextSecondary,
                 textAlign = TextAlign.Center,
             )
-            CountdownRing(offer)
-            OutlinedText(benefitLine(offer.reason), GameTheme.type.headline, textAlign = TextAlign.Center)
+            CountdownRing(timeLeft, progress)
+            OutlinedText(benefitLine(reason), GameTheme.type.headline, textAlign = TextAlign.Center)
             DialogButtons {
                 GameButton(
-                    text = "Revive · ${formatCount(offer.cost)}",
+                    text = "Revive · ${formatCount(cost)}",
                     onClick = onRevive,
                     color = ButtonColor.GOLD,
                     size = ButtonSize.LARGE,
@@ -79,7 +87,10 @@ fun ReviveOverlay(
 
 /** Whole seconds left in the middle of a gold ring that empties as the offer runs out. */
 @Composable
-private fun CountdownRing(offer: ReviveOffer) {
+private fun CountdownRing(timeLeft: () -> Float, progress: () -> Float) {
+    // Recomposes once a second, when the whole number changes, not every frame.
+    val currentTimeLeft by rememberUpdatedState(timeLeft)
+    val seconds by remember { derivedStateOf { ceil(currentTimeLeft()).toInt().coerceAtLeast(0) } }
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
@@ -101,7 +112,7 @@ private fun CountdownRing(offer: ReviveOffer) {
                 drawArc(
                     color = GameColors.Gold,
                     startAngle = -90f,
-                    sweepAngle = 360f * offer.progress,
+                    sweepAngle = 360f * progress(),
                     useCenter = false,
                     topLeft = topLeft,
                     size = arcSize,
@@ -110,7 +121,7 @@ private fun CountdownRing(offer: ReviveOffer) {
             },
     ) {
         OutlinedText(
-            text = ceil(offer.timeLeft).toInt().coerceAtLeast(0).toString(),
+            text = seconds.toString(),
             style = GameTheme.type.display,
             outlineWidth = 3.dp,
             maxLines = 1,
@@ -141,7 +152,10 @@ private const val TRACK_ALPHA = 0.45f
 fun ReviveOverlayPreview() {
     BubbleTheme {
         ReviveOverlay(
-            offer = ReviveOffer(GameOverReason.OUT_OF_LIVES, cost = GameRules.REVIVE_COST, timeLeft = 3.4f, duration = 5f),
+            reason = GameOverReason.OUT_OF_LIVES,
+            cost = GameRules.REVIVE_COST,
+            timeLeft = { 3.4f },
+            progress = { 3.4f / 5f },
             coins = 1240,
             onRevive = {},
             onDecline = {},
